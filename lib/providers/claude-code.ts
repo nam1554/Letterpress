@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { buildEdmPrompt } from "./prompt";
+import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
@@ -47,7 +47,7 @@ export const claudeCodeProvider: AgentProvider = {
     const prompt = task.promptOverride ?? buildEdmPrompt(task, "claude-skill");
 
     // Strip nested-session markers so the spawned CLI behaves like a fresh run.
-    const env = { ...process.env };
+    const env = agentEnv();
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
 

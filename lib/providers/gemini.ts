@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildEdmPrompt } from "./prompt";
+import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentProvider, AgentResult, AgentTask } from "./types";
 
 const GEMINI_BIN = process.env.GEMINI_BIN ?? "gemini";
@@ -53,7 +53,7 @@ export const geminiProvider: AgentProvider = {
         GEMINI_BIN,
         ["-p", prompt, "--approval-mode", "yolo", "--output-format", "stream-json"],
         // stdin must be closed: -p appends stdin input, so a pipe would block.
-        { cwd: task.workDir, env: process.env, signal, stdio: ["ignore", "pipe", "pipe"] },
+        { cwd: task.workDir, env: agentEnv(), signal, stdio: ["ignore", "pipe", "pipe"] },
       );
 
       let finalResponse = "";

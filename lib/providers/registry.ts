@@ -1,3 +1,4 @@
+import { getSettings } from "../settings";
 import { claudeCodeProvider } from "./claude-code";
 import { codexProvider } from "./codex";
 import { geminiProvider } from "./gemini";
@@ -11,13 +12,16 @@ const providers: Record<string, AgentProvider> = {
   [mockProvider.id]: mockProvider,
 };
 
-export const DEFAULT_PROVIDER_ID = process.env.AGENT_PROVIDER ?? "claude-code";
+export function defaultProviderId(): string {
+  return getSettings().defaultProvider;
+}
 
 export function getProvider(id?: string): AgentProvider {
-  const provider = providers[id ?? DEFAULT_PROVIDER_ID];
+  const resolved = id ?? defaultProviderId();
+  const provider = providers[resolved];
   if (!provider) {
     throw new Error(
-      `Unknown provider "${id ?? DEFAULT_PROVIDER_ID}". Available: ${Object.keys(providers).join(", ")}`,
+      `Unknown provider "${resolved}". Available: ${Object.keys(providers).join(", ")}`,
     );
   }
   return provider;

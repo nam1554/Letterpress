@@ -1,21 +1,21 @@
 import { getProvider } from "../providers/registry";
+import { getSettings } from "../settings";
 import type { AgentEvent } from "../providers/types";
 import { liveControllers } from "./live";
 import { appendEvent, updateJob, workDir, type Job } from "./store";
-
-// A runaway agent must not run forever. Full pipeline is typically 10-25 min.
-const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS ?? 45 * 60_000);
 
 /** Fire-and-forget: runs the job's provider and records lifecycle events. */
 export function startJob(job: Job, promptOverride?: string): void {
   const controller = new AbortController();
   liveControllers.set(job.id, controller);
 
+  // A runaway agent must not run forever. Full pipeline is typically 10-25 min.
+  const timeoutMinutes = getSettings().jobTimeoutMinutes;
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, JOB_TIMEOUT_MS);
+  }, timeoutMinutes * 60_000);
 
   const emit = (e: AgentEvent) => appendEvent(job.id, e);
 
@@ -41,7 +41,7 @@ export function startJob(job: Job, promptOverride?: string): void {
       );
 
       const summary = timedOut
-        ? `제한 시간(${Math.round(JOB_TIMEOUT_MS / 60_000)}분)을 초과해 중단되었습니다.`
+        ? `제한 시간(${timeoutMinutes}분)을 초과해 중단되었습니다.`
         : result.summary;
       const ok = result.ok && !timedOut;
       await updateJob(job.id, {
@@ -56,7 +56,7 @@ export function startJob(job: Job, promptOverride?: string): void {
       });
     } catch (err) {
       const message = timedOut
-        ? `제한 시간(${Math.round(JOB_TIMEOUT_MS / 60_000)}분)을 초과해 중단되었습니다.`
+        ? `제한 시간(${timeoutMinutes}분)을 초과해 중단되었습니다.`
         : controller.signal.aborted
           ? "사용자가 취소했습니다."
           : err instanceof Error

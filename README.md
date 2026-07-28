@@ -46,18 +46,33 @@ pnpm dev        # http://localhost:3000
 
    Gemini/Codex는 figma-edm 스킬 파일을 프롬프트로 읽어 따라가는 **실험적**
    경로입니다 — 픽셀 검증 PASS 도달 품질은 Claude Code 기준으로 검증돼 있습니다.
+
+   > ⚠️ **Gemini 데이터 취급 주의**: 개인 구글 계정 무료 티어는 프롬프트·코드가
+   > 구글 모델 개선에 활용될 수 있습니다. 회사 eDM 디자인/카피를 다루므로,
+   > Gemini를 쓸 경우 데이터 수집 옵트아웃을 켜거나 학습에 사용되지 않는 경로
+   > (Workspace 계정·API 키·유료 플랜)를 사용하세요. 기본값인 Claude Code만
+   > 써도 무방합니다.
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
    전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
 
-## 환경변수 (선택)
+## 설정
+
+**홈 화면의 "⚙️ 설정" 패널에서 전부 조정할 수 있습니다** — 기본 백엔드, 동시
+실행 수, 작업 제한 시간, Figma 토큰(무료 시트용 REST API 폴백). 저장 위치는
+`data/settings.json`(git 제외)이고, 별도 환경변수 지식 없이 사용 가능합니다.
+
+<details>
+<summary>고급: 환경변수 오버라이드 (스크립트/CI용 — 화면 설정이 우선)</summary>
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|
-| `AGENT_PROVIDER` | `claude-code` | 기본 백엔드 (`claude-code`·`gemini`·`codex`·`mock`) |
-| `MAX_CONCURRENT_JOBS` | `2` | 동시 실행 잡 수 제한 (초과 시 429) |
-| `JOB_TIMEOUT_MS` | `2700000` (45분) | 잡 하드 타임아웃 — 초과 시 자동 중단 |
-| `FIGMA_TOKEN` | - | **Figma 무료 계정 헷징**: MCP를 못 쓰는 환경에서 REST API 폴백 허용 (personal access token은 모든 플랜에서 발급 가능) |
+| `AGENT_PROVIDER` | `claude-code` | 기본 백엔드 |
+| `MAX_CONCURRENT_JOBS` | `2` | 동시 실행 잡 수 제한 |
+| `JOB_TIMEOUT_MS` | `2700000` (45분) | 잡 하드 타임아웃 |
+| `FIGMA_TOKEN` | - | Figma REST API 폴백 토큰 |
 | `CLAUDE_BIN` / `GEMINI_BIN` / `CODEX_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
+
+</details>
 
 ## 트러블슈팅
 

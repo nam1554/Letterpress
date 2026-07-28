@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { buildEdmPrompt } from "./prompt";
+import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult, AgentTask } from "./types";
 
 const CODEX_BIN = process.env.CODEX_BIN ?? "codex";
@@ -88,7 +88,7 @@ export const codexProvider: AgentProvider = {
           prompt,
         ],
         // stdin must be closed: codex exec waits for stdin EOF on a pipe.
-        { cwd: task.workDir, env: process.env, signal, stdio: ["ignore", "pipe", "pipe"] },
+        { cwd: task.workDir, env: agentEnv(), signal, stdio: ["ignore", "pipe", "pipe"] },
       );
 
       let lastMessage = "";

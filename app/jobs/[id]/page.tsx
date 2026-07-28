@@ -251,7 +251,7 @@ export default function JobPage() {
             <span className="text-xs text-zinc-400">{formatSize(a.size)}</span>
             {a.rel.endsWith(".html") && (
               <a
-                href={`/api/jobs/${id}/preview/${a.rel}`}
+                href={`/jobs/${id}/view?file=${encodeURIComponent(a.rel)}`}
                 target="_blank"
                 className="text-blue-600 hover:underline"
               >

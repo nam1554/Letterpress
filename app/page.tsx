@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import SettingsPanel from "./components/SettingsPanel";
 
 interface Job {
   id: string;
@@ -60,15 +61,14 @@ export default function Home() {
     return () => clearInterval(t);
   }, [load]);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function createAndGo(url: string, providerId: string) {
     setError("");
     setSubmitting(true);
     try {
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ figmaUrl, provider }),
+        body: JSON.stringify({ figmaUrl: url, provider: providerId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -79,6 +79,25 @@ export default function Home() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    await createAndGo(figmaUrl, provider);
+  }
+
+  // 삭제는 행 단위 2단계 확인 (브라우저 confirm 다이얼로그 미사용).
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  async function removeJob(id: string) {
+    if (confirmId !== id) {
+      setConfirmId(id);
+      return;
+    }
+    setConfirmId(null);
+    const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+    if (res.ok) void load();
+    else setError((await res.json()).error ?? "삭제 실패");
   }
 
   return (
@@ -162,17 +181,29 @@ export default function Home() {
         {error && <p className="text-sm text-red-600">{error}</p>}
       </form>
 
+      <SettingsPanel onSaved={load} />
+
       <h2 className="mt-12 text-lg font-semibold">작업 히스토리</h2>
       <ul className="mt-4 divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
         {jobs.length === 0 && (
-          <li className="px-4 py-6 text-sm text-zinc-500">아직 작업이 없습니다.</li>
+          <li className="px-4 py-6 text-sm text-zinc-500">
+            아직 작업이 없습니다.
+            <button
+              data-testid="try-mock"
+              onClick={() => createAndGo("https://www.figma.com/design/EXAMPLEfileKey12345678/?node-id=2343-115", "mock")}
+              disabled={submitting}
+              className="ml-3 rounded-lg border border-blue-300 px-3 py-1 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-950"
+            >
+              샘플로 체험해보기 (토큰 소모 없음)
+            </button>
+          </li>
         )}
         {jobs.map((job) => (
-          <li key={job.id}>
-            <a
-              href={`/jobs/${job.id}`}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-            >
+          <li
+            key={job.id}
+            className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+          >
+            <a href={`/jobs/${job.id}`} className="flex min-w-0 flex-1 items-center gap-3">
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[job.status] ?? ""}`}
               >
@@ -183,6 +214,22 @@ export default function Home() {
                 {new Date(job.createdAt).toLocaleString("ko-KR")}
               </span>
             </a>
+            {job.status === "succeeded" && (
+              <a
+                href={`/api/jobs/${job.id}/download`}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                zip
+              </a>
+            )}
+            {job.status !== "running" && job.status !== "queued" && (
+              <button
+                onClick={() => removeJob(job.id)}
+                className="text-xs text-red-500 hover:underline"
+              >
+                {confirmId === job.id ? "정말 삭제?" : "삭제"}
+              </button>
+            )}
           </li>
         ))}
       </ul>

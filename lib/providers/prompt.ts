@@ -1,6 +1,15 @@
 import os from "node:os";
 import path from "node:path";
+import { getSettings } from "../settings";
 import type { AgentTask } from "./types";
+
+/** Extra env for spawned agent CLIs (Figma REST fallback token, if set). */
+export function agentEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const token = getSettings().figmaToken;
+  if (token) env.FIGMA_TOKEN = token;
+  return env;
+}
 
 export const FIGMA_EDM_SKILL_DIR = path.join(os.homedir(), ".claude", "skills", "figma-edm");
 
@@ -44,7 +53,7 @@ ${figmaAccessClause()}
  * API, which personal access tokens can use on any plan.
  */
 function figmaAccessClause(): string {
-  if (!process.env.FIGMA_TOKEN) {
+  if (!getSettings().figmaToken) {
     return `- If Figma access (MCP tools or API) is NOT available in this session, do not
   improvise: print a single line starting with "FATAL:" explaining what is
   missing, and exit.`;
