@@ -4,6 +4,8 @@ export interface AgentEvent {
   ts: number;
   type: AgentEventType;
   text: string;
+  /** 잡 내 단조 증가 시퀀스 — 스토어가 기록 시 부여 (SSE 중복 제거용). */
+  seq?: number;
 }
 
 export interface AgentTask {

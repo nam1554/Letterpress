@@ -58,8 +58,10 @@ export async function GET(
       const history = await readEvents(id);
       for (const e of history) controller.enqueue(sse("agent", e));
       replaying = false;
-      const seen = new Set(history.map((e) => JSON.stringify(e)));
-      for (const e of pending) if (!seen.has(JSON.stringify(e))) push(e);
+      // 리플레이/라이브 경계 중복은 시퀀스로 정확히 자른다. seq 없는 과거
+      // 이벤트는 라인 수가 곧 시퀀스다 (appendEvent가 라인 수 기반으로 이어감).
+      const lastSeq = history.at(-1)?.seq ?? history.length;
+      for (const e of pending) if ((e.seq ?? 0) > lastSeq) push(e);
 
       const current = await getJob(id);
       controller.enqueue(sse("state", current));

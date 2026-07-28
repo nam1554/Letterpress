@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "../providers/types";
@@ -33,10 +33,18 @@ type Listener = (e: AgentEvent) => void;
 interface JobsGlobal {
   listeners: Map<string, Set<Listener>>;
   reconciling: Set<string>;
+  /** 잡별 다음 이벤트 시퀀스 (프로세스 시작 시 파일 라인 수로 초기화). */
+  seqs: Map<string, number>;
 }
 const g = globalThis as unknown as { __jobsGlobal?: JobsGlobal };
-const live: JobsGlobal = (g.__jobsGlobal ??= { listeners: new Map(), reconciling: new Set() });
-live.reconciling ??= new Set(); // field added after first deploys of this global
+const live: JobsGlobal = (g.__jobsGlobal ??= {
+  listeners: new Map(),
+  reconciling: new Set(),
+  seqs: new Map(),
+});
+// fields added after first deploys of this global (HMR keeps the old object)
+live.reconciling ??= new Set();
+live.seqs ??= new Map();
 
 // Job ids are 8-char hex from createJob. Anything else (e.g. an URL-encoded
 // "../" smuggled into a route param) must never reach a filesystem path.
@@ -137,11 +145,30 @@ export async function listJobs(): Promise<Job[]> {
 // One runaway tool-output line must not bloat events.ndjson and every SSE client.
 const MAX_EVENT_TEXT = 4000;
 
+function nextSeq(id: string): number {
+  let current = live.seqs.get(id);
+  if (current === undefined) {
+    // 프로세스 재시작 후 첫 append: 기존 파일 라인 수에서 이어간다.
+    try {
+      current = readFileSync(eventsFile(id), "utf8").split("\n").filter(Boolean).length;
+    } catch {
+      current = 0;
+    }
+  }
+  const next = current + 1;
+  live.seqs.set(id, next);
+  return next;
+}
+
 export function appendEvent(id: string, event: AgentEvent): void {
-  const bounded =
-    event.text.length > MAX_EVENT_TEXT
-      ? { ...event, text: `${event.text.slice(0, MAX_EVENT_TEXT)}… (truncated)` }
-      : event;
+  const bounded: AgentEvent = {
+    ...event,
+    seq: nextSeq(id),
+    text:
+      event.text.length > MAX_EVENT_TEXT
+        ? `${event.text.slice(0, MAX_EVENT_TEXT)}… (truncated)`
+        : event.text,
+  };
   // Sync append keeps event order stable relative to subscriber notification.
   appendFileSync(eventsFile(id), `${JSON.stringify(bounded)}\n`);
   for (const listener of live.listeners.get(id) ?? []) listener(bounded);
@@ -210,5 +237,6 @@ export async function deleteJob(id: string): Promise<boolean> {
   await rm(jobDir(id), { recursive: true, force: true });
   live.reconciling.delete(id);
   live.listeners.delete(id);
+  live.seqs.delete(id);
   return true;
 }

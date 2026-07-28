@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { figmaLabel, formatElapsed, formatSize } from "../../lib/format";
+import { figmaLabel, formatElapsed } from "../../lib/format";
+import ArtifactList, { type Artifact } from "./ArtifactList";
+import LogViewer, { type AgentEvent } from "./LogViewer";
 
 interface Job {
   id: string;
@@ -15,29 +17,12 @@ interface Job {
   finishedAt?: number;
   summary?: string;
 }
-interface Artifact {
-  rel: string;
-  size: number;
-}
-interface AgentEvent {
-  ts: number;
-  type: string;
-  text: string;
-}
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "대기",
   running: "실행 중",
   succeeded: "완료",
   failed: "실패",
-};
-
-const LOG_COLOR: Record<string, string> = {
-  status: "#7dd3c8",
-  tool: "#6b7f7a",
-  error: "#f87171",
-  done: "#4ade80",
-  log: "var(--terminal-ink)",
 };
 
 export default function JobPage() {
@@ -50,7 +35,6 @@ export default function JobPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState("");
   const [notify, setNotify] = useState(false);
-  const logRef = useRef<HTMLDivElement>(null);
   const notifiedRef = useRef(false);
 
   useEffect(() => {
@@ -106,10 +90,6 @@ export default function JobPage() {
       { body: job.title || figmaLabel(job.figmaUrl) },
     );
   }, [job, notify]);
-
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [events]);
 
   const running = !!job && (job.status === "queued" || job.status === "running");
 
@@ -229,22 +209,7 @@ export default function JobPage() {
       )}
 
       <h2 className="eyebrow mt-8">진행 로그</h2>
-      <div
-        ref={logRef}
-        data-testid="log"
-        className="mt-2 h-72 overflow-y-auto rounded-[10px] p-4 font-mono text-xs leading-relaxed"
-        style={{ background: "var(--terminal-bg)", color: "var(--terminal-ink)" }}
-      >
-        {events.length === 0 && <p style={{ opacity: 0.5 }}>이벤트 대기 중…</p>}
-        {events.map((e, i) => (
-          <p key={i} className="whitespace-pre-wrap" style={{ color: LOG_COLOR[e.type] ?? "var(--terminal-ink)" }}>
-            <span className="mr-2" style={{ opacity: 0.45, fontVariantNumeric: "tabular-nums" }}>
-              {new Date(e.ts).toLocaleTimeString("ko-KR", { hour12: false })}
-            </span>
-            {e.text}
-          </p>
-        ))}
-      </div>
+      <LogViewer events={events} />
 
       {job?.summary && (
         <p
@@ -261,49 +226,7 @@ export default function JobPage() {
         </p>
       )}
 
-      <div className="mt-9 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">산출물 ({artifacts.length})</h2>
-        {artifacts.length > 0 && (
-          <a data-testid="download-zip" href={`/api/jobs/${id}/download`} className="btn btn-primary">
-            전체 zip 다운로드
-          </a>
-        )}
-      </div>
-      <ul className="surface-card hairline-list mt-3 overflow-hidden">
-        {artifacts.length === 0 && (
-          <li className="px-5 py-5 text-sm" style={{ color: "var(--muted)" }}>
-            {running ? "작업이 끝나면 여기에 파일이 나타납니다." : "산출물이 없습니다."}
-          </li>
-        )}
-        {artifacts.map((a) => (
-          <li key={a.rel} className="flex items-center gap-3 px-5 py-2.5 text-sm">
-            <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{a.rel}</span>
-            <span
-              className="text-xs"
-              style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}
-            >
-              {formatSize(a.size)}
-            </span>
-            {a.rel.endsWith(".html") && (
-              <a
-                href={`/jobs/${id}/view?file=${encodeURIComponent(a.rel)}`}
-                target="_blank"
-                className="text-xs font-medium hover:underline"
-                style={{ color: "var(--accent)" }}
-              >
-                미리보기
-              </a>
-            )}
-            <a
-              href={`/api/jobs/${id}/download?file=${encodeURIComponent(a.rel)}`}
-              className="text-xs font-medium hover:underline"
-              style={{ color: "var(--accent)" }}
-            >
-              다운로드
-            </a>
-          </li>
-        ))}
-      </ul>
+      <ArtifactList jobId={id} artifacts={artifacts} running={running} />
     </main>
   );
 }

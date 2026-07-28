@@ -71,6 +71,16 @@ describe("job store lifecycle", () => {
     await deleteJob(job.id);
   });
 
+  it("assigns monotonically increasing seq to events", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    appendEvent(job.id, { ts: Date.now(), type: "log", text: "a" });
+    appendEvent(job.id, { ts: Date.now(), type: "log", text: "a" });
+    appendEvent(job.id, { ts: Date.now(), type: "status", text: "b" });
+    const events = await readEvents(job.id);
+    expect(events.map((e) => e.seq)).toEqual([1, 2, 3]);
+    await deleteJob(job.id);
+  });
+
   it("truncates oversized event text", async () => {
     const job = await createJob("https://www.figma.com/design/abc/", "mock");
     appendEvent(job.id, { ts: Date.now(), type: "log", text: "x".repeat(10_000) });
