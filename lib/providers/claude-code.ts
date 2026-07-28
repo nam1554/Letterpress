@@ -1,29 +1,8 @@
 import { spawn } from "node:child_process";
-import type { AgentEvent, AgentProvider, AgentResult, AgentTask } from "./types";
+import { buildEdmPrompt } from "./prompt";
+import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
-
-function buildPrompt(task: AgentTask): string {
-  return `You are converting a Figma eDM design into email HTML.
-
-Figma design URL: ${task.figmaUrl}
-
-Use the "figma-edm" skill and follow its full pipeline (pull the frame via the
-Figma MCP tools, build email-safe table HTML, verify pixel fidelity, add the
-responsive variant). Set EDM_DIR to the current working directory.
-
-Requirements:
-- Write ALL final deliverables into ./output/ (create it):
-  - the Figma-identical HTML (*_figma.html)
-  - the responsive HTML (*_responsive.html)
-  - an images/ folder with every image used, so the HTML can be re-hosted on a CDN
-    (like the reference package: relative <img src="images/...">, plus a
-    self-contained preview variant if the skill produces one)
-- If the Figma MCP tools are NOT available in this session, do not improvise:
-  print a single line starting with "FATAL:" explaining what is missing, and exit.
-- Print short progress lines as you complete each pipeline step.
-- Finish with a one-paragraph summary of what was produced and the verify result.`;
-}
 
 interface StreamLine {
   type?: string;
@@ -65,7 +44,7 @@ export const claudeCodeProvider: AgentProvider = {
   label: "Claude Code (local CLI)",
 
   run(task, onEvent, signal): Promise<AgentResult> {
-    const prompt = task.promptOverride ?? buildPrompt(task);
+    const prompt = task.promptOverride ?? buildEdmPrompt(task, "claude-skill");
 
     // Strip nested-session markers so the spawned CLI behaves like a fresh run.
     const env = { ...process.env };

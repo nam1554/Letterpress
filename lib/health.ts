@@ -12,6 +12,8 @@ export interface HealthCheck {
   detail: string;
   /** How to fix it — shown to teammates when ok=false. */
   hint?: string;
+  /** Optional backends: failure is informational, not a blocker. */
+  optional?: boolean;
 }
 
 const CACHE_MS = 60_000;
@@ -75,12 +77,74 @@ async function checkPythonDeps(): Promise<HealthCheck> {
   }
 }
 
+async function checkGeminiCli(): Promise<HealthCheck> {
+  const name = "Gemini CLI (선택 백엔드)";
+  try {
+    const { stdout } = await execFileAsync(process.env.GEMINI_BIN ?? "gemini", ["--version"], {
+      timeout: 10_000,
+    });
+    const authed = existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json"));
+    return {
+      name,
+      ok: authed,
+      optional: true,
+      detail: authed ? `v${stdout.trim()} · 로그인됨` : `v${stdout.trim()} · 로그인 필요`,
+      hint: authed ? undefined : "터미널에서 `gemini`를 한 번 실행해 구글 계정으로 로그인하세요.",
+    };
+  } catch {
+    return {
+      name,
+      ok: false,
+      optional: true,
+      detail: "미설치",
+      hint: "npm i -g @google/gemini-cli 후 `gemini` 첫 실행에서 구글 로그인",
+    };
+  }
+}
+
+async function checkCodexCli(): Promise<HealthCheck> {
+  const name = "Codex CLI (선택 백엔드)";
+  try {
+    await execFileAsync(process.env.CODEX_BIN ?? "codex", ["--version"], { timeout: 10_000 });
+  } catch {
+    return {
+      name,
+      ok: false,
+      optional: true,
+      detail: "미설치",
+      hint: "npm i -g @openai/codex 후 `codex login` (ChatGPT 계정)",
+    };
+  }
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      process.env.CODEX_BIN ?? "codex",
+      ["login", "status"],
+      { timeout: 10_000 },
+    );
+    const detail = (stdout.trim() || stderr.trim()).split("\n")[0] || "로그인됨";
+    return { name, ok: true, optional: true, detail };
+  } catch {
+    return {
+      name,
+      ok: false,
+      optional: true,
+      detail: "로그인 필요",
+      hint: "터미널에서 `codex login` 실행 (ChatGPT Plus/Pro 계정 브라우저 인증)",
+    };
+  }
+}
+
 export async function runHealthChecks(force = false): Promise<HealthCheck[]> {
   const cached = g.__mhmHealth;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.checks;
 
   const checks = [
-    ...(await Promise.all([checkClaudeCli(), checkPythonDeps()])),
+    ...(await Promise.all([
+      checkClaudeCli(),
+      checkPythonDeps(),
+      checkGeminiCli(),
+      checkCodexCli(),
+    ])),
     checkFigmaEdmSkill(),
     checkChrome(),
   ];

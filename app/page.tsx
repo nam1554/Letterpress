@@ -20,6 +20,7 @@ interface HealthCheck {
   ok: boolean;
   detail: string;
   hint?: string;
+  optional?: boolean;
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -88,7 +89,7 @@ export default function Home() {
         완료 후 HTML과 이미지 폴더를 zip으로 다운로드하세요.
       </p>
 
-      {health && health.some((c) => !c.ok) && (
+      {health && health.some((c) => !c.ok && !c.optional) && (
         <div
           data-testid="health-banner"
           className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950"
@@ -98,7 +99,7 @@ export default function Home() {
           </p>
           <ul className="mt-2 space-y-1 text-amber-800 dark:text-amber-300">
             {health
-              .filter((c) => !c.ok)
+              .filter((c) => !c.ok && !c.optional)
               .map((c) => (
                 <li key={c.name}>
                   <b>{c.name}</b>: {c.detail}
@@ -108,10 +109,22 @@ export default function Home() {
           </ul>
         </div>
       )}
-      {health && health.every((c) => c.ok) && (
+      {health && health.filter((c) => !c.optional).every((c) => c.ok) && (
         <p className="mt-6 text-xs text-green-600 dark:text-green-400" data-testid="health-ok">
           ✓ 환경 점검 통과 (Claude CLI · figma-edm 스킬 · Chrome · Python 의존성)
         </p>
+      )}
+      {health && health.some((c) => !c.ok && c.optional) && (
+        <ul className="mt-2 space-y-0.5 text-xs text-zinc-400" data-testid="health-optional">
+          {health
+            .filter((c) => !c.ok && c.optional)
+            .map((c) => (
+              <li key={c.name}>
+                ○ {c.name}: {c.detail}
+                {c.hint && <span> — {c.hint}</span>}
+              </li>
+            ))}
+        </ul>
       )}
 
       <form onSubmit={submit} className="mt-8 space-y-4">

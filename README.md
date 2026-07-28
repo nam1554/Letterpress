@@ -34,10 +34,18 @@ pnpm dev        # http://localhost:3000
 
 1. 홈에서 Figma 디자인 URL 입력 (`figma.com/design/...?node-id=...`)
 2. 프로바이더 선택 후 "HTML 만들기"
-   - **Claude Code (local CLI)** — 실제 변환. `claude` CLI가 설치·로그인돼 있어야
-     하며, figma-edm 스킬이 Figma MCP에 접근할 수 있어야 합니다.
-     (헤드리스 세션에서 Figma MCP가 빠져 있으면 로그에 FATAL로 표시됩니다)
+   - **Claude Code (local CLI)** — 기본. `claude` CLI 로그인 + claude.ai Figma
+     커넥터 연결 필요. (헤드리스에서 Figma MCP가 빠지면 로그에 FATAL 표시)
+   - **Gemini CLI (Google 계정)** — `npm i -g @google/gemini-cli`, 첫 실행에서
+     구글 로그인. Figma 접근은 `gemini mcp add --transport http figma
+     https://mcp.figma.com/mcp` 등록 후 첫 사용 시 브라우저 OAuth.
+   - **Codex CLI (ChatGPT 구독)** — `npm i -g @openai/codex`, `codex login`.
+     Figma 접근은 `codex mcp add figma --url https://mcp.figma.com/mcp` (등록 시
+     브라우저 OAuth).
    - **Mock** — 토큰 소모 없이 UI/다운로드 플로우 확인용 샘플 산출물
+
+   Gemini/Codex는 figma-edm 스킬 파일을 프롬프트로 읽어 따라가는 **실험적**
+   경로입니다 — 픽셀 검증 PASS 도달 품질은 Claude Code 기준으로 검증돼 있습니다.
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
    전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
 
