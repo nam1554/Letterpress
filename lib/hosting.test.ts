@@ -21,6 +21,14 @@ describe("applyCdnTemplate", () => {
     expect(out).toContain("src='https://cdn.x/b.jpg'");
     expect(out).toContain('src="https://x/c.png"'); // 절대경로는 그대로
   });
+
+  it("tolerates uppercase and spacing around src", () => {
+    const html = `<IMG SRC="images/a.png"><img src = 'images/b.jpg'>`;
+    const { replaced, html: out } = applyCdnTemplate(html, "https://cdn.x/{file}");
+    expect(replaced).toBe(2);
+    expect(out).toContain('SRC="https://cdn.x/a.png"');
+    expect(out).toContain("src = 'https://cdn.x/b.jpg'");
+  });
 });
 
 describe("isValidCdnTemplate", () => {

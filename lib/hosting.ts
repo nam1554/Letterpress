@@ -32,7 +32,8 @@ export function applyCdnTemplate(html: string, template: string): HostingResult 
   const files = new Set<string>();
   let replaced = 0;
   const result = html.replace(
-    /(src=["'])images\/([^"']+)(["'])/g,
+    // 대소문자·공백 관용: src="…", SRC = '…' 모두 허용
+    /(src\s*=\s*["'])images\/([^"']+)(["'])/gi,
     (_m, pre: string, file: string, post: string) => {
       files.add(file);
       replaced += 1;
