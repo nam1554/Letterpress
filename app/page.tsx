@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import SettingsPanel from "./components/SettingsPanel";
+import { parseFigmaUrl } from "@/lib/figma";
 import { figmaLabel, relativeTime } from "./lib/format";
 
 interface Job {
@@ -33,24 +34,8 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "실패",
 };
 
-/** 입력 URL을 클라이언트에서도 가볍게 파싱해 즉시 피드백을 준다. */
-function parseClientFigmaUrl(input: string) {
-  try {
-    const u = new URL(input.trim());
-    if (!/(^|\.)figma\.com$/.test(u.hostname)) return null;
-    const m = u.pathname.match(/^\/(design|file|proto)\/([A-Za-z0-9]+)(?:\/([^/]*))?/);
-    if (!m) return null;
-    let title = "";
-    try {
-      title = m[3] ? decodeURIComponent(m[3]).replace(/-/g, " ").trim() : "";
-    } catch {
-      title = m[3] ?? "";
-    }
-    return { fileKey: m[2], nodeId: u.searchParams.get("node-id"), title };
-  } catch {
-    return null;
-  }
-}
+// URL 파싱은 서버와 동일한 lib/figma.parseFigmaUrl을 그대로 사용한다
+// (순수 함수라 클라이언트 번들에서도 동작 — 검증 규칙이 항상 일치).
 
 export default function Home() {
   const router = useRouter();
@@ -76,7 +61,7 @@ export default function Home() {
   }
 
   const parsed = useMemo(
-    () => (figmaUrl.trim() ? parseClientFigmaUrl(figmaUrl) : undefined),
+    () => (figmaUrl.trim() ? parseFigmaUrl(figmaUrl) : undefined),
     [figmaUrl],
   );
 
@@ -139,6 +124,26 @@ export default function Home() {
   const requiredFails = health?.filter((c) => !c.ok && !c.optional) ?? [];
   const optionalFails = health?.filter((c) => !c.ok && c.optional) ?? [];
 
+  async function recheckHealth() {
+    setHealth(null);
+    try {
+      const res = await fetch("/api/health?force=1");
+      setHealth((await res.json()).checks);
+    } catch {
+      /* 표시 유지 */
+    }
+  }
+  const recheckButton = (
+    <button
+      data-testid="health-recheck"
+      onClick={recheckHealth}
+      className="ml-2 hover:underline"
+      style={{ color: "var(--muted)" }}
+    >
+      다시 점검
+    </button>
+  );
+
   return (
     <main className="mx-auto max-w-2xl px-6 py-14">
       <header className="flex items-baseline gap-3">
@@ -175,11 +180,13 @@ export default function Home() {
               </li>
             ))}
           </ul>
+          <p className="mt-2 text-xs">{recheckButton}</p>
         </div>
       )}
       {health && requiredFails.length === 0 && (
         <p className="mt-5 text-xs" data-testid="health-ok" style={{ color: "var(--ok)" }}>
           ✓ 환경 점검 통과 — Claude CLI · figma-edm 스킬 · Chrome · Python
+          {recheckButton}
         </p>
       )}
       {optionalFails.length > 0 && (
@@ -216,7 +223,9 @@ export default function Home() {
           {parsed && (
             <p className="mt-1.5 text-xs" data-testid="url-parsed" style={{ color: "var(--ok)" }}>
               ✓ {parsed.title || parsed.fileKey}
-              {parsed.nodeId ? ` · 노드 ${parsed.nodeId}` : " · 노드 미지정 (URL에 node-id 권장)"}
+              {parsed.nodeId
+                ? ` · 노드 ${parsed.nodeId.replace(/:/g, "-")}`
+                : " · 노드 미지정 (URL에 node-id 권장)"}
             </p>
           )}
         </div>

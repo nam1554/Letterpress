@@ -28,12 +28,25 @@ export function runJsonlCli(opts: {
   onText: (raw: string) => void;
 }): Promise<JsonlCliResult> {
   return new Promise((resolve) => {
+    // detached: 자체 프로세스 그룹으로 띄운다. CLI들은 래퍼(shim)가 실제
+    // 바이너리를 다시 spawn하므로, 취소/서버 종료 시 직계 자식만 죽이면
+    // 손자가 고아로 살아남아 토큰을 계속 소모한다 → 그룹 전체에 SIGTERM.
     const child = spawn(opts.bin, opts.args, {
       cwd: opts.cwd,
       env: opts.env,
-      signal: opts.signal,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    const killGroup = () => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    };
+    opts.signal.addEventListener("abort", killGroup, { once: true });
 
     let stderrTail = "";
     let buffer = "";
@@ -41,6 +54,7 @@ export function runJsonlCli(opts: {
     const settle = (result: JsonlCliResult) => {
       if (settled) return;
       settled = true;
+      opts.signal.removeEventListener("abort", killGroup);
       resolve(result);
     };
 
