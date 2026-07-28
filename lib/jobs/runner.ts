@@ -3,10 +3,19 @@ import type { AgentEvent } from "../providers/types";
 import { liveControllers } from "./live";
 import { appendEvent, updateJob, workDir, type Job } from "./store";
 
+// A runaway agent must not run forever. Full pipeline is typically 10-25 min.
+const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS ?? 45 * 60_000);
+
 /** Fire-and-forget: runs the job's provider and records lifecycle events. */
 export function startJob(job: Job, promptOverride?: string): void {
   const controller = new AbortController();
   liveControllers.set(job.id, controller);
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, JOB_TIMEOUT_MS);
 
   const emit = (e: AgentEvent) => appendEvent(job.id, e);
 
@@ -31,22 +40,28 @@ export function startJob(job: Job, promptOverride?: string): void {
         controller.signal,
       );
 
+      const summary = timedOut
+        ? `제한 시간(${Math.round(JOB_TIMEOUT_MS / 60_000)}분)을 초과해 중단되었습니다.`
+        : result.summary;
+      const ok = result.ok && !timedOut;
       await updateJob(job.id, {
-        status: result.ok ? "succeeded" : "failed",
+        status: ok ? "succeeded" : "failed",
         finishedAt: Date.now(),
-        summary: result.summary,
+        summary,
       });
       emit({
         ts: Date.now(),
-        type: result.ok ? "done" : "error",
-        text: result.ok ? `완료: ${result.summary}` : `실패: ${result.summary}`,
+        type: ok ? "done" : "error",
+        text: ok ? `완료: ${summary}` : `실패: ${summary}`,
       });
     } catch (err) {
-      const message = controller.signal.aborted
-        ? "사용자가 취소했습니다."
-        : err instanceof Error
-          ? err.message
-          : String(err);
+      const message = timedOut
+        ? `제한 시간(${Math.round(JOB_TIMEOUT_MS / 60_000)}분)을 초과해 중단되었습니다.`
+        : controller.signal.aborted
+          ? "사용자가 취소했습니다."
+          : err instanceof Error
+            ? err.message
+            : String(err);
       await updateJob(job.id, {
         status: "failed",
         finishedAt: Date.now(),
@@ -54,9 +69,15 @@ export function startJob(job: Job, promptOverride?: string): void {
       });
       emit({ ts: Date.now(), type: "error", text: `실패: ${message}` });
     } finally {
+      clearTimeout(timer);
       liveControllers.delete(job.id);
     }
   })();
+}
+
+/** Number of jobs currently executing in this process. */
+export function runningJobCount(): number {
+  return liveControllers.size;
 }
 
 export function cancelJob(id: string): boolean {

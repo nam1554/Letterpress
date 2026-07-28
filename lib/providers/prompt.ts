@@ -33,9 +33,28 @@ Requirements:
   - an images/ folder with every image used, so the HTML can be re-hosted on a CDN
     (like the reference package: relative <img src="images/...">, plus a
     self-contained preview variant if the skill produces one)
-- If Figma access (MCP tools or API) is NOT available in this session, do not
-  improvise: print a single line starting with "FATAL:" explaining what is
-  missing, and exit.
+${figmaAccessClause()}
 - Print short progress lines as you complete each pipeline step.
 - Finish with a one-paragraph summary of what was produced and the verify result.`;
+}
+
+/**
+ * Hedge for machines without Figma MCP (e.g. free Figma seats): when the app
+ * is started with FIGMA_TOKEN set, the agent may fall back to the Figma REST
+ * API, which personal access tokens can use on any plan.
+ */
+function figmaAccessClause(): string {
+  if (!process.env.FIGMA_TOKEN) {
+    return `- If Figma access (MCP tools or API) is NOT available in this session, do not
+  improvise: print a single line starting with "FATAL:" explaining what is
+  missing, and exit.`;
+  }
+  return `- Prefer Figma MCP tools if available. If they are NOT available, fall back to
+  the Figma REST API using the FIGMA_TOKEN environment variable
+  (header "X-Figma-Token: $FIGMA_TOKEN"):
+  - node structure/text/colors: GET https://api.figma.com/v1/files/:fileKey/nodes?ids=:nodeId
+  - rendered images: GET https://api.figma.com/v1/images/:fileKey?ids=:nodeId&format=png&scale=2
+  Use the rendered node image as the pixel-verify reference (figma_full.png).
+- If neither MCP nor the REST API works, print a single line starting with
+  "FATAL:" explaining what is missing, and exit.`;
 }

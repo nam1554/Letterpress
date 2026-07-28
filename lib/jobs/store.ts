@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "../providers/types";
 import { liveControllers } from "./live";
@@ -23,24 +23,38 @@ export interface Artifact {
   size: number;
 }
 
-const DATA_DIR = path.join(process.cwd(), "data", "jobs");
+// Env override exists for tests (vitest sets a tmp dir).
+const dataDir = () => process.env.MHM_DATA_DIR ?? path.join(process.cwd(), "data", "jobs");
 
 // Survive Next dev HMR module reloads: keep live state on globalThis.
 type Listener = (e: AgentEvent) => void;
 interface JobsGlobal {
   listeners: Map<string, Set<Listener>>;
+  reconciling: Set<string>;
 }
 const g = globalThis as unknown as { __jobsGlobal?: JobsGlobal };
-const live: JobsGlobal = (g.__jobsGlobal ??= { listeners: new Map() });
+const live: JobsGlobal = (g.__jobsGlobal ??= { listeners: new Map(), reconciling: new Set() });
+live.reconciling ??= new Set(); // field added after first deploys of this global
 
-export const jobDir = (id: string) => path.join(DATA_DIR, id);
+// Job ids are 8-char hex from createJob. Anything else (e.g. an URL-encoded
+// "../" smuggled into a route param) must never reach a filesystem path.
+const VALID_ID = /^[0-9a-f]{8}$/;
+
+export const jobDir = (id: string) => {
+  if (!VALID_ID.test(id)) throw new Error(`invalid job id: ${JSON.stringify(id)}`);
+  return path.join(dataDir(), id);
+};
 export const workDir = (id: string) => path.join(jobDir(id), "work");
 export const outputDir = (id: string) => path.join(workDir(id), "output");
 const jobFile = (id: string) => path.join(jobDir(id), "job.json");
 const eventsFile = (id: string) => path.join(jobDir(id), "events.ndjson");
 
 async function persist(job: Job): Promise<void> {
-  await writeFile(jobFile(job.id), JSON.stringify(job, null, 2));
+  // Atomic write: a reader must never see a half-written job.json.
+  // Unique tmp name: concurrent writers must not rename each other's file away.
+  const tmp = `${jobFile(job.id)}.${randomUUID().slice(0, 8)}.tmp`;
+  await writeFile(tmp, JSON.stringify(job, null, 2));
+  await rename(tmp, jobFile(job.id));
 }
 
 export async function createJob(figmaUrl: string, provider: string): Promise<Job> {
@@ -68,6 +82,9 @@ async function reconcile(job: Job): Promise<Job> {
   const active = job.status === "queued" || job.status === "running";
   if (!active || liveControllers.has(job.id)) return job;
   if (Date.now() - job.createdAt < STALE_GRACE_MS) return job;
+  // Concurrent reads must not each persist + append a duplicate error event.
+  if (live.reconciling.has(job.id)) return job;
+  live.reconciling.add(job.id);
 
   const failed: Job = {
     ...job,
@@ -102,18 +119,25 @@ export async function updateJob(id: string, patch: Partial<Job>): Promise<Job | 
 }
 
 export async function listJobs(): Promise<Job[]> {
-  if (!existsSync(DATA_DIR)) return [];
-  const ids = await readdir(DATA_DIR);
+  if (!existsSync(dataDir())) return [];
+  const ids = await readdir(dataDir());
   const jobs = await Promise.all(ids.map(getJob));
   return jobs
     .filter((j): j is Job => j !== null)
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+// One runaway tool-output line must not bloat events.ndjson and every SSE client.
+const MAX_EVENT_TEXT = 4000;
+
 export function appendEvent(id: string, event: AgentEvent): void {
+  const bounded =
+    event.text.length > MAX_EVENT_TEXT
+      ? { ...event, text: `${event.text.slice(0, MAX_EVENT_TEXT)}… (truncated)` }
+      : event;
   // Sync append keeps event order stable relative to subscriber notification.
-  appendFileSync(eventsFile(id), `${JSON.stringify(event)}\n`);
-  for (const listener of live.listeners.get(id) ?? []) listener(event);
+  appendFileSync(eventsFile(id), `${JSON.stringify(bounded)}\n`);
+  for (const listener of live.listeners.get(id) ?? []) listener(bounded);
 }
 
 export async function readEvents(id: string): Promise<AgentEvent[]> {
@@ -161,7 +185,12 @@ export async function listArtifacts(id: string): Promise<Artifact[]> {
 
 /** Resolve an artifact file path safely inside the job's output dir. */
 export function resolveArtifact(id: string, rel: string): string | null {
-  const base = outputDir(id);
+  let base: string;
+  try {
+    base = outputDir(id);
+  } catch {
+    return null;
+  }
   const full = path.resolve(base, rel);
   // Must be strictly inside output/ — the dir itself is not a servable file.
   if (!full.startsWith(base + path.sep)) return null;
@@ -172,5 +201,7 @@ export function resolveArtifact(id: string, rel: string): string | null {
 export async function deleteJob(id: string): Promise<boolean> {
   if (liveControllers.has(id)) return false;
   await rm(jobDir(id), { recursive: true, force: true });
+  live.reconciling.delete(id);
+  live.listeners.delete(id);
   return true;
 }

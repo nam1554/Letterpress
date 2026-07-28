@@ -49,6 +49,16 @@ pnpm dev        # http://localhost:3000
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
    전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
 
+## 환경변수 (선택)
+
+| 변수 | 기본값 | 용도 |
+|---|---|---|
+| `AGENT_PROVIDER` | `claude-code` | 기본 백엔드 (`claude-code`·`gemini`·`codex`·`mock`) |
+| `MAX_CONCURRENT_JOBS` | `2` | 동시 실행 잡 수 제한 (초과 시 429) |
+| `JOB_TIMEOUT_MS` | `2700000` (45분) | 잡 하드 타임아웃 — 초과 시 자동 중단 |
+| `FIGMA_TOKEN` | - | **Figma 무료 계정 헷징**: MCP를 못 쓰는 환경에서 REST API 폴백 허용 (personal access token은 모든 플랜에서 발급 가능) |
+| `CLAUDE_BIN` / `GEMINI_BIN` / `CODEX_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
+
 ## 트러블슈팅
 
 | 증상 | 원인 / 해결 |

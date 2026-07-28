@@ -26,3 +26,13 @@ export function parseFigmaUrl(input: string): FigmaRef | null {
 
   return { url: url.toString(), fileKey: match[2], nodeId };
 }
+
+/**
+ * Rebuild the URL from the extracted fileKey/nodeId only. The result is what
+ * gets interpolated into agent prompts — arbitrary user-typed URL contents
+ * (file name slug, extra query params) never reach the prompt.
+ */
+export function canonicalFigmaUrl(ref: FigmaRef): string {
+  const node = ref.nodeId ? `?node-id=${ref.nodeId.replace(/:/g, "-")}` : "";
+  return `https://www.figma.com/design/${ref.fileKey}/${node}`;
+}
