@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
+import { runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
 
-interface StreamLine {
+// claude -p --output-format stream-json line shapes (subset we care about).
+export interface ClaudeStreamLine {
   type?: string;
   subtype?: string;
   result?: string;
@@ -13,7 +14,8 @@ interface StreamLine {
   };
 }
 
-function eventsFromLine(line: StreamLine): AgentEvent[] {
+/** Exported for unit tests. */
+export function claudeEventsFromLine(line: ClaudeStreamLine): AgentEvent[] {
   const now = Date.now();
   const events: AgentEvent[] = [];
   if (line.type === "system" && line.subtype === "init") {
@@ -43,7 +45,7 @@ export const claudeCodeProvider: AgentProvider = {
   id: "claude-code",
   label: "Claude Code (local CLI)",
 
-  run(task, onEvent, signal): Promise<AgentResult> {
+  async run(task, onEvent, signal): Promise<AgentResult> {
     const prompt = task.promptOverride ?? buildEdmPrompt(task, "claude-skill");
 
     // Strip nested-session markers so the spawned CLI behaves like a fresh run.
@@ -51,72 +53,48 @@ export const claudeCodeProvider: AgentProvider = {
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
 
-    return new Promise((resolve) => {
-      const child = spawn(
-        CLAUDE_BIN,
-        [
-          "-p",
-          prompt,
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          "--permission-mode",
-          "bypassPermissions",
-        ],
-        { cwd: task.workDir, env, signal },
-      );
+    let resultText = "";
+    let sawSuccess = false;
 
-      let resultText = "";
-      let sawSuccess = false;
-      let stderrTail = "";
-      let buffer = "";
-
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        buffer += chunk;
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const raw of lines) {
-          if (!raw.trim()) continue;
-          let parsed: StreamLine;
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            onEvent({ ts: Date.now(), type: "log", text: raw });
-            continue;
-          }
-          if (parsed.type === "result") {
-            sawSuccess = parsed.subtype === "success";
-            resultText = parsed.result ?? "";
-          }
-          for (const e of eventsFromLine(parsed)) onEvent(e);
+    const result = await runJsonlCli({
+      bin: CLAUDE_BIN,
+      args: [
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "bypassPermissions",
+      ],
+      cwd: task.workDir,
+      env,
+      signal,
+      onJson: (obj) => {
+        const line = obj as ClaudeStreamLine;
+        if (line.type === "result") {
+          sawSuccess = line.subtype === "success";
+          resultText = line.result ?? "";
         }
-      });
-
-      child.stderr.setEncoding("utf8");
-      child.stderr.on("data", (chunk: string) => {
-        stderrTail = (stderrTail + chunk).slice(-2000);
-      });
-
-      child.on("error", (err) => {
-        if (signal.aborted) {
-          resolve({ ok: false, summary: "사용자가 취소했습니다." });
-          return;
-        }
-        onEvent({ ts: Date.now(), type: "error", text: `claude 실행 실패: ${err.message}` });
-        resolve({ ok: false, summary: `claude CLI를 실행할 수 없습니다: ${err.message}` });
-      });
-
-      child.on("close", (code) => {
-        const fatal = resultText.startsWith("FATAL:");
-        const ok = code === 0 && sawSuccess && !fatal;
-        resolve({
-          ok,
-          summary: ok
-            ? resultText || "완료"
-            : resultText || stderrTail || `종료 코드 ${code}`,
-        });
-      });
+        for (const e of claudeEventsFromLine(line)) onEvent(e);
+      },
+      onText: (raw) => onEvent({ ts: Date.now(), type: "log", text: raw }),
     });
+
+    if (result.kind === "aborted") return { ok: false, summary: "사용자가 취소했습니다." };
+    if (result.kind === "spawn-error") {
+      const message = result.error?.message ?? "unknown";
+      onEvent({ ts: Date.now(), type: "error", text: `claude 실행 실패: ${message}` });
+      return { ok: false, summary: `claude CLI를 실행할 수 없습니다: ${message}` };
+    }
+
+    const fatal = resultText.startsWith("FATAL:");
+    const ok = result.code === 0 && sawSuccess && !fatal;
+    return {
+      ok,
+      summary: ok
+        ? resultText || "완료"
+        : resultText || result.stderrTail || `종료 코드 ${result.code}`,
+    };
   },
 };
