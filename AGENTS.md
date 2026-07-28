@@ -36,7 +36,11 @@ no auth, single user, filesystem is the database.
   `seq`.
 - **UI**: token-based light/dark design system in `app/globals.css` (petrol
   accent; components never branch on theme). Job page split into
-  `LogViewer`/`ArtifactList`.
+  `LogViewer`/`ArtifactList`/`SendPrep`/`VerifyReport`.
+- **Send-prep**: `lib/hosting.ts` (CDN URL template → hosted/ variants),
+  `lib/email-check.ts` (static pre-send checks), `lib/verify.ts` (pixel-verify
+  image allowlist). Routes: `POST /api/jobs/:id/hosting`,
+  `GET /api/jobs/:id/check?file=`, `GET /api/jobs/:id/verify/:name`.
 
 ## Verification habits
 
