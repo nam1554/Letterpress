@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const job = await createJob(canonicalFigmaUrl(ref), providerId);
+  const job = await createJob(canonicalFigmaUrl(ref), providerId, ref.title);
   startJob(job);
   return NextResponse.json({ job }, { status: 201 });
 }

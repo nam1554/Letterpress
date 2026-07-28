@@ -2,6 +2,8 @@ export interface FigmaRef {
   url: string;
   fileKey: string;
   nodeId?: string;
+  /** 사람이 읽을 파일명 (URL 슬러그, e.g. "AISURFER_상품소개서-eDM"). */
+  title?: string;
 }
 
 /**
@@ -17,14 +19,22 @@ export function parseFigmaUrl(input: string): FigmaRef | null {
   }
   if (!/(^|\.)figma\.com$/.test(url.hostname)) return null;
 
-  const match = url.pathname.match(/^\/(design|file|proto)\/([A-Za-z0-9]+)(\/|$)/);
+  const match = url.pathname.match(/^\/(design|file|proto)\/([A-Za-z0-9]+)(?:\/([^/]*))?/);
   if (!match) return null;
 
   const nodeIdRaw = url.searchParams.get("node-id") ?? undefined;
   // Figma uses "2343-115" in URLs for node "2343:115"
   const nodeId = nodeIdRaw?.replace(/-/g, ":");
 
-  return { url: url.toString(), fileKey: match[2], nodeId };
+  let title: string | undefined;
+  try {
+    title = match[3] ? decodeURIComponent(match[3]).replace(/-/g, " ").trim() : undefined;
+  } catch {
+    title = match[3];
+  }
+  if (!title) title = undefined;
+
+  return { url: url.toString(), fileKey: match[2], nodeId, title };
 }
 
 /**

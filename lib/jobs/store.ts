@@ -10,6 +10,8 @@ export type JobStatus = "queued" | "running" | "succeeded" | "failed";
 export interface Job {
   id: string;
   figmaUrl: string;
+  /** 사람이 알아볼 이름 — Figma URL의 파일명 슬러그에서 추출. */
+  title?: string;
   provider: string;
   status: JobStatus;
   createdAt: number;
@@ -57,10 +59,15 @@ async function persist(job: Job): Promise<void> {
   await rename(tmp, jobFile(job.id));
 }
 
-export async function createJob(figmaUrl: string, provider: string): Promise<Job> {
+export async function createJob(
+  figmaUrl: string,
+  provider: string,
+  title?: string,
+): Promise<Job> {
   const job: Job = {
     id: randomUUID().slice(0, 8),
     figmaUrl,
+    title,
     provider,
     status: "queued",
     createdAt: Date.now(),

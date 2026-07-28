@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import SettingsPanel from "./components/SettingsPanel";
+import { figmaLabel, relativeTime } from "./lib/format";
 
 interface Job {
   id: string;
   figmaUrl: string;
+  title?: string;
   provider: string;
   status: string;
   createdAt: number;
@@ -24,12 +26,31 @@ interface HealthCheck {
   optional?: boolean;
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  queued: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
-  running: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",
-  succeeded: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200",
-  failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200",
+const STATUS_LABEL: Record<string, string> = {
+  queued: "대기",
+  running: "실행 중",
+  succeeded: "완료",
+  failed: "실패",
 };
+
+/** 입력 URL을 클라이언트에서도 가볍게 파싱해 즉시 피드백을 준다. */
+function parseClientFigmaUrl(input: string) {
+  try {
+    const u = new URL(input.trim());
+    if (!/(^|\.)figma\.com$/.test(u.hostname)) return null;
+    const m = u.pathname.match(/^\/(design|file|proto)\/([A-Za-z0-9]+)(?:\/([^/]*))?/);
+    if (!m) return null;
+    let title = "";
+    try {
+      title = m[3] ? decodeURIComponent(m[3]).replace(/-/g, " ").trim() : "";
+    } catch {
+      title = m[3] ?? "";
+    }
+    return { fileKey: m[2], nodeId: u.searchParams.get("node-id"), title };
+  } catch {
+    return null;
+  }
+}
 
 export default function Home() {
   const router = useRouter();
@@ -40,6 +61,12 @@ export default function Home() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [health, setHealth] = useState<HealthCheck[] | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  const parsed = useMemo(
+    () => (figmaUrl.trim() ? parseClientFigmaUrl(figmaUrl) : undefined),
+    [figmaUrl],
+  );
 
   const load = useCallback(async () => {
     const res = await fetch("/api/jobs");
@@ -86,9 +113,6 @@ export default function Home() {
     await createAndGo(figmaUrl, provider);
   }
 
-  // 삭제는 행 단위 2단계 확인 (브라우저 confirm 다이얼로그 미사용).
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-
   async function removeJob(id: string) {
     if (confirmId !== id) {
       setConfirmId(id);
@@ -100,68 +124,96 @@ export default function Home() {
     else setError((await res.json()).error ?? "삭제 실패");
   }
 
+  const requiredFails = health?.filter((c) => !c.ok && !c.optional) ?? [];
+  const optionalFails = health?.filter((c) => !c.ok && c.optional) ?? [];
+
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 font-sans">
-      <h1 className="text-3xl font-bold tracking-tight">Marketing HTML Maker</h1>
-      <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-        Figma eDM 디자인 링크를 붙여넣으면 에이전트가 이메일 HTML로 변환합니다.
-        완료 후 HTML과 이미지 폴더를 zip으로 다운로드하세요.
+    <main className="mx-auto max-w-2xl px-6 py-14">
+      <header className="flex items-baseline gap-3">
+        <h1 className="text-[28px] font-bold tracking-tight" style={{ textWrap: "balance" }}>
+          Marketing HTML Maker
+        </h1>
+        <span className="text-sm" style={{ color: "var(--muted)" }}>
+          Figma → eDM HTML
+        </span>
+      </header>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+        Figma 디자인 링크를 붙여넣으면 에이전트가 픽셀 검증까지 마친 이메일
+        HTML을 만들어 드립니다. 완료 후 HTML + 이미지 폴더를 zip으로 받으세요.
       </p>
 
-      {health && health.some((c) => !c.ok && !c.optional) && (
+      {requiredFails.length > 0 && (
         <div
           data-testid="health-banner"
-          className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950"
+          className="surface-card mt-6 p-4 text-sm"
+          style={{ borderColor: "var(--warn)", background: "var(--warn-soft)" }}
         >
-          <p className="font-semibold text-amber-800 dark:text-amber-200">
+          <p className="font-semibold" style={{ color: "var(--warn)" }}>
             환경 점검이 필요합니다 — 변환이 실패할 수 있어요
           </p>
-          <ul className="mt-2 space-y-1 text-amber-800 dark:text-amber-300">
-            {health
-              .filter((c) => !c.ok && !c.optional)
-              .map((c) => (
-                <li key={c.name}>
-                  <b>{c.name}</b>: {c.detail}
-                  {c.hint && <span className="block text-xs opacity-80">→ {c.hint}</span>}
-                </li>
-              ))}
+          <ul className="mt-2 space-y-1.5">
+            {requiredFails.map((c) => (
+              <li key={c.name}>
+                <b>{c.name}</b>: {c.detail}
+                {c.hint && (
+                  <span className="block text-xs" style={{ color: "var(--muted)" }}>
+                    → {c.hint}
+                  </span>
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       )}
-      {health && health.filter((c) => !c.optional).every((c) => c.ok) && (
-        <p className="mt-6 text-xs text-green-600 dark:text-green-400" data-testid="health-ok">
-          ✓ 환경 점검 통과 (Claude CLI · figma-edm 스킬 · Chrome · Python 의존성)
+      {health && requiredFails.length === 0 && (
+        <p className="mt-5 text-xs" data-testid="health-ok" style={{ color: "var(--ok)" }}>
+          ✓ 환경 점검 통과 — Claude CLI · figma-edm 스킬 · Chrome · Python
         </p>
       )}
-      {health && health.some((c) => !c.ok && c.optional) && (
-        <ul className="mt-2 space-y-0.5 text-xs text-zinc-400" data-testid="health-optional">
-          {health
-            .filter((c) => !c.ok && c.optional)
-            .map((c) => (
-              <li key={c.name}>
-                ○ {c.name}: {c.detail}
-                {c.hint && <span> — {c.hint}</span>}
-              </li>
-            ))}
+      {optionalFails.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5 text-xs" data-testid="health-optional" style={{ color: "var(--muted)" }}>
+          {optionalFails.map((c) => (
+            <li key={c.name}>
+              ○ {c.name}: {c.detail}
+              {c.hint && <span> — {c.hint}</span>}
+            </li>
+          ))}
         </ul>
       )}
 
-      <form onSubmit={submit} className="mt-8 space-y-4">
-        <input
-          data-testid="figma-url"
-          type="url"
-          required
-          value={figmaUrl}
-          onChange={(e) => setFigmaUrl(e.target.value)}
-          placeholder="https://www.figma.com/design/…?node-id=2343-115"
-          className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
-        />
+      <form onSubmit={submit} className="surface-card mt-8 space-y-4 p-5">
+        <div>
+          <label className="eyebrow" htmlFor="figma-url">
+            Figma 디자인 URL
+          </label>
+          <input
+            id="figma-url"
+            data-testid="figma-url"
+            type="url"
+            required
+            value={figmaUrl}
+            onChange={(e) => setFigmaUrl(e.target.value)}
+            placeholder="https://www.figma.com/design/…?node-id=2343-115"
+            className="input mt-1.5 font-mono text-[13px]"
+          />
+          {parsed === null && (
+            <p className="mt-1.5 text-xs" style={{ color: "var(--err)" }}>
+              Figma 디자인 URL 형식이 아닙니다 (figma.com/design/… 링크를 붙여넣으세요)
+            </p>
+          )}
+          {parsed && (
+            <p className="mt-1.5 text-xs" data-testid="url-parsed" style={{ color: "var(--ok)" }}>
+              ✓ {parsed.title || parsed.fileKey}
+              {parsed.nodeId ? ` · 노드 ${parsed.nodeId}` : " · 노드 미지정 (URL에 node-id 권장)"}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <select
             data-testid="provider"
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="input w-auto"
           >
             {providers.map((p) => (
               <option key={p.id} value={p.id}>
@@ -172,52 +224,77 @@ export default function Home() {
           <button
             data-testid="submit"
             type="submit"
-            disabled={submitting}
-            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={submitting || parsed === null}
+            className="btn btn-primary shrink-0 whitespace-nowrap"
           >
             {submitting ? "생성 중…" : "HTML 만들기"}
           </button>
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm" style={{ color: "var(--err)" }}>
+            {error}
+          </p>
+        )}
       </form>
 
       <SettingsPanel onSaved={load} />
 
-      <h2 className="mt-12 text-lg font-semibold">작업 히스토리</h2>
-      <ul className="mt-4 divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+      <div className="mt-12 flex items-baseline justify-between">
+        <h2 className="text-lg font-semibold">작업 히스토리</h2>
+        <span className="text-xs" style={{ color: "var(--muted)" }}>
+          {jobs.length > 0 && `${jobs.length}건`}
+        </span>
+      </div>
+      <ul className="surface-card hairline-list mt-3 overflow-hidden">
         {jobs.length === 0 && (
-          <li className="px-4 py-6 text-sm text-zinc-500">
+          <li className="px-5 py-6 text-sm" style={{ color: "var(--muted)" }}>
             아직 작업이 없습니다.
             <button
               data-testid="try-mock"
-              onClick={() => createAndGo("https://www.figma.com/design/EXAMPLEfileKey12345678/?node-id=2343-115", "mock")}
+              onClick={() =>
+                createAndGo(
+                  "https://www.figma.com/design/EXAMPLEfileKey12345678/?node-id=2343-115",
+                  "mock",
+                )
+              }
               disabled={submitting}
-              className="ml-3 rounded-lg border border-blue-300 px-3 py-1 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-950"
+              className="btn btn-ghost ml-3 !py-1 text-xs"
+              style={{ color: "var(--accent)" }}
             >
               샘플로 체험해보기 (토큰 소모 없음)
             </button>
           </li>
         )}
         {jobs.map((job) => (
-          <li
-            key={job.id}
-            className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-          >
+          <li key={job.id} className="flex items-center gap-3 px-5 py-3.5">
             <a href={`/jobs/${job.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[job.status] ?? ""}`}
-              >
-                {job.status}
+              <span className={`pill pill-${job.status}`}>
+                {STATUS_LABEL[job.status] ?? job.status}
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm">{job.figmaUrl}</span>
-              <span className="text-xs text-zinc-400">
-                {new Date(job.createdAt).toLocaleString("ko-KR")}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">
+                  {job.title || figmaLabel(job.figmaUrl)}
+                </span>
+                <span
+                  className="block truncate font-mono text-[11px]"
+                  style={{ color: "var(--muted)" }}
+                >
+                  {job.title ? `${figmaLabel(job.figmaUrl)} · ` : ""}
+                  {job.provider}
+                </span>
+              </span>
+              <span
+                className="shrink-0 text-xs"
+                style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}
+              >
+                {relativeTime(job.createdAt)}
               </span>
             </a>
             {job.status === "succeeded" && (
               <a
                 href={`/api/jobs/${job.id}/download`}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs font-medium hover:underline"
+                style={{ color: "var(--accent)" }}
               >
                 zip
               </a>
@@ -225,7 +302,8 @@ export default function Home() {
             {job.status !== "running" && job.status !== "queued" && (
               <button
                 onClick={() => removeJob(job.id)}
-                className="text-xs text-red-500 hover:underline"
+                className="text-xs hover:underline"
+                style={{ color: "var(--err)" }}
               >
                 {confirmId === job.id ? "정말 삭제?" : "삭제"}
               </button>
