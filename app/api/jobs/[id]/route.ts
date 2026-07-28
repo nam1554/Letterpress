@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteJob, getJob, listArtifacts } from "@/lib/jobs/store";
+import { listVerifyFiles } from "@/lib/verify";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,11 @@ export async function GET(
   const { id } = await params;
   const job = await getJob(id);
   if (!job) return NextResponse.json({ error: "작업을 찾을 수 없습니다." }, { status: 404 });
-  return NextResponse.json({ job, artifacts: await listArtifacts(id) });
+  return NextResponse.json({
+    job,
+    artifacts: await listArtifacts(id),
+    verifyFiles: listVerifyFiles(id),
+  });
 }
 
 export async function DELETE(

@@ -76,6 +76,10 @@ export const mockProvider: AgentProvider = {
     await writeFile(path.join(outDir, "edm_figma.html"), sampleHtml(task.figmaUrl, false));
     await writeFile(path.join(outDir, "edm_responsive.html"), sampleHtml(task.figmaUrl, true));
     await writeFile(path.join(imgDir, "logo.png"), SAMPLE_PNG);
+    // 실제 파이프라인이 작업 루트에 남기는 검증 이미지도 흉내낸다 (리포트 UI 확인용).
+    for (const name of ["side_by_side.png", "diff_heat.png", "figma_full.png", "my_full.png"]) {
+      await writeFile(path.join(task.workDir, name), SAMPLE_PNG);
+    }
 
     onEvent({ ts: Date.now(), type: "status", text: "output/ 에 산출물 3개 기록 완료" });
     return {

@@ -7,6 +7,7 @@ import { figmaLabel, formatElapsed } from "../../lib/format";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
+import VerifyReport from "./VerifyReport";
 
 interface Job {
   id: string;
@@ -32,6 +33,7 @@ export default function JobPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [verifyFiles, setVerifyFiles] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -51,6 +53,7 @@ export default function JobPage() {
     const data = await res.json();
     setJob(data.job);
     setArtifacts(data.artifacts);
+    setVerifyFiles(data.verifyFiles ?? []);
   }, [id]);
 
   useEffect(() => {
@@ -243,6 +246,8 @@ export default function JobPage() {
           {job.summary}
         </p>
       )}
+
+      {!running && <VerifyReport jobId={id} files={verifyFiles} />}
 
       {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
         <SendPrep jobId={id} onCreated={() => void refresh()} />
