@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { figmaLabel, formatElapsed } from "../../lib/format";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
+import SendPrep from "./SendPrep";
 
 interface Job {
   id: string;
@@ -43,16 +44,19 @@ export default function JobPage() {
     setNotify(localStorage.getItem("mhm-notify") === "1" && Notification.permission === "granted");
   }, []);
 
+  const refresh = useCallback(async () => {
+    if (!id) return;
+    const res = await fetch(`/api/jobs/${id}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setJob(data.job);
+    setArtifacts(data.artifacts);
+  }, [id]);
+
   useEffect(() => {
     if (!id) return;
-
-    const refresh = async () => {
-      const res = await fetch(`/api/jobs/${id}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setJob(data.job);
-      setArtifacts(data.artifacts);
-    };
+    // refresh는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
 
     const es = new EventSource(`/api/jobs/${id}/events`);
@@ -75,7 +79,7 @@ export default function JobPage() {
       void refresh();
     };
     return () => es.close();
-  }, [id]);
+  }, [id, refresh]);
 
   // 완료/실패 시 브라우저 알림 (옵트인).
   useEffect(() => {
@@ -238,6 +242,10 @@ export default function JobPage() {
         >
           {job.summary}
         </p>
+      )}
+
+      {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
+        <SendPrep jobId={id} onCreated={() => void refresh()} />
       )}
 
       <ArtifactList jobId={id} artifacts={artifacts} running={running} />

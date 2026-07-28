@@ -1,0 +1,57 @@
+import { describe, expect, it } from "vitest";
+import { checkEmailHtml } from "./email-check";
+import { applyCdnTemplate, isValidCdnTemplate, renderCdnUrl } from "./hosting";
+
+describe("renderCdnUrl", () => {
+  it("fills {file}/{name}/{ext} placeholders", () => {
+    expect(renderCdnUrl("https://cdn.x/e/{file}", "hero.jpg")).toBe("https://cdn.x/e/hero.jpg");
+    expect(
+      renderCdnUrl("https://img.x/iiif/3/edm__{name}/full/max/0/default.{ext}", "hero.jpg"),
+    ).toBe("https://img.x/iiif/3/edm__hero/full/max/0/default.jpg");
+  });
+});
+
+describe("applyCdnTemplate", () => {
+  it("replaces relative image srcs and counts them", () => {
+    const html = `<img src="images/a.png"><img src='images/b.jpg'><img src="https://x/c.png">`;
+    const { html: out, replaced, files } = applyCdnTemplate(html, "https://cdn.x/{file}");
+    expect(replaced).toBe(2);
+    expect(files).toEqual(["a.png", "b.jpg"]);
+    expect(out).toContain('src="https://cdn.x/a.png"');
+    expect(out).toContain("src='https://cdn.x/b.jpg'");
+    expect(out).toContain('src="https://x/c.png"'); // 절대경로는 그대로
+  });
+});
+
+describe("isValidCdnTemplate", () => {
+  it("requires https and a resolvable URL", () => {
+    expect(isValidCdnTemplate("https://cdn.x/{file}")).toBe(true);
+    expect(isValidCdnTemplate("http://cdn.x/{file}")).toBe(false);
+    expect(isValidCdnTemplate("cdn.x/{file}")).toBe(false);
+  });
+});
+
+describe("checkEmailHtml", () => {
+  it("flags the checklist items", () => {
+    const bad = `<script>x</script><img src="images/a.png"><a href="http://x">l</a><div style="background-image:url(b.png)"></div>`;
+    const byName = Object.fromEntries(checkEmailHtml(bad).map((c) => [c.name, c.level]));
+    expect(byName["스크립트"]).toBe("fail");
+    expect(byName["이미지 alt"]).toBe("warn");
+    expect(byName["배경 이미지"]).toBe("warn");
+    expect(byName["비보안 링크"]).toBe("warn");
+    expect(byName["이미지 경로"]).toBe("warn");
+    expect(byName["프리헤더"]).toBe("warn");
+  });
+
+  it("passes a clean email", () => {
+    const good = `<span style="display:none">preheader</span><img src="https://cdn.x/a.png" alt="a"><a href="https://x">l</a>`;
+    const levels = checkEmailHtml(good).map((c) => c.level);
+    expect(levels.every((l) => l === "ok")).toBe(true);
+  });
+
+  it("warns on Gmail clipping size", () => {
+    const big = `<img src="https://x/a.png" alt="a">${"x".repeat(110 * 1024)}<span style="display:none">p</span>`;
+    const size = checkEmailHtml(big).find((c) => c.name === "본문 용량");
+    expect(size?.level).toBe("warn");
+  });
+});

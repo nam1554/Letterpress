@@ -12,6 +12,8 @@ export interface Settings {
   maxConcurrentJobs: number;
   jobTimeoutMinutes: number;
   figmaToken: string;
+  /** CDN 교체본 URL 템플릿 ({file}/{name}/{ext}) — 팀에서 재사용. */
+  cdnTemplate: string;
 }
 
 const file = () =>
@@ -22,6 +24,7 @@ interface Stored {
   maxConcurrentJobs?: number;
   jobTimeoutMinutes?: number;
   figmaToken?: string;
+  cdnTemplate?: string;
 }
 
 function stored(): Stored {
@@ -47,6 +50,7 @@ export function getSettings(): Settings {
       45,
     ),
     figmaToken: s.figmaToken ?? process.env.FIGMA_TOKEN ?? "",
+    cdnTemplate: s.cdnTemplate ?? "",
   };
 }
 
@@ -60,6 +64,7 @@ export function saveSettings(patch: Partial<Stored>): Settings {
     next.jobTimeoutMinutes = intOr(patch.jobTimeoutMinutes, 45);
   }
   if (patch.figmaToken !== undefined) next.figmaToken = patch.figmaToken.trim();
+  if (patch.cdnTemplate !== undefined) next.cdnTemplate = patch.cdnTemplate.trim();
 
   mkdirSync(path.dirname(file()), { recursive: true });
   const tmp = `${file()}.${randomUUID().slice(0, 8)}.tmp`;
