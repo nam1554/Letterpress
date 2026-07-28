@@ -92,6 +92,10 @@ export default function JobPage() {
   }, [job, notify]);
 
   const running = !!job && (job.status === "queued" || job.status === "running");
+  // 실행 중 헤더에 보여줄 현재 단계 = 마지막 status 이벤트.
+  const currentStep = running
+    ? events.filter((e) => e.type === "status").at(-1)?.text
+    : undefined;
 
   useEffect(() => {
     if (!running) return;
@@ -205,6 +209,16 @@ export default function JobPage() {
       {actionError && (
         <p className="mt-2 text-sm" style={{ color: "var(--err)" }}>
           {actionError}
+        </p>
+      )}
+
+      {running && currentStep && (
+        <p
+          data-testid="current-step"
+          className="surface-card mt-4 flex items-center gap-2 p-3 text-sm"
+        >
+          <span className="pill pill-running" aria-hidden />
+          {currentStep}
         </p>
       )}
 

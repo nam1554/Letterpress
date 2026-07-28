@@ -4,6 +4,25 @@ import { Suspense, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
+function CopyHtmlButton({ src }: { src: string }) {
+  const [label, setLabel] = useState("HTML 복사");
+  async function copy() {
+    try {
+      const html = await (await fetch(src)).text();
+      await navigator.clipboard.writeText(html);
+      setLabel("복사됨 ✓");
+    } catch {
+      setLabel("복사 실패");
+    }
+    setTimeout(() => setLabel("HTML 복사"), 2000);
+  }
+  return (
+    <button data-testid="copy-html" onClick={copy} className="btn btn-ghost !py-1.5 text-xs">
+      {label}
+    </button>
+  );
+}
+
 const WIDTHS = [
   { key: "desktop", label: "데스크톱 700px", width: 700 },
   { key: "tablet", label: "태블릿 600px", width: 600 },
@@ -42,6 +61,7 @@ function Viewer() {
             {w.label}
           </button>
         ))}
+        <CopyHtmlButton src={src} />
         <a
           href={src}
           target="_blank"
