@@ -1,17 +1,12 @@
 import { getProvider } from "../providers/registry";
 import type { AgentEvent } from "../providers/types";
+import { liveControllers } from "./live";
 import { appendEvent, updateJob, workDir, type Job } from "./store";
-
-interface RunnerGlobal {
-  controllers: Map<string, AbortController>;
-}
-const g = globalThis as unknown as { __runnerGlobal?: RunnerGlobal };
-const live: RunnerGlobal = (g.__runnerGlobal ??= { controllers: new Map() });
 
 /** Fire-and-forget: runs the job's provider and records lifecycle events. */
 export function startJob(job: Job, promptOverride?: string): void {
   const controller = new AbortController();
-  live.controllers.set(job.id, controller);
+  liveControllers.set(job.id, controller);
 
   const emit = (e: AgentEvent) => appendEvent(job.id, e);
 
@@ -47,7 +42,11 @@ export function startJob(job: Job, promptOverride?: string): void {
         text: result.ok ? `완료: ${result.summary}` : `실패: ${result.summary}`,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = controller.signal.aborted
+        ? "사용자가 취소했습니다."
+        : err instanceof Error
+          ? err.message
+          : String(err);
       await updateJob(job.id, {
         status: "failed",
         finishedAt: Date.now(),
@@ -55,13 +54,13 @@ export function startJob(job: Job, promptOverride?: string): void {
       });
       emit({ ts: Date.now(), type: "error", text: `실패: ${message}` });
     } finally {
-      live.controllers.delete(job.id);
+      liveControllers.delete(job.id);
     }
   })();
 }
 
 export function cancelJob(id: string): boolean {
-  const controller = live.controllers.get(id);
+  const controller = liveControllers.get(id);
   if (!controller) return false;
   controller.abort();
   return true;

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync } from "node:fs";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "../providers/types";
+import { liveControllers } from "./live";
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -55,9 +56,38 @@ export async function createJob(figmaUrl: string, provider: string): Promise<Job
   return job;
 }
 
+// A job created this recently may not have registered its controller yet.
+const STALE_GRACE_MS = 10_000;
+
+/**
+ * The runner lives in this process; after a server restart a job persisted as
+ * queued/running can never finish. Detect that (no live controller) and mark
+ * it failed so the UI and SSE streams terminate instead of hanging forever.
+ */
+async function reconcile(job: Job): Promise<Job> {
+  const active = job.status === "queued" || job.status === "running";
+  if (!active || liveControllers.has(job.id)) return job;
+  if (Date.now() - job.createdAt < STALE_GRACE_MS) return job;
+
+  const failed: Job = {
+    ...job,
+    status: "failed",
+    finishedAt: Date.now(),
+    summary: "서버가 재시작되어 실행이 중단되었습니다. 다시 실행해 주세요.",
+  };
+  await persist(failed);
+  appendEvent(job.id, {
+    ts: Date.now(),
+    type: "error",
+    text: "실패: 서버가 재시작되어 실행이 중단되었습니다.",
+  });
+  return failed;
+}
+
 export async function getJob(id: string): Promise<Job | null> {
   try {
-    return JSON.parse(await readFile(jobFile(id), "utf8")) as Job;
+    const job = JSON.parse(await readFile(jobFile(id), "utf8")) as Job;
+    return await reconcile(job);
   } catch {
     return null;
   }
@@ -129,10 +159,18 @@ export async function listArtifacts(id: string): Promise<Artifact[]> {
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
 }
 
-/** Resolve an artifact path safely inside the job's output dir. */
+/** Resolve an artifact file path safely inside the job's output dir. */
 export function resolveArtifact(id: string, rel: string): string | null {
   const base = outputDir(id);
   const full = path.resolve(base, rel);
-  if (!full.startsWith(base + path.sep) && full !== base) return null;
+  // Must be strictly inside output/ — the dir itself is not a servable file.
+  if (!full.startsWith(base + path.sep)) return null;
   return full;
+}
+
+/** Delete a job and all its data. Refuses while the job is still executing. */
+export async function deleteJob(id: string): Promise<boolean> {
+  if (liveControllers.has(id)) return false;
+  await rm(jobDir(id), { recursive: true, force: true });
+  return true;
 }

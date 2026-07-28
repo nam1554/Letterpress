@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { getJob, resolveArtifact } from "@/lib/jobs/store";
 
@@ -29,13 +29,12 @@ export async function GET(
   const full = resolveArtifact(id, rel);
   if (!full) return new Response("invalid path", { status: 400 });
 
-  const ext = full.slice(full.lastIndexOf(".")).toLowerCase();
-  try {
-    const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
-    return new Response(stream, {
-      headers: { "Content-Type": MIME[ext] ?? "application/octet-stream" },
-    });
-  } catch {
+  if (!existsSync(full) || !statSync(full).isFile()) {
     return new Response("file not found", { status: 404 });
   }
+  const ext = full.slice(full.lastIndexOf(".")).toLowerCase();
+  const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
+  return new Response(stream, {
+    headers: { "Content-Type": MIME[ext] ?? "application/octet-stream" },
+  });
 }

@@ -8,6 +8,23 @@ Figma eDM 디자인 링크를 붙여넣으면 **Claude Code가 헤드리스로 �
 사용하며, 목표 산출물 형태는 `(로컬 참고 산출물 — 저장소에 없음)`
 패키지와 동일합니다 (700px 테이블 레이아웃, `images/` 상대경로, 반응형 변형).
 
+## 팀원 온보딩 (처음 받은 사람용)
+
+이 도구는 각자의 머신에서 각자의 Claude 구독으로 실행됩니다. 필요한 것:
+
+1. **Claude Code CLI** — 설치 후 `claude` 실행해 로그인
+   (변환 1회당 본인 구독의 토큰을 사용합니다. 통상 10~20분 소요)
+2. **figma-edm 스킬** — `~/.claude/skills/figma-edm` 에 있어야 합니다
+   (스킬 저장소를 클론 후 심링크: `ln -s <repo>/figma-edm ~/.claude/skills/figma-edm`)
+3. **Figma MCP 연결** — Claude Code에 claude.ai Figma 커넥터가 연결·로그인돼
+   있어야 합니다 (`claude` 대화에서 Figma 링크가 읽히는지 확인)
+4. **Google Chrome** — 픽셀 검증(compare.py)이 헤드리스 Chrome을 사용
+5. **Python 의존성** — `python3 -m pip install pillow numpy fonttools brotli`
+6. **Node 20+ / pnpm** — 앱 실행용
+
+홈 화면 상단의 **환경 점검 배너**가 1·2·4·5를 자동 진단해 주므로, 뜨는 안내대로
+해결하면 됩니다.
+
 ## 실행
 
 ```bash
@@ -22,7 +39,17 @@ pnpm dev        # http://localhost:3000
      (헤드리스 세션에서 Figma MCP가 빠져 있으면 로그에 FATAL로 표시됩니다)
    - **Mock** — 토큰 소모 없이 UI/다운로드 플로우 확인용 샘플 산출물
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
-   전체 zip
+   전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
+
+## 트러블슈팅
+
+| 증상 | 원인 / 해결 |
+|---|---|
+| 로그에 `FATAL: Figma MCP ...` | 헤드리스 세션에서 Figma MCP 미연결 — `claude`에서 Figma 커넥터 로그인 확인 |
+| `claude 실행 실패: spawn claude ENOENT` | CLI 미설치 또는 PATH 문제 — `which claude` 확인, 필요 시 `CLAUDE_BIN=/절대/경로` env 지정 |
+| 잡이 `failed: 서버가 재시작되어…` | dev 서버 재시작으로 중단된 잡 — "다시 실행" 버튼으로 재실행 |
+| 픽셀 검증에서 계속 FAIL 반복 | 대부분 스킬 `references/gotchas.md`에 있는 케이스 — 로그의 compare 출력 확인 |
+| 다운로드 zip에 파일이 없음 | 잡이 succeeded 인지 확인 — 실패한 잡은 output/ 이 비어 있을 수 있음 |
 
 ## 구조 (에이전트 백엔드 교체 가능)
 

@@ -15,6 +15,12 @@ interface ProviderInfo {
   id: string;
   label: string;
 }
+interface HealthCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+  hint?: string;
+}
 
 const STATUS_STYLE: Record<string, string> = {
   queued: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
@@ -31,6 +37,7 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [health, setHealth] = useState<HealthCheck[] | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/jobs");
@@ -44,6 +51,10 @@ export default function Home() {
     // load()는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => setHealth(d.checks))
+      .catch(() => {});
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
@@ -76,6 +87,32 @@ export default function Home() {
         Figma eDM 디자인 링크를 붙여넣으면 에이전트가 이메일 HTML로 변환합니다.
         완료 후 HTML과 이미지 폴더를 zip으로 다운로드하세요.
       </p>
+
+      {health && health.some((c) => !c.ok) && (
+        <div
+          data-testid="health-banner"
+          className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950"
+        >
+          <p className="font-semibold text-amber-800 dark:text-amber-200">
+            환경 점검이 필요합니다 — 변환이 실패할 수 있어요
+          </p>
+          <ul className="mt-2 space-y-1 text-amber-800 dark:text-amber-300">
+            {health
+              .filter((c) => !c.ok)
+              .map((c) => (
+                <li key={c.name}>
+                  <b>{c.name}</b>: {c.detail}
+                  {c.hint && <span className="block text-xs opacity-80">→ {c.hint}</span>}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+      {health && health.every((c) => c.ok) && (
+        <p className="mt-6 text-xs text-green-600 dark:text-green-400" data-testid="health-ok">
+          ✓ 환경 점검 통과 (Claude CLI · figma-edm 스킬 · Chrome · Python 의존성)
+        </p>
+      )}
 
       <form onSubmit={submit} className="mt-8 space-y-4">
         <input

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface Job {
@@ -37,11 +37,22 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m > 0 ? `${m}분 ${s}초` : `${s}초`;
+}
+
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [job, setJob] = useState<Job | null>(null);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [actionError, setActionError] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,6 +68,8 @@ export default function JobPage() {
     void refresh();
 
     const es = new EventSource(`/api/jobs/${id}/events`);
+    // 재연결 시 서버가 히스토리를 다시 리플레이하므로 중복 방지를 위해 비운다.
+    es.onopen = () => setEvents([]);
     es.addEventListener("agent", (e) => {
       setEvents((prev) => [...prev, JSON.parse((e as MessageEvent).data)]);
     });
@@ -81,7 +94,50 @@ export default function JobPage() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [events]);
 
-  const running = job && (job.status === "queued" || job.status === "running");
+  const running = !!job && (job.status === "queued" || job.status === "running");
+
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+
+  async function cancel() {
+    setActionError("");
+    const res = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
+    if (!res.ok) setActionError((await res.json()).error ?? "취소 실패");
+  }
+
+  async function rerun() {
+    if (!job) return;
+    setActionError("");
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ figmaUrl: job.figmaUrl, provider: job.provider }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setActionError(data.error ?? "재실행 실패");
+      return;
+    }
+    router.push(`/jobs/${data.job.id}`);
+  }
+
+  async function remove() {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setActionError("");
+    const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setActionError((await res.json()).error ?? "삭제 실패");
+      setConfirmDelete(false);
+      return;
+    }
+    router.push("/");
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12 font-sans">
@@ -111,6 +167,42 @@ export default function JobPage() {
           {job.figmaUrl} · {job.provider}
         </p>
       )}
+      {job && (
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <span className="text-zinc-500" data-testid="elapsed">
+            소요 시간: {formatElapsed((job.finishedAt ?? now) - job.createdAt)}
+          </span>
+          <span className="flex-1" />
+          {running && (
+            <button
+              data-testid="cancel"
+              onClick={cancel}
+              className="rounded-lg border border-red-300 px-3 py-1.5 text-red-600 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+            >
+              취소
+            </button>
+          )}
+          {!running && (
+            <>
+              <button
+                data-testid="rerun"
+                onClick={rerun}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                다시 실행
+              </button>
+              <button
+                data-testid="delete"
+                onClick={remove}
+                className="rounded-lg border border-red-300 px-3 py-1.5 text-red-600 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                {confirmDelete ? "정말 삭제할까요?" : "삭제"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {actionError && <p className="mt-2 text-sm text-red-600">{actionError}</p>}
 
       <h2 className="mt-8 text-lg font-semibold">진행 로그</h2>
       <div

@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { PassThrough, Readable } from "node:stream";
 import { ZipArchive } from "archiver";
 import { NextRequest } from "next/server";
@@ -31,20 +31,20 @@ export async function GET(
   if (file) {
     const full = resolveArtifact(id, file);
     if (!full) return new Response("invalid path", { status: 400 });
+    // createReadStream fails asynchronously — check up front to return a real 404.
+    if (!existsSync(full) || !statSync(full).isFile()) {
+      return new Response("file not found", { status: 404 });
+    }
     const ext = full.slice(full.lastIndexOf(".")).toLowerCase();
     const inline = req.nextUrl.searchParams.get("inline") === "1";
     const name = file.split("/").pop() ?? "file";
-    try {
-      const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
-      return new Response(stream, {
-        headers: {
-          "Content-Type": MIME[ext] ?? "application/octet-stream",
-          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(name)}"`,
-        },
-      });
-    } catch {
-      return new Response("file not found", { status: 404 });
-    }
+    const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
+    return new Response(stream, {
+      headers: {
+        "Content-Type": MIME[ext] ?? "application/octet-stream",
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(name)}"`,
+      },
+    });
   }
 
   const artifacts = await listArtifacts(id);
@@ -52,6 +52,8 @@ export async function GET(
 
   const archive = new ZipArchive({ zlib: { level: 9 } });
   const pass = new PassThrough();
+  // Without an error listener an archiver failure would crash the process.
+  archive.on("error", (err) => pass.destroy(err));
   archive.pipe(pass);
   archive.directory(outputDir(id), false);
   void archive.finalize();

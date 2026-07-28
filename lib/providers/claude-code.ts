@@ -120,6 +120,10 @@ export const claudeCodeProvider: AgentProvider = {
       });
 
       child.on("error", (err) => {
+        if (signal.aborted) {
+          resolve({ ok: false, summary: "사용자가 취소했습니다." });
+          return;
+        }
         onEvent({ ts: Date.now(), type: "error", text: `claude 실행 실패: ${err.message}` });
         resolve({ ok: false, summary: `claude CLI를 실행할 수 없습니다: ${err.message}` });
       });
