@@ -1,0 +1,138 @@
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync } from "node:fs";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { AgentEvent } from "../providers/types";
+
+export type JobStatus = "queued" | "running" | "succeeded" | "failed";
+
+export interface Job {
+  id: string;
+  figmaUrl: string;
+  provider: string;
+  status: JobStatus;
+  createdAt: number;
+  finishedAt?: number;
+  summary?: string;
+}
+
+export interface Artifact {
+  /** Path relative to the job's output dir, e.g. "images/logo.png". */
+  rel: string;
+  size: number;
+}
+
+const DATA_DIR = path.join(process.cwd(), "data", "jobs");
+
+// Survive Next dev HMR module reloads: keep live state on globalThis.
+type Listener = (e: AgentEvent) => void;
+interface JobsGlobal {
+  listeners: Map<string, Set<Listener>>;
+}
+const g = globalThis as unknown as { __jobsGlobal?: JobsGlobal };
+const live: JobsGlobal = (g.__jobsGlobal ??= { listeners: new Map() });
+
+export const jobDir = (id: string) => path.join(DATA_DIR, id);
+export const workDir = (id: string) => path.join(jobDir(id), "work");
+export const outputDir = (id: string) => path.join(workDir(id), "output");
+const jobFile = (id: string) => path.join(jobDir(id), "job.json");
+const eventsFile = (id: string) => path.join(jobDir(id), "events.ndjson");
+
+async function persist(job: Job): Promise<void> {
+  await writeFile(jobFile(job.id), JSON.stringify(job, null, 2));
+}
+
+export async function createJob(figmaUrl: string, provider: string): Promise<Job> {
+  const job: Job = {
+    id: randomUUID().slice(0, 8),
+    figmaUrl,
+    provider,
+    status: "queued",
+    createdAt: Date.now(),
+  };
+  await mkdir(outputDir(job.id), { recursive: true });
+  await persist(job);
+  return job;
+}
+
+export async function getJob(id: string): Promise<Job | null> {
+  try {
+    return JSON.parse(await readFile(jobFile(id), "utf8")) as Job;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateJob(id: string, patch: Partial<Job>): Promise<Job | null> {
+  const job = await getJob(id);
+  if (!job) return null;
+  const next = { ...job, ...patch };
+  await persist(next);
+  return next;
+}
+
+export async function listJobs(): Promise<Job[]> {
+  if (!existsSync(DATA_DIR)) return [];
+  const ids = await readdir(DATA_DIR);
+  const jobs = await Promise.all(ids.map(getJob));
+  return jobs
+    .filter((j): j is Job => j !== null)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function appendEvent(id: string, event: AgentEvent): void {
+  // Sync append keeps event order stable relative to subscriber notification.
+  appendFileSync(eventsFile(id), `${JSON.stringify(event)}\n`);
+  for (const listener of live.listeners.get(id) ?? []) listener(event);
+}
+
+export async function readEvents(id: string): Promise<AgentEvent[]> {
+  try {
+    const raw = await readFile(eventsFile(id), "utf8");
+    return raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as AgentEvent);
+  } catch {
+    return [];
+  }
+}
+
+export function subscribe(id: string, listener: Listener): () => void {
+  let set = live.listeners.get(id);
+  if (!set) {
+    set = new Set();
+    live.listeners.set(id, set);
+  }
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (set.size === 0) live.listeners.delete(id);
+  };
+}
+
+export async function listArtifacts(id: string): Promise<Artifact[]> {
+  const base = outputDir(id);
+  if (!existsSync(base)) return [];
+  const out: Artifact[] = [];
+  async function walk(dir: string): Promise<void> {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else {
+        const { size } = await stat(full);
+        out.push({ rel: path.relative(base, full), size });
+      }
+    }
+  }
+  await walk(base);
+  return out.sort((a, b) => a.rel.localeCompare(b.rel));
+}
+
+/** Resolve an artifact path safely inside the job's output dir. */
+export function resolveArtifact(id: string, rel: string): string | null {
+  const base = outputDir(id);
+  const full = path.resolve(base, rel);
+  if (!full.startsWith(base + path.sep) && full !== base) return null;
+  return full;
+}
