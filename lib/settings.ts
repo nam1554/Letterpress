@@ -63,7 +63,8 @@ export function saveSettings(patch: Partial<Stored>): Settings {
 
   mkdirSync(path.dirname(file()), { recursive: true });
   const tmp = `${file()}.${randomUUID().slice(0, 8)}.tmp`;
-  writeFileSync(tmp, JSON.stringify(next, null, 2));
+  // Figma 토큰이 평문으로 저장되는 파일 — 소유자만 읽게 한다.
+  writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
   renameSync(tmp, file());
   return getSettings();
 }

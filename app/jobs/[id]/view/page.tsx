@@ -34,6 +34,19 @@ function Viewer() {
   const file = useSearchParams().get("file") ?? "";
   const [width, setWidth] = useState<number>(700);
 
+  if (!file) {
+    return (
+      <main className="mx-auto max-w-2xl px-6 py-14">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>
+          미리볼 파일이 지정되지 않았습니다.{" "}
+          <Link href={`/jobs/${id}`} className="hover:underline" style={{ color: "var(--accent)" }}>
+            작업 페이지로 돌아가기
+          </Link>
+        </p>
+      </main>
+    );
+  }
+
   const src = `/api/jobs/${id}/preview/${file}`;
 
   return (

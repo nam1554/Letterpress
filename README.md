@@ -32,6 +32,13 @@ pnpm install
 pnpm dev        # http://localhost:3000
 ```
 
+상시 켜두고 쓰려면 프로덕션 모드가 더 안정적입니다 (HMR 재시작으로 실행 중
+잡이 끊기는 일 없음):
+
+```bash
+pnpm build && pnpm start
+```
+
 1. 홈에서 Figma 디자인 URL 입력 (`figma.com/design/...?node-id=...`)
 2. 프로바이더 선택 후 "HTML 만들기"
    - **Claude Code (local CLI)** — 기본. `claude` CLI 로그인 + claude.ai Figma
