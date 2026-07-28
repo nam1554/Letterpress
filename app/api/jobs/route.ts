@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalFigmaUrl, parseFigmaUrl } from "@/lib/figma";
 import { runningJobCount, startJob } from "@/lib/jobs/runner";
-import { createJob, listJobs } from "@/lib/jobs/store";
+import { createJob, deleteJob, listJobs } from "@/lib/jobs/store";
 import { defaultProviderId, getProvider, listProviders } from "@/lib/providers/registry";
 import { getSettings } from "@/lib/settings";
 
@@ -52,4 +52,15 @@ export async function POST(req: NextRequest) {
   const job = await createJob(canonicalFigmaUrl(ref), providerId, ref.title);
   startJob(job);
   return NextResponse.json({ job }, { status: 201 });
+}
+
+/** 히스토리 일괄 정리 — 실행 중이 아닌 잡을 모두 삭제한다. */
+export async function DELETE() {
+  const jobs = await listJobs();
+  let deleted = 0;
+  for (const job of jobs) {
+    if (job.status === "running" || job.status === "queued") continue;
+    if (await deleteJob(job.id)) deleted += 1;
+  }
+  return NextResponse.json({ deleted });
 }

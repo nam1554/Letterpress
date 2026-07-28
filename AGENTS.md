@@ -9,15 +9,41 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 # Marketing HTML Maker — agent notes
 
 Local-only Next.js app: paste a Figma eDM design URL in the browser, a headless
-Claude Code job converts it to email-safe HTML (via the user's `figma-edm`
+CLI agent job converts it to email-safe HTML (via the user's `figma-edm`
 skill), and the artifacts are downloadable as a zip. Not a deployed service —
 no auth, single user, filesystem is the database.
 
 - Design doc: `docs/superpowers/specs/2026-07-28-marketing-html-maker-design.md`
-- Agent backends are isolated behind `lib/providers/types.ts` (`AgentProvider`).
-  Add a new backend = one file in `lib/providers/` + one registry entry.
-  Select with env `AGENT_PROVIDER` (`claude-code` | `mock`).
-- Job state lives in `data/jobs/<id>/` (`job.json`, `events.ndjson`,
-  `work/output/` = downloadable artifacts). Never commit `data/`.
-- Reference output the generated eDMs should resemble:
-  `(로컬 참고 산출물 — 저장소에 없음)`
+
+## Architecture map
+
+- **Agent backends** are isolated behind `lib/providers/types.ts`
+  (`AgentProvider`): `claude-code` (default) · `gemini` · `codex` · `mock`.
+  Shared pieces: `jsonl-cli.ts` (spawn + JSONL stream handling — partial lines,
+  stderr tail, abort/close race), `prompt.ts` (shared eDM prompt + agent env).
+  Add a new backend = one file + one `registry.ts` entry. Parsers are exported
+  pure functions with tests in `parsers.test.ts`.
+- **Job state** lives in `data/jobs/<id>/` (`job.json` atomic-written,
+  `events.ndjson` with per-job monotonic `seq`, `work/output/` = downloadable
+  artifacts). Never commit `data/`. Job ids are 8-hex — `jobDir()` enforces
+  this; all fs paths derive from it.
+- **Settings** (`lib/settings.ts` → `data/settings.json`, edited via the ⚙️
+  panel): default provider, concurrency cap, job timeout, Figma REST fallback
+  token. Precedence: settings.json > env > default.
+- **Lifecycle**: `lib/jobs/runner.ts` spawns providers with an AbortController
+  (timeout + cancel), `store.ts` reconciles stale running jobs on read after a
+  server restart. SSE route replays events then relays live ones, deduped by
+  `seq`.
+- **UI**: token-based light/dark design system in `app/globals.css` (petrol
+  accent; components never branch on theme). Job page split into
+  `LogViewer`/`ArtifactList`.
+
+## Verification habits
+
+- `pnpm vitest run` (unit), `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`.
+- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_CODEX_SMOKE=1` smoke tests
+  (spawn a trivial prompt; small token cost).
+- Browser E2E: mock provider end-to-end via chrome-devtools MCP.
+
+Reference output the generated eDMs should resemble:
+`(로컬 참고 산출물 — 저장소에 없음)`

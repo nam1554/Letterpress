@@ -62,6 +62,18 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [health, setHealth] = useState<HealthCheck[] | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  async function clearHistory() {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    const res = await fetch("/api/jobs", { method: "DELETE" });
+    if (res.ok) void load();
+    else setError("일괄 삭제 실패");
+  }
 
   const parsed = useMemo(
     () => (figmaUrl.trim() ? parseClientFigmaUrl(figmaUrl) : undefined),
@@ -78,7 +90,7 @@ export default function Home() {
 
   useEffect(() => {
     // load()는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     void load();
     fetch("/api/health")
       .then((r) => r.json())
@@ -239,10 +251,20 @@ export default function Home() {
 
       <SettingsPanel onSaved={load} />
 
-      <div className="mt-12 flex items-baseline justify-between">
+      <div className="mt-12 flex items-baseline justify-between gap-3">
         <h2 className="text-lg font-semibold">작업 히스토리</h2>
-        <span className="text-xs" style={{ color: "var(--muted)" }}>
+        <span className="flex items-baseline gap-3 text-xs" style={{ color: "var(--muted)" }}>
           {jobs.length > 0 && `${jobs.length}건`}
+          {jobs.some((j) => j.status === "succeeded" || j.status === "failed") && (
+            <button
+              data-testid="clear-history"
+              onClick={clearHistory}
+              className="hover:underline"
+              style={{ color: "var(--err)" }}
+            >
+              {confirmClear ? "정말 모두 삭제?" : "완료된 작업 모두 삭제"}
+            </button>
+          )}
         </span>
       </div>
       <ul className="surface-card hairline-list mt-3 overflow-hidden">
