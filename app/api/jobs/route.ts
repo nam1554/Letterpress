@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { readBody } from "@/lib/api-body";
 import { canonicalFigmaUrl, parseFigmaUrl } from "@/lib/figma";
 import { runningJobCount, startJob } from "@/lib/jobs/runner";
 import { createJob, deleteJob, listJobs } from "@/lib/jobs/store";
@@ -15,15 +17,17 @@ export async function GET() {
   });
 }
 
-export async function POST(req: NextRequest) {
-  let body: { figmaUrl?: string; provider?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "잘못된 JSON 요청입니다." }, { status: 400 });
-  }
+const createJobBody = z.object({
+  figmaUrl: z.string({ error: "figmaUrl이 필요합니다." }),
+  provider: z.string().optional(),
+});
 
-  const ref = parseFigmaUrl(body.figmaUrl ?? "");
+export async function POST(req: NextRequest) {
+  const r = await readBody(req, createJobBody);
+  if (!r.ok) return r.res;
+  const body = r.data;
+
+  const ref = parseFigmaUrl(body.figmaUrl);
   if (!ref) {
     return NextResponse.json(
       { error: "유효한 Figma 디자인 URL이 아닙니다. (figma.com/design/... 형식)" },

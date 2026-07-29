@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { readBody } from "@/lib/api-body";
 import { getSettings, saveSettings } from "@/lib/settings";
 import { listProviders } from "@/lib/providers/registry";
 import { validateFigmaToken, validateGeminiKey } from "@/lib/setup";
@@ -23,20 +25,29 @@ export async function GET() {
   return NextResponse.json(masked());
 }
 
+const settingsBody = z.object({
+  defaultProvider: z.string().optional(),
+  maxConcurrentJobs: z
+    .number({ error: "동시 실행 수는 숫자여야 합니다." })
+    .int()
+    .min(1, "동시 실행 수는 1 이상이어야 합니다.")
+    .max(5, "동시 실행 수는 5 이하여야 합니다.")
+    .optional(),
+  jobTimeoutMinutes: z
+    .number({ error: "작업 제한 시간은 숫자여야 합니다." })
+    .int()
+    .min(5, "작업 제한 시간은 5분 이상이어야 합니다.")
+    .max(180, "작업 제한 시간은 180분 이하여야 합니다.")
+    .optional(),
+  figmaToken: z.string().optional(),
+  geminiApiKey: z.string().optional(),
+  cdnTemplate: z.string().optional(),
+});
+
 export async function PUT(req: NextRequest) {
-  let body: {
-    defaultProvider?: string;
-    maxConcurrentJobs?: number;
-    jobTimeoutMinutes?: number;
-    figmaToken?: string;
-    geminiApiKey?: string;
-    cdnTemplate?: string;
-  };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "잘못된 JSON 요청입니다." }, { status: 400 });
-  }
+  const r = await readBody(req, settingsBody);
+  if (!r.ok) return r.res;
+  const body = r.data;
 
   if (
     body.defaultProvider !== undefined &&

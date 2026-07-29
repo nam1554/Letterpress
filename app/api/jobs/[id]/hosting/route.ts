@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { readBody } from "@/lib/api-body";
 import {
   applyCdnTemplate,
   isValidCdnFolder,
@@ -25,14 +27,13 @@ export async function POST(
   const job = await getJob(id);
   if (!job) return NextResponse.json({ error: "작업을 찾을 수 없습니다." }, { status: 404 });
 
-  let body: { template?: string; folder?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "잘못된 JSON 요청입니다." }, { status: 400 });
-  }
-  const template = (body.template ?? "").trim();
-  const folder = (body.folder ?? "").trim();
+  const r = await readBody(
+    req,
+    z.object({ template: z.string().optional(), folder: z.string().optional() }),
+  );
+  if (!r.ok) return r.res;
+  const template = (r.data.template ?? "").trim();
+  const folder = (r.data.folder ?? "").trim();
   if (!isValidCdnTemplate(template)) {
     return NextResponse.json(
       { error: "https:// 로 시작하는 유효한 URL 템플릿이 필요합니다. 예: https://cdn.example.com/{folder}/{file}" },

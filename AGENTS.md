@@ -41,9 +41,15 @@ no auth, single user, filesystem is the database.
   (timeout + cancel), `store.ts` reconciles stale running jobs on read after a
   server restart. SSE route replays events then relays live ones, deduped by
   `seq`.
-- **UI**: token-based light/dark design system in `app/globals.css` (petrol
-  accent; components never branch on theme). Job page split into
-  `LogViewer`/`ArtifactList`/`SendPrep`/`VerifyReport`.
+- **UI**: Mantine v9 with a Claude-style theme (`app/theme.ts` — terracotta
+  "clay" accent, cream/warm-dark backgrounds, serif headings; components never
+  branch on theme). Job page split into
+  `LogViewer` (virtualized via @tanstack/react-virtual) / `ArtifactList` /
+  `SendPrep` / `VerifyReport`; job summaries render as markdown via Streamdown.
+- **API validation**: route bodies are parsed with zod through
+  `lib/api-body.ts` `readBody(req, schema)` — returns a ready 400 response on
+  failure. Domain rules (provider existence, CDN template shape) stay in the
+  routes.
 - **Send-prep**: `lib/hosting.ts` (CDN URL template → hosted/ variants),
   `lib/email-check.ts` (static pre-send checks), `lib/verify.ts` (pixel-verify
   image allowlist). Routes: `POST /api/jobs/:id/hosting`,
