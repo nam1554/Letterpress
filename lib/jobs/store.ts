@@ -251,6 +251,11 @@ export function subscribe(id: string, listener: Listener): () => void {
   };
 }
 
+/** 현재 구독자 수 — 스트림이 정리를 빠뜨렸는지 테스트에서 관찰한다. */
+export function subscriberCount(id: string): number {
+  return live.listeners.get(id)?.size ?? 0;
+}
+
 export async function listArtifacts(id: string): Promise<Artifact[]> {
   const base = outputDir(id);
   if (!existsSync(base)) return [];

@@ -19,10 +19,12 @@ export async function GET(
   const job = await getJob(id);
   if (!job) return new Response("not found", { status: 404 });
 
+  // start()가 끝나기 전에 스트림이 취소될 수 있어 cancel()에서도 닿아야 한다.
+  let unsubscribe = () => {};
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
-      let unsubscribe = () => {};
       const close = async () => {
         if (closed) return;
         closed = true;
@@ -36,41 +38,73 @@ export async function GET(
         }
       };
 
-      const push = (e: AgentEvent) => {
-        if (closed) return;
+      /** 한 이벤트를 보낸다. 클라이언트가 이미 사라졌으면 false. */
+      const send = (e: AgentEvent): boolean => {
+        if (closed) return false;
         try {
           controller.enqueue(sse("agent", e));
+          return true;
         } catch {
           void close();
-          return;
+          return false;
         }
+      };
+
+      const push = (e: AgentEvent) => {
+        if (!send(e)) return;
         if (e.type === "done" || e.type === "error") {
           // Terminal lifecycle events come from the runner; finish the stream.
           setTimeout(() => void close(), 100);
         }
       };
 
+      // 이탈 감지를 구독보다 먼저 건다. 리플레이는 파일 읽기를 기다리는 구간이라
+      // 그 사이 탭이 닫히는 일이 흔한데, 등록이 뒤에 있으면 그 연결의 구독은
+      // 영영 정리되지 않는다.
+      if (req.signal.aborted) {
+        try {
+          controller.close();
+        } catch {
+          /* already gone */
+        }
+        return;
+      }
+      req.signal.addEventListener("abort", () => void close());
+
       // Subscribe BEFORE replay so no live event falls in the gap.
       const pending: AgentEvent[] = [];
       let replaying = true;
       unsubscribe = subscribe(id, (e) => (replaying ? pending.push(e) : push(e)));
+      // 구독 등록 직전에 이탈했다면 close()의 unsubscribe가 아직 no-op이었다.
+      if (closed) {
+        unsubscribe();
+        return;
+      }
 
       const history = await readEvents(id);
-      for (const e of history) controller.enqueue(sse("agent", e));
+      for (const e of history) if (!send(e)) return;
       replaying = false;
       // 리플레이/라이브 경계 중복은 시퀀스로 정확히 자른다. seq 없는 과거
       // 이벤트는 라인 수가 곧 시퀀스다 (appendEvent가 라인 수 기반으로 이어감).
       const lastSeq = history.at(-1)?.seq ?? history.length;
       for (const e of pending) if ((e.seq ?? 0) > lastSeq) push(e);
+      if (closed) return;
 
       const current = await getJob(id);
-      controller.enqueue(sse("state", current));
-      if (current && (current.status === "succeeded" || current.status === "failed")) {
+      try {
+        controller.enqueue(sse("state", current));
+      } catch {
         await close();
         return;
       }
-
-      req.signal.addEventListener("abort", () => void close());
+      if (current && (current.status === "succeeded" || current.status === "failed")) {
+        await close();
+      }
+    },
+    // 클라이언트가 스트림을 취소했을 때의 두 번째 정리 경로 — req.signal이
+    // 발화하지 않는 런타임에서도 구독이 남지 않도록.
+    cancel() {
+      unsubscribe();
     },
   });
 
