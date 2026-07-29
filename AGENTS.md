@@ -47,7 +47,22 @@ no auth, single user, filesystem is the database.
 - **Lifecycle**: `lib/jobs/runner.ts` spawns providers with an AbortController
   (timeout + cancel), `store.ts` reconciles stale running jobs on read after a
   server restart. SSE route replays events then relays live ones, deduped by
-  `seq`.
+  `seq`. Invariants worth not regressing (each has a test):
+  - `startJob` rolls back the controller + timer if start-up throws. A leaked
+    controller inflates `runningJobCount()` forever, so the concurrency cap
+    rejects every later job and `deleteJob` refuses that job for good.
+  - `appendEvent` is best-effort: a disk error or a throwing subscriber (a
+    closed SSE stream) must never kill the running job. `readEvents` skips a
+    corrupt line rather than discarding the whole log.
+  - `live.ts` aborts running jobs on SIGINT/SIGTERM too, not just `'exit'` —
+    CLIs are spawned `detached`, so they never receive the foreground group's
+    Ctrl-C and would keep burning tokens as orphans.
+  - The SSE route registers its disconnect handler BEFORE subscribing (a client
+    leaving mid-replay used to leak the subscription), and re-reads the job once
+    the `STALE_GRACE_MS` window expires — otherwise a page opened within 10s of
+    a restart hangs on "실행 중" with no recovery path.
+  - `reserveJobId()` never returns an id whose directory exists; a collision
+    would silently overwrite an existing job.
 - **Quality gate**: success is judged by the filesystem, not the agent's
   self-report. `lib/jobs/acceptance.ts` checks the deliverable contract
   (`output/*_figma.html` + `*_responsive.html`, verify evidence images in the
@@ -56,6 +71,10 @@ no auth, single user, filesystem is the database.
   the same workDir with the failures listed in the prompt (`task.repair`),
   then re-checks. The verify summary is persisted on `job.json` (`job.verify`)
   and surfaced as a PASS/FAIL badge in `VerifyReport`.
+  The gate also requires the evidence to belong to THIS attempt: the runner
+  passes `freshSince` (attempt start) and a `verify.json` older than that fails
+  the gate. Without it an edit job (workDir copied from the source) or a resume
+  (same workDir) inherits a PASS and can report success having produced nothing.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
@@ -77,6 +96,12 @@ no auth, single user, filesystem is the database.
   `lib/api-body.ts` `readBody(req, schema)` — returns a ready 400 response on
   failure. Domain rules (provider existence, CDN template shape) stay in the
   routes.
+- **Client requests**: every mutation goes through `app/lib/request.ts`
+  (`requestJson` / `sendJson`), never bare `fetch` + `(await res.json()).error`.
+  The helper never throws, so a non-JSON error page or an unreachable server
+  still yields a readable message instead of a click that silently does
+  nothing. (`app/lib/fetcher.ts` stays as-is — SWR wants reads to throw.)
+  Route params arrive already percent-decoded; do not decode them again.
 - **Send-prep**: `lib/hosting.ts` (CDN URL template → hosted/ variants),
   `lib/email-check.ts` (static pre-send checks), `lib/verify.ts` (pixel-verify
   image allowlist). Routes: `POST /api/jobs/:id/hosting`,
@@ -85,10 +110,23 @@ no auth, single user, filesystem is the database.
 ## Verification habits
 
 - `pnpm vitest run` (unit), `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`.
+- `pnpm build` emits one Turbopack NFT warning (whole-project tracing, via
+  `lib/verify.ts`). Known and deliberately not fixed — job paths are built from
+  runtime ids so they can't be traced statically, and the trace list is only
+  consumed when producing an `output: 'standalone'` bundle, which this app does
+  not use (`README.md` runs `pnpm build && pnpm start` in place). It over-
+  includes, never under-includes. See `docs/improvement-log.md`.
+- Route handlers are unit-testable: `vitest.config.ts` maps the `@/` alias, so
+  a test can `import { GET } from "./route"` and call it with
+  `{ params: Promise.resolve({ id }) }`. See `app/api/jobs/routes.test.ts`
+  (boundary cases) and `.../events/route.test.ts` (SSE streams).
 - Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_GEMINI_SMOKE=1` /
   `RUN_CODEX_SMOKE=1` smoke tests
   (spawn a trivial prompt; small token cost).
-- Browser E2E: mock provider end-to-end via chrome-devtools MCP.
+- Browser E2E: mock provider end-to-end, with `MHM_DATA_DIR`/`MHM_SETTINGS_FILE`
+  pointed at a scratch dir so the run never touches real job data. chrome-devtools
+  MCP refuses to attach when a browser already owns its profile — the
+  claude-in-chrome MCP works as a fallback.
 
 Reference output the generated eDMs should resemble:
 `(로컬 참고 산출물 — 저장소에 없음)`
