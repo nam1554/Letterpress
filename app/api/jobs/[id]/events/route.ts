@@ -1,4 +1,4 @@
-import { getJob, readEvents, subscribe } from "@/lib/jobs/store";
+import { getJob, readEvents, STALE_GRACE_MS, subscribe } from "@/lib/jobs/store";
 import type { AgentEvent } from "@/lib/providers/types";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,7 @@ export async function GET(
 
   // start()가 끝나기 전에 스트림이 취소될 수 있어 cancel()에서도 닿아야 한다.
   let unsubscribe = () => {};
+  let recheck: ReturnType<typeof setTimeout> | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -29,6 +30,7 @@ export async function GET(
         if (closed) return;
         closed = true;
         unsubscribe();
+        clearTimeout(recheck);
         const latest = await getJob(id);
         try {
           controller.enqueue(sse("state", latest));
@@ -99,12 +101,24 @@ export async function GET(
       }
       if (current && (current.status === "succeeded" || current.status === "failed")) {
         await close();
+        return;
+      }
+
+      // 서버 재시작 직후 유예 기간(STALE_GRACE_MS) 안에 접속하면 reconcile이
+      // 아직 돌지 않아 죽은 잡도 "실행 중"으로 온다. 그대로 두면 이 스트림은
+      // 영원히 기다리고 화면은 실행 중에서 멈춘다 — 유예가 끝난 뒤 한 번 더
+      // 읽어 준다. 러너가 살아 있으면 아무 일도 일어나지 않고, 죽었다면 그
+      // 읽기가 reconcile을 돌려 실패 이벤트가 구독자로 흘러온다.
+      if (current) {
+        const wait = current.createdAt + STALE_GRACE_MS - Date.now() + 500;
+        recheck = setTimeout(() => void getJob(id), Math.max(wait, 0));
       }
     },
     // 클라이언트가 스트림을 취소했을 때의 두 번째 정리 경로 — req.signal이
     // 발화하지 않는 런타임에서도 구독이 남지 않도록.
     cancel() {
       unsubscribe();
+      clearTimeout(recheck);
     },
   });
 

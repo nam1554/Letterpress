@@ -24,6 +24,7 @@ import {
   getJob,
   listJobs,
   readEvents,
+  reserveJobId,
   resolveArtifact,
   subscribe,
   updateJob,
@@ -62,6 +63,26 @@ describe("job store lifecycle", () => {
     const errorEvents = (await readEvents(job.id)).filter((e) => e.type === "error");
     expect(errorEvents.length).toBe(1);
     await deleteJob(job.id);
+  });
+
+  it("gives every concurrent reader the reconciled result", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    await updateJob(job.id, { status: "running", createdAt: Date.now() - 60_000 });
+
+    // 진행 중인 reconcile을 만난 읽기가 낡은 "실행 중"을 돌려주면, 그 요청을
+    // 띄운 화면은 이미 실패한 잡을 실행 중으로 표시한다.
+    const seen = await Promise.all([getJob(job.id), getJob(job.id), getJob(job.id)]);
+    expect(seen.map((j) => j?.status)).toEqual(["failed", "failed", "failed"]);
+    expect((await readEvents(job.id)).filter((e) => e.type === "error").length).toBe(1);
+    await deleteJob(job.id);
+  });
+
+  it("never hands out a job id whose directory already exists", async () => {
+    const taken = await createJob("https://www.figma.com/design/abc/", "mock");
+    // 충돌하면 createJob이 기존 잡 위에 그대로 덮어써 데이터가 사라진다.
+    const queue = [taken.id, taken.id, "cafebabe"];
+    expect(reserveJobId(() => queue.shift()!)).toBe("cafebabe");
+    await deleteJob(taken.id);
   });
 
   it("does not reconcile jobs with a live controller", async () => {

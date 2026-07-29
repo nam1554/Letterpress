@@ -39,18 +39,20 @@ const dataDir = () => process.env.MHM_DATA_DIR ?? path.join(process.cwd(), "data
 type Listener = (e: AgentEvent) => void;
 interface JobsGlobal {
   listeners: Map<string, Set<Listener>>;
-  reconciling: Set<string>;
+  /** 진행 중인 reconcile — 동시 읽기가 결과를 함께 기다린다. */
+  reconciling: Map<string, Promise<Job>>;
   /** 잡별 다음 이벤트 시퀀스 (프로세스 시작 시 파일 라인 수로 초기화). */
   seqs: Map<string, number>;
 }
 const g = globalThis as unknown as { __jobsGlobal?: JobsGlobal };
 const live: JobsGlobal = (g.__jobsGlobal ??= {
   listeners: new Map(),
-  reconciling: new Set(),
+  reconciling: new Map(),
   seqs: new Map(),
 });
-// fields added after first deploys of this global (HMR keeps the old object)
-live.reconciling ??= new Set();
+// fields added (or reshaped) after first deploys of this global — HMR keeps the
+// old object, so check the shape rather than only the presence.
+if (!(live.reconciling instanceof Map)) live.reconciling = new Map();
 live.seqs ??= new Map();
 
 // Job ids are 8-char hex from createJob. Anything else (e.g. an URL-encoded
@@ -74,13 +76,25 @@ async function persist(job: Job): Promise<void> {
   await rename(tmp, jobFile(job.id));
 }
 
+/**
+ * 아직 쓰이지 않은 잡 id. 8자리 16진수는 충돌 확률이 낮지만, 충돌하면
+ * createJob이 기존 잡 디렉터리 위에 그대로 덮어써 조용히 데이터가 사라진다.
+ */
+export function reserveJobId(generate: () => string = () => randomUUID().slice(0, 8)): string {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const id = generate();
+    if (!existsSync(jobDir(id))) return id;
+  }
+  throw new Error("사용 가능한 작업 id를 찾지 못했습니다.");
+}
+
 export async function createJob(
   figmaUrl: string,
   provider: string,
   title?: string,
 ): Promise<Job> {
   const job: Job = {
-    id: randomUUID().slice(0, 8),
+    id: reserveJobId(),
     figmaUrl,
     title,
     provider,
@@ -99,7 +113,7 @@ export async function createJob(
  */
 export async function createEditJob(source: Job, instruction: string): Promise<Job> {
   const job: Job = {
-    id: randomUUID().slice(0, 8),
+    id: reserveJobId(),
     figmaUrl: source.figmaUrl,
     title: source.title ? `${source.title} · 수정` : "부분 수정",
     provider: source.provider,
@@ -115,7 +129,7 @@ export async function createEditJob(source: Job, instruction: string): Promise<J
 }
 
 // A job created this recently may not have registered its controller yet.
-const STALE_GRACE_MS = 10_000;
+export const STALE_GRACE_MS = 10_000;
 
 /**
  * The runner lives in this process; after a server restart a job persisted as
@@ -127,22 +141,33 @@ async function reconcile(job: Job): Promise<Job> {
   if (!active || liveControllers.has(job.id)) return job;
   if (Date.now() - job.createdAt < STALE_GRACE_MS) return job;
   // Concurrent reads must not each persist + append a duplicate error event.
-  if (live.reconciling.has(job.id)) return job;
-  live.reconciling.add(job.id);
+  // 진행 중인 reconcile이 있으면 그 결과를 함께 기다린다 — 낡은 "실행 중"을
+  // 돌려주면 그 요청을 띄운 화면이 이미 실패한 잡을 실행 중으로 표시한다.
+  const inflight = live.reconciling.get(job.id);
+  if (inflight) return inflight;
 
-  const failed: Job = {
-    ...job,
-    status: "failed",
-    finishedAt: Date.now(),
-    summary: "서버가 재시작되어 실행이 중단되었습니다. 다시 실행해 주세요.",
-  };
-  await persist(failed);
-  appendEvent(job.id, {
-    ts: Date.now(),
-    type: "error",
-    text: "실패: 서버가 재시작되어 실행이 중단되었습니다.",
-  });
-  return failed;
+  const run = (async (): Promise<Job> => {
+    const failed: Job = {
+      ...job,
+      status: "failed",
+      finishedAt: Date.now(),
+      summary: "서버가 재시작되어 실행이 중단되었습니다. 다시 실행해 주세요.",
+    };
+    await persist(failed);
+    appendEvent(job.id, {
+      ts: Date.now(),
+      type: "error",
+      text: "실패: 서버가 재시작되어 실행이 중단되었습니다.",
+    });
+    return failed;
+  })();
+  // 끝나면 반드시 비운다 — 남겨두면 그 잡은 이 프로세스에서 다시는 reconcile
+  // 되지 않고, 항목이 계속 쌓인다.
+  live.reconciling.set(
+    job.id,
+    run.finally(() => live.reconciling.delete(job.id)),
+  );
+  return run;
 }
 
 export async function getJob(id: string): Promise<Job | null> {

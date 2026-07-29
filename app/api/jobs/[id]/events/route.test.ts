@@ -65,6 +65,19 @@ describe("job events SSE route", () => {
     expect(subscriberCount(job.id)).toBe(0);
   });
 
+  it("closes a stream whose runner died inside the stale grace period", async () => {
+    const job = await createJob(FIGMA_URL, "mock");
+    // 서버가 재시작돼 러너는 사라졌지만 아직 유예 기간 안이라 reconcile이 돌지
+    // 않는다 — getJob은 "실행 중"을 돌려주고, 스트림은 영원히 기다린다.
+    await updateJob(job.id, { status: "running", createdAt: Date.now() - 9_400 });
+
+    const res = await call(job.id);
+    const body = await new Response(res.body).text();
+
+    expect(body).toContain("서버가 재시작되어");
+    expect(subscriberCount(job.id)).toBe(0);
+  }, 15_000);
+
   it("cleans up its subscription when the client leaves during replay", async () => {
     const job = await createJob(FIGMA_URL, "mock");
     await updateJob(job.id, { status: "running" });
