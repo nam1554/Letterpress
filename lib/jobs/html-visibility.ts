@@ -138,9 +138,15 @@ function parseStyle(css: string, kind: HideKind): Style {
     }
   }
   // 0·1px로 잘려 안 보이는 상자 — 어느 한 축만 잠겨도 내용은 보이지 않는다.
-  const px = (raw?: string) => (raw !== undefined && !raw.includes("%") ? num(raw) : Number.NaN);
-  if (/^hidden/.test(last("overflow") ?? "") && (px(style.width) <= 1 || px(style.height) <= 1)) {
-    style.hide.set("box", true);
+  // 다른 속성들과 마찬가지로 조건이 아니면 false를 써야 한다. true만 쓰면
+  // 뒤 규칙이나 인라인 스타일로 되돌릴 수 없어(캐스케이드 위반) `.tiny`를
+  // 인라인에서 600px로 덮어쓴 정상 본문까지 사라진다.
+  if (style.width !== undefined || style.height !== undefined || last("overflow") !== undefined) {
+    const px = (raw?: string) => (raw !== undefined && !raw.includes("%") ? num(raw) : Number.NaN);
+    style.hide.set(
+      "box",
+      /^hidden/.test(last("overflow") ?? "") && (px(style.width) <= 1 || px(style.height) <= 1),
+    );
   }
   return style;
 }
@@ -164,7 +170,13 @@ function mediaApplies(prelude: string): boolean {
     for (const cond of one.matchAll(/\(([^)]*)\)/g)) {
       const [rawName, rawValue] = cond[1].split(":").map((s) => s.trim());
       const name = (rawName ?? "").replace(/^(min|max)-device-/, "$1-");
-      if (name === "prefers-color-scheme") return rawValue !== "dark";
+      if (name === "prefers-color-scheme") {
+        // 검증 렌더는 라이트 모드다. 여기서 곧장 return하면 같은 질의의 다른
+        // 조건(예: `and (max-width:600px)`)을 못 보고 모바일 전용 규칙까지
+        // 적용해버린다 — 정상 본문이 통째로 사라지는 경로였다.
+        if (rawValue === "dark") return false;
+        continue;
+      }
       if (name !== "max-width" && name !== "min-width") continue;
       const px = num(rawValue ?? "") * (/r?em\s*$/.test(rawValue ?? "") ? 16 : 1);
       if (!Number.isFinite(px)) continue;
@@ -260,6 +272,8 @@ export interface RenderedImage {
   width?: number;
   /** `max-width` 상한 (px). 폭을 만들지는 않고 상한으로만 쓴다. */
   maxWidth?: number;
+  /** 담고 있는 칸의 폭 (px) — 마크업에 폭이 없을 때의 상한. */
+  container: number;
   /** 마크업이 지정한 표시 높이 (px). 없으면 undefined. */
   height?: number;
 }
@@ -271,8 +285,16 @@ export interface Rendered {
   images: RenderedImage[];
 }
 
-/** 속성 또는 스타일 값에서 px 표시 길이 — `%`는 본문 폭 기준으로 환산한다. */
-function lengthPx(raw: string | undefined, axis: "w" | "h"): number | undefined {
+/**
+ * 속성 또는 스타일 값에서 px 표시 길이. `%`는 **담고 있는 칸의 폭** 기준으로
+ * 환산한다 — 본문 폭(700)으로 고정하면 2단 칼럼의 `width="100%"` 이미지가
+ * 700px 전폭 아트로 잡혀 정상 빌드가 "슬라이스"로 거부된다.
+ */
+function lengthPx(
+  raw: string | undefined,
+  axis: "w" | "h",
+  containerWidth: number,
+): number | undefined {
   if (raw === undefined) return undefined;
   const m = raw.trim().match(/^([\d.]+)\s*(px|%)?$/);
   if (!m) return undefined;
@@ -280,20 +302,47 @@ function lengthPx(raw: string | undefined, axis: "w" | "h"): number | undefined 
   if (!Number.isFinite(value)) return undefined;
   if (m[2] === "%") {
     // 세로 %는 이메일에서 기준이 없어 의미가 없다.
-    return axis === "w" ? (DESKTOP_WIDTH * value) / 100 : undefined;
+    return axis === "w" ? (containerWidth * value) / 100 : undefined;
   }
   // 0·1px은 표시 크기로 믿지 않는다 — `height="0"` 한 줄로 검사를 끌 수 있다.
   return value > 1 ? value : undefined;
 }
 
-function imageBox($: CheerioAPI, el: Element, style: Style | undefined): RenderedImage {
+/**
+ * 이미지를 담고 있는 칸의 폭 — 조상 중 폭을 선언한 가장 가까운 요소를 쓴다
+ * (`<td width="330">`, `style="width:330px"`). 이메일은 표로 짜기 때문에 이
+ * 정보가 마크업에 거의 항상 있고, 브라우저도 같은 것을 본다. 없으면 본문 폭.
+ */
+function containerWidth($: CheerioAPI, el: Element, styles: Map<Element, Style>): number {
+  for (const ancestor of $(el).parents().toArray()) {
+    const style = styles.get(ancestor as Element);
+    const declared =
+      lengthPx(style?.width, "w", DESKTOP_WIDTH) ??
+      lengthPx($(ancestor).attr("width"), "w", DESKTOP_WIDTH) ??
+      lengthPx(style?.maxWidth, "w", DESKTOP_WIDTH);
+    if (declared !== undefined) return Math.min(declared, DESKTOP_WIDTH);
+  }
+  return DESKTOP_WIDTH;
+}
+
+function imageBox(
+  $: CheerioAPI,
+  el: Element,
+  style: Style | undefined,
+  styles: Map<Element, Style>,
+): RenderedImage {
   const attr = (name: string) => $(el).attr(name);
-  const width = lengthPx(style?.width ?? attr("width"), "w");
-  const maxWidth = lengthPx(style?.maxWidth, "w");
-  const height = lengthPx(style?.height ?? attr("height"), "h");
+  const container = containerWidth($, el, styles);
+  // `width:auto` 같은 비-길이 값이 width 속성을 가려서는 안 된다 — 가리면
+  // 폭을 모르는 이미지가 되어 검사가 통째로 꺼진다.
+  const width =
+    lengthPx(style?.width, "w", container) ?? lengthPx(attr("width"), "w", container);
+  const maxWidth = lengthPx(style?.maxWidth, "w", container);
+  const height =
+    lengthPx(style?.height, "h", container) ?? lengthPx(attr("height"), "h", container);
   // `max-width`만으로는 폭이 정해지지 않는다 — `max-width:100%`는 거의 모든
   // 반응형 이미지에 붙어 있어서, 그걸 폭으로 읽으면 전부 전폭 아트가 된다.
-  return { src: attr("src") ?? "", width, maxWidth, height };
+  return { src: attr("src") ?? "", width, maxWidth, height, container };
 }
 
 /**
@@ -336,7 +385,7 @@ function analyze(html: string, kind: HideKind): Rendered {
     // 상속되지 않는 숨김(display:none 등)은 하위 전체가 렌더되지 않는다.
     if ([...active].some((prop) => !INHERITED_HIDE.has(prop))) return;
     if (tag === "img") {
-      images.push(imageBox($, el, style));
+      images.push(imageBox($, el, style, styles));
       return;
     }
     for (const child of el.children) walk(child, active);

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { DESKTOP_WIDTH, renderHtml } from "./html-visibility";
+import { renderHtml } from "./html-visibility";
 import { type ImageSize, imageSize } from "./image-size";
 import { outputDir, workDir } from "./store";
 
@@ -72,16 +72,16 @@ function measuredImages(
   html: string,
   sizes?: ImageSizeLookup,
 ): Array<{ src: string; w: number; h: number }> {
-  return renderHtml(html, "layout").images.map(({ src, width, maxWidth, height }) => {
+  return renderHtml(html, "layout").images.map(({ src, width, maxWidth, height, container }) => {
     let w = width ?? Number.NaN;
     let h = height ?? Number.NaN;
     const intrinsic = sizes?.(src) ?? null;
     if (intrinsic && !Number.isFinite(w)) {
-      // 폭을 마크업에서 못 얻었을 때만 실측을 쓰되, 본문 폭 이상일 때로 한정한다 —
-      // 좁은 슬롯에 들어가는 2× 내보내기(예: 300px 자리의 600px 파일)를 전폭
-      // 아트로 읽으면 정상 빌드가 "스크린샷"으로 거부된다.
+      // 마크업에 폭이 없으면 브라우저는 실측 크기로 렌더하되 담고 있는 칸을
+      // 넘지 못한다 — 그 상한을 그대로 쓴다. (예전엔 "실측이 본문 폭 이상일
+      // 때만" 인정해서, 600px로 구운 통짜 캡처가 검사를 통째로 빠져나갔다.)
       if (Number.isFinite(h)) w = (h * intrinsic.w) / intrinsic.h;
-      else if (intrinsic.w >= DESKTOP_WIDTH) w = intrinsic.w;
+      else w = Math.min(intrinsic.w, container);
     }
     // `width:100%;max-width:300px`는 300px로 렌더된다.
     if (maxWidth !== undefined && Number.isFinite(w)) w = Math.min(w, maxWidth);

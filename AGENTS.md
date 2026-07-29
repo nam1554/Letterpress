@@ -174,6 +174,12 @@ no auth, single user, filesystem is the database.
     the reference send) keeps its image countable while a `display:none`
     mobile variant is not double-counted. Inherited hides don't drop the
     subtree — a child that re-declares the property is visible again.
+  - Display width is resolved against the CONTAINING CELL, not a fixed 700px:
+    `containerWidth()` walks ancestors for a declared width (`<td width="330">`,
+    `style="width:330px"`). Percent widths resolve against it, and an image with
+    no declared width is capped by it. A fixed 700px basis failed honest 2-up
+    column grids as "sliced", while the earlier "only trust intrinsic width if
+    ≥700px" rule let a whole-email capture exported at 600px through untouched.
   - `<img>` ASPECT comes from the FILE (`lib/jobs/image-size.ts`, PNG/JPEG/GIF/
     WEBP + base64 data URIs decoded in full — a JPEG's SOF can sit behind a 20KB
     ICC profile), since real markup is `width="700" style="height:auto"`.

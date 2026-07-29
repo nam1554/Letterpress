@@ -27,6 +27,15 @@ function secrets(): string[] {
   return [figmaToken, geminiApiKey].filter((s): s is string => Boolean(s) && s.length >= 8);
 }
 
+/**
+ * 번들에 넣기 전 반드시 거쳐야 하는 문(門) — 저장된 비밀값 + 토큰 형태를 함께
+ * 지운다. 호출부가 비밀 목록을 직접 넘기게 두면 빈 배열로 부르는 실수가 나고,
+ * 그 파일 하나만 평문으로 새어 나간다(실제로 job.json·events.ndjson이 그랬다).
+ */
+export function scrubForBundle(text: string): string {
+  return scrub(text, secrets());
+}
+
 /** 텍스트에서 알려진 비밀값을 지운다. */
 export function scrub(text: string, values: string[]): string {
   let out = text;

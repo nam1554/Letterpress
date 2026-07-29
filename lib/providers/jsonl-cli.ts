@@ -72,9 +72,13 @@ export async function runJsonlCli(opts: {
 
   if (opts.signal.aborted) return { kind: "aborted", stderrTail };
   // reject:false면 실패한 실행도 "결과"로 돌아온다(ExecaError). 실행조차 못 한
-  // 경우(ENOENT 등)와 구분하는 기준은 종료 코드의 유무다.
-  const exitCode = (result as { exitCode?: number }).exitCode;
+  // 경우(ENOENT 등)와 구분해야 한다 — 신호로 죽은 실행은 exitCode가 undefined
+  // 지만 분명히 "실행은 됐다". 이것을 spawn 오류로 분류하면 프로바이더가
+  // stderr 꼬리를 버리고 "CLI를 실행할 수 없습니다"라고 말해, 사용자가 멀쩡한
+  // CLI를 재설치하러 간다 (OOM으로 죽은 경우 등).
+  const { exitCode, isTerminated } = result as { exitCode?: number; isTerminated?: boolean };
   if (typeof exitCode === "number") return { kind: "closed", code: exitCode, stderrTail };
+  if (isTerminated) return { kind: "closed", code: null, stderrTail };
   if (result instanceof Error) return { kind: "spawn-error", error: result, stderrTail };
   return { kind: "closed", code: null, stderrTail };
 }

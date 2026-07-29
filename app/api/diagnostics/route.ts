@@ -3,7 +3,7 @@ import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { ZipArchive } from "archiver";
 import { NextRequest } from "next/server";
-import { bundleTexts, scrub } from "@/lib/diagnostics/bundle";
+import { bundleTexts, scrubForBundle } from "@/lib/diagnostics/bundle";
 import { getJob, listArtifacts, listJobs, workDir } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
@@ -33,14 +33,16 @@ export async function GET(req: NextRequest) {
 
   if (job) {
     const base = workDir(job.id);
-    archive.append(JSON.stringify(job, null, 2), { name: "job/job.json" });
+    // job.summary에는 CLI stderr 꼬리가 그대로 담긴다 — 인증 실패 로그에는
+    // 요청 URL의 API 키나 토큰 헤더가 섞여 있을 수 있다.
+    archive.append(scrubForBundle(JSON.stringify(job, null, 2)), { name: "job/job.json" });
     for (const file of ["verify.json", "events.ndjson"]) {
       // events.ndjson은 잡 디렉터리, verify.json은 작업 루트에 있다.
       const candidates = [path.join(base, file), path.join(base, "..", file)];
       for (const candidate of candidates) {
         const raw = await readFile(candidate, "utf8").catch(() => null);
         if (raw !== null) {
-          archive.append(scrub(raw.slice(-500_000), []), { name: `job/${file}` });
+          archive.append(scrubForBundle(raw.slice(-500_000)), { name: `job/${file}` });
           break;
         }
       }
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
     archive.append(
       artifacts.length === 0
         ? "(산출물 없음)"
-        : artifacts.map((a) => `${a.rel}\t${a.size}바이트`).join("\n"),
+        : scrubForBundle(artifacts.map((a) => `${a.rel}\t${a.size}바이트`).join("\n")),
       { name: "job/artifacts.txt" },
     );
   }

@@ -298,6 +298,34 @@ describe("checkAcceptance", () => {
     expect(liveTextChars(mobile)).toBe(400);
   });
 
+  it("1px 상자 숨김도 뒤 선언으로 되돌릴 수 있다", () => {
+    const copy = "가".repeat(400);
+    // 유틸리티 클래스를 인라인으로 덮어쓴 정상 마크업 — 크롬은 600px로 렌더한다.
+    const overridden =
+      `<style>.tiny{width:1px;height:1px;overflow:hidden}</style>` +
+      `<div class="tiny" style="width:600px;height:auto;overflow:visible">${copy}</div>`;
+    expect(liveTextChars(overridden)).toBe(400);
+    // 덮어쓰지 않으면 여전히 숨김이다.
+    const hidden =
+      `<style>.tiny{width:1px;height:1px;overflow:hidden}</style>` +
+      `<div class="tiny">${copy}</div>`;
+    expect(liveTextChars(hidden)).toBe(0);
+  });
+
+  it("prefers-color-scheme 조건이 같은 질의의 폭 조건을 가리지 않는다", () => {
+    const copy = "가".repeat(400);
+    // 라이트 모드 + 모바일 전용 규칙 — 데스크톱 검증 렌더에는 적용되지 않는다.
+    const html =
+      `<style>@media (prefers-color-scheme: light) and (max-width: 600px){.copy{display:none}}</style>` +
+      `<div class="copy">${copy}</div>`;
+    expect(liveTextChars(html)).toBe(400);
+    // 다크 전용은 여전히 적용 안 함, 라이트+데스크톱 폭은 적용.
+    const applies =
+      `<style>@media (prefers-color-scheme: light) and (min-width: 600px){.copy{display:none}}</style>` +
+      `<div class="copy">${copy}</div>`;
+    expect(liveTextChars(applies)).toBe(0);
+  });
+
   it("resolves CSS the way the verified render does", () => {
     const copy = "가".repeat(400);
     // 규칙 순서: 뒤 규칙이 이긴다. 다른 클래스에 걸린 규칙이라도 마찬가지다.
@@ -336,11 +364,39 @@ describe("checkAcceptance", () => {
     // %는 본문 폭(700) 기준이다 — 레퍼런스 PNG를 2×로 뽑아 기준을 흔들 수 없다.
     const pct = `<img src="a.png" width="100%">`;
     expect(findScreenshotLikeImages(pct, () => ({ w: 1400, h: 4000 }))).toEqual(["a.png"]);
-    // 폭을 아무데서도 지정하지 않은 이미지는 실측이 본문 폭 이상일 때만 전폭
-    // 아트로 본다 — 좁은 슬롯의 2× 내보내기(600px)를 전폭으로 읽으면 안 된다.
-    const noSize = `<img src="a.png" style="display:block;max-width:100%">`;
-    expect(findScreenshotLikeImages(noSize, sizes)).toEqual([]);
-    expect(findScreenshotLikeImages(noSize, () => ({ w: 700, h: 2200 }))).toEqual(["a.png"]);
+    // 폭을 아무데서도 지정하지 않으면 브라우저는 실측 크기로 렌더하되 담고 있는
+    // 칸을 넘지 못한다 — 담는 칸 기준으로 판정한다.
+    const bare = `<img src="a.png" style="display:block;max-width:100%">`;
+    // 본문 폭 안이면 600px로 렌더 → 세로비 2.33의 큰 이미지로 잡힌다
+    // (600px로 구워낸 통짜 캡처가 여기로 빠져나갔었다).
+    expect(findScreenshotLikeImages(bare, sizes)).toEqual(["a.png"]);
+    // 같은 파일이라도 330px 칸 안이면 330px로 줄어든다 → 전폭 아트가 아니다.
+    const inCell = `<table><tr><td width="330">${bare}</td></tr></table>`;
+    expect(findScreenshotLikeImages(inCell, sizes)).toEqual([]);
+    expect(fullWidthImageAspectSum(inCell, sizes)).toBe(0);
+  });
+
+  it("담는 칸 기준으로 폭을 잰다 (2단 칼럼 오탐 · 통짜 캡처 미탐)", async () => {
+    const { fullWidthImageAspectSum, findScreenshotLikeImages } = await import("./acceptance");
+    // 2단 칼럼: 330px 칸의 width="100%" 이미지를 700px로 읽으면 커버리지가
+    // 부풀어 정상 빌드가 "슬라이스"로 거부된다.
+    const grid =
+      `<table><tr>` +
+      `<td width="330"><img src="p1.png" width="100%" style="height:auto"></td>` +
+      `<td width="330"><img src="p2.png" width="100%" style="height:auto"></td>` +
+      `</tr></table>`;
+    expect(fullWidthImageAspectSum(grid, () => ({ w: 330, h: 330 }))).toBe(0);
+    // 반대로 본문 폭 칸의 width="100%"는 전폭 아트가 맞다.
+    const full = `<table><tr><td width="700"><img src="w.png" width="100%"></td></tr></table>`;
+    expect(findScreenshotLikeImages(full, () => ({ w: 700, h: 2200 }))).toEqual(["w.png"]);
+  });
+
+  it("style의 비-길이 값이 width 속성을 가리지 않는다", async () => {
+    const { findScreenshotLikeImages } = await import("./acceptance");
+    // `width:auto`가 속성을 가리면 폭을 모르는 이미지가 되어 검사가 꺼진다 —
+    // CDN에 올린 통짜 캡처(실측 불가)가 그대로 통과했다.
+    const cheat = `<img src="https://cdn.example.com/whole.png" width="700" height="2200" style="width:auto">`;
+    expect(findScreenshotLikeImages(cheat)).toEqual(["https://cdn.example.com/whole.png"]);
   });
 
   it("does not let an Outlook-only or shrink-wrapped wrapper hide an image", async () => {
