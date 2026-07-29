@@ -32,6 +32,16 @@ const SAMPLE_HTML = `<html><body><table><tr><td>
 편하게 남겨주세요. (주)비큐AI 서울특별시 중구 퇴계로 385 준타워 9층
 </td></tr></table></body></html>`;
 
+/** 크기만 읽히면 되는 최소 PNG (시그니처 + IHDR). */
+function fakePng(w: number, h: number): Buffer {
+  const buf = Buffer.alloc(24);
+  buf.writeUInt32BE(0x89504e47, 0);
+  buf.writeUInt32BE(0x49484452, 12);
+  buf.writeUInt32BE(w, 16);
+  buf.writeUInt32BE(h, 20);
+  return buf;
+}
+
 /** 완전한 산출물 세트를 가진 잡을 만든다. */
 async function fullJob(verifyJson: string | null = PASS_JSON) {
   const job = await createJob("https://www.figma.com/design/abc/", "mock");
@@ -173,6 +183,149 @@ describe("checkAcceptance", () => {
     expect(liveTextChars(html)).toBe(5);
   });
 
+  it("does not read ordinary declarations as hidden (property-name boundaries)", () => {
+    // 예전 구현은 값만 훑는 하나의 정규식이라 `background-color:transparent`,
+    // `border-color:transparent`, `margin-left:-100px`를 숨김으로 읽고 본문을
+    // 통째로 지웠다 — 표 기반 이메일에서 흔한 선언이라 정상 빌드가 실패했다.
+    const body = "가".repeat(300);
+    for (const style of [
+      "background-color:transparent;padding:1px",
+      "border-color:transparent",
+      "margin-left:-100px",
+      "left:-9999px", // position이 없으면 화면 밖으로 나가지 않는다
+      "height:1px;background:#eee;width:100%", // 1px 구분선
+      "font-size:14px;color:#333",
+    ]) {
+      expect(liveTextChars(`<td style="${style}">${body}</td>`)).toBe(300);
+    }
+    // 진짜 숨김은 여전히 잡는다.
+    for (const style of [
+      "display:none",
+      "color:transparent",
+      "font-size:0",
+      "position:absolute;left:-9999px",
+      "width:1px;height:1px;overflow:hidden",
+    ]) {
+      expect(liveTextChars(`<td style="${style}">${body}</td>`)).toBe(0);
+    }
+  });
+
+  it("reads hidden classes inside @media, but not mobile-only rules", () => {
+    const copy = "가".repeat(400);
+    // 우회 4탄: 숨김 규칙을 @media로 감싸면 예전 평면 정규식은 선택자를
+    // `@media all`로 읽어 클래스를 놓쳤다.
+    const wrapped =
+      `<style>@media all{.email-copy{color:transparent}.pad{padding:0}}</style>` +
+      `<td class="email-copy">${copy}</td><p>보이는것만</p>`;
+    expect(liveTextChars(wrapped)).toBe(5);
+
+    // 반대로 모바일 전용 규칙은 데스크톱 렌더를 숨기지 않는다 — 이걸 숨김으로
+    // 읽으면 정상 반응형 산출물의 본문이 사라져 게이트가 잘못 실패한다.
+    const responsive =
+      `<style>@media only screen and (max-width:600px){.desktop-only{display:none}}</style>` +
+      `<td class="desktop-only">${copy}</td>`;
+    expect(liveTextChars(responsive)).toBe(400);
+
+    // 나중 규칙이 다시 보이게 하면 취소된다 (캐스케이드).
+    const unhidden =
+      `<style>.swap{display:none} @media all{.swap{display:block}}</style>` +
+      `<td class="swap">${copy}</td>`;
+    expect(liveTextChars(unhidden)).toBe(400);
+
+    // 자손 선택자는 마지막 요소만 숨긴다 — `.wrap`까지 지우면 안 된다.
+    const descendant =
+      `<style>.wrap .sr-only{display:none}</style>` +
+      `<div class="wrap">${copy}<span class="sr-only">숨김</span></div>`;
+    expect(liveTextChars(descendant)).toBe(400);
+  });
+
+  it("keeps the rest of the document when a hidden tag has no closing tag", () => {
+    const body = "보이는본문".repeat(40); // 200자
+    // 예전 구현은 </hr>를 못 찾으면 문서 끝까지 버렸다 — 뒤의 본문이 전부
+    // 사라져 정상 산출물이 "통짜 이미지"로 몰렸다.
+    expect(liveTextChars(`<hr style="display:none"><p>${body}</p>`)).toBe(200);
+    expect(liveTextChars(`<input type="hidden" style="display:none"><p>${body}</p>`)).toBe(200);
+    expect(liveTextChars(`<p style="display:none">닫히지 않은 스페이서<p>${body}</p>`)).toBe(200);
+  });
+
+  it("sizes height-less full-width images from the image file itself", async () => {
+    const { fullWidthImageAspectSum, findScreenshotLikeImages } = await import("./acceptance");
+    // 실전 마크업: 전폭 이미지는 `width="700" height:auto`라 height 속성이 없다.
+    const tag = `<img src="images/whole.png" width="700" style="max-width:100%;height:auto">`;
+    // 파일 크기를 모르면 (예전 구현) 세로비를 몰라 두 검사가 조용히 통과한다.
+    expect(fullWidthImageAspectSum(tag)).toBe(0);
+    expect(findScreenshotLikeImages(tag)).toEqual([]);
+    // 실측(2× 내보내기여도 비율은 같다)을 주면 잡힌다.
+    const sizes = () => ({ w: 1400, h: 4414 });
+    expect(fullWidthImageAspectSum(tag, sizes)).toBeCloseTo(4414 / 1400, 5);
+    expect(findScreenshotLikeImages(tag, sizes)).toEqual(["images/whole.png"]);
+    // 폭이 %로만 주어진 이미지도 실측으로 판정한다.
+    const pct = `<img src="images/whole.png" width="100%">`;
+    expect(findScreenshotLikeImages(pct, sizes)).toEqual(["images/whole.png"]);
+  });
+
+  it("rejects a height-less sliced build end to end", async () => {
+    const job = await fullJob();
+    await writeFile(path.join(workDir(job.id), "figma_full.png"), fakePng(700, 2207));
+    const slices = ["header", "hero", "intro", "cards", "banner", "closing", "footer"];
+    const heights = [85, 385, 240, 723, 234, 311, 229];
+    await Promise.all(
+      slices.map((name, i) =>
+        writeFile(
+          path.join(outputDir(job.id), "images", `${name}.png`),
+          fakePng(1400, heights[i] * 2), // 레티나 2× 내보내기
+        ),
+      ),
+    );
+    await writeFile(
+      path.join(outputDir(job.id), "edm_responsive.html"),
+      `<html><body><p>${"보이는본문텍스트".repeat(20)}</p>` +
+        slices
+          .map((n) => `<img src="images/${n}.png" width="700" style="height:auto">`)
+          .join("") +
+        `</body></html>`,
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("슬라이스");
+  });
+
+  it("measures base64 images in a self-contained deliverable", async () => {
+    const job = await fullJob();
+    await writeFile(path.join(workDir(job.id), "figma_full.png"), fakePng(700, 2207));
+    const whole = `data:image/png;base64,${fakePng(700, 2207).toString("base64")}`;
+    await writeFile(
+      path.join(outputDir(job.id), "edm_responsive.html"),
+      `<html><body><p>${"보이는본문텍스트".repeat(20)}</p>` +
+        `<img src="${whole}" width="700" style="height:auto"></body></html>`,
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("스크린샷");
+  });
+
+  it("counts only rendered images — hidden variants and font-size:0 cells", async () => {
+    const job = await fullJob();
+    await writeFile(path.join(workDir(job.id), "figma_full.png"), fakePng(700, 2207));
+    await writeFile(path.join(outputDir(job.id), "images", "hero.png"), fakePng(1400, 770));
+    // 반응형 산출물은 같은 아트를 데스크톱/모바일 두 벌로 싣는다 — 숨긴 쪽까지
+    // 세면 커버리지가 두 배가 되어 정상 빌드가 "슬라이스"로 거부된다.
+    // 이미지 간격 제거용 `font-size:0` 셀은 이미지 검사에서 살아 있어야 한다
+    // (텍스트 검사에서만 숨김으로 친다).
+    const img = `<img src="images/hero.png" width="700" style="height:auto">`;
+    await writeFile(
+      path.join(outputDir(job.id), "edm_responsive.html"),
+      `<html><body><style>@media only screen and (max-width:600px){.desktop{display:none}}</style>` +
+        `<p>${"보이는본문텍스트".repeat(20)}</p>` +
+        `<td style="font-size:0;line-height:0">${img}</td>` +
+        `<td class="mobile" style="display:none">${img}</td>` +
+        `</body></html>`,
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.failures.join(" ")).not.toContain("슬라이스");
+    expect(a.ok).toBe(true);
+  });
+
   it("rejects a sliced-screenshot build via full-width image coverage", async () => {
     const { fullWidthImageAspectSum } = await import("./acceptance");
     const slice = (name: string, h: number) =>
@@ -189,12 +342,7 @@ describe("checkAcceptance", () => {
 
     // 게이트 통합: 진짜 PNG 헤더의 figma_full.png가 있으면 커버리지로 거부한다.
     const job = await fullJob();
-    const png = Buffer.alloc(24);
-    png.writeUInt32BE(0x89504e47, 0); // 서명 앞 4바이트 (나머지는 IHDR 위치만 맞으면 충분)
-    png.writeUInt32BE(0x49484452, 12); // "IHDR"
-    png.writeUInt32BE(700, 16);
-    png.writeUInt32BE(2207, 20);
-    await writeFile(path.join(workDir(job.id), "figma_full.png"), png);
+    await writeFile(path.join(workDir(job.id), "figma_full.png"), fakePng(700, 2207));
     await writeFile(
       path.join(outputDir(job.id), "edm_responsive.html"),
       `<html><body><p>${"보이는본문텍스트".repeat(20)}</p>${sliced}</body></html>`,

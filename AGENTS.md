@@ -39,11 +39,16 @@ no auth, single user, filesystem is the database.
 - **Job state** lives in `data/jobs/<id>/` (`job.json` atomic-written,
   `events.ndjson` with per-job monotonic `seq`, `work/output/` = downloadable
   artifacts). Never commit `data/`. Job ids are 8-hex — `jobDir()` enforces
-  this; all fs paths derive from it. `jobDirSize()` reports per-job disk usage
-  (terminal jobs cached, invalidated by `deleteJob`); `POST /api/jobs/
-  bulk-delete` removes selected jobs with per-id results; `lib/jobs/notify.ts`
-  fires a best-effort macOS notification on job finish (`notifyOnFinish`
-  setting, default on).
+  this; all fs paths derive from it. `jobDirSize()` reports per-job disk usage —
+  cached per (id, status) so a resume/edit re-measures, with a 30s TTL while
+  running (the home page polls `/api/jobs` every 5s and a full recursive walk of
+  a live `work/` tree competes with the SSE log stream) and
+  `invalidateJobSize()` for outside writes (the hosting route). `POST /api/jobs/
+  bulk-delete` removes selected jobs with per-id results — the UI only ever
+  submits the CURRENTLY VISIBLE selection, after a confirm click, so a filter or
+  search can't delete rows the user never saw; `lib/jobs/notify.ts` fires a
+  best-effort macOS notification on job finish (`notifyOnFinish` setting,
+  default on) — but not on user cancel, which is not a failure.
 - **Settings** (`lib/settings.ts` → `data/settings.json`, edited via the ⚙️
   panel): default provider, concurrency cap, job timeout, Figma REST fallback
   token. Precedence: settings.json > env > default. Keys/tokens are validated
@@ -94,6 +99,29 @@ no auth, single user, filesystem is the database.
   aspect-ratio sum ≤70% of the figma_full canvas aspect (a sliced capture —
   honest builds run ~28%). Visible text can't be faked: text not in the design
   breaks pixel-verify, hidden text isn't counted.
+  The anti-gaming parsing is where the false-positive risk lives — a wrong
+  "hidden" verdict fails an honest 15-min build and burns a repair run. Rules
+  that a code review found broken and that now have regression tests:
+  - Hidden-ness is decided per DECLARATION (property name compared exactly),
+    never by regex-matching values across a style string —
+    `background-color:transparent` / `margin-left:-100px` are not hidden, and
+    `left:-9999px` only counts with `position:absolute|fixed`.
+  - Two hide kinds: `text` (adds font-size:0 / color:transparent) vs `layout`.
+    Image checks use `layout` only — `<td style="font-size:0">` around an image
+    is the standard gap-killer idiom and its image must stay countable, while a
+    mobile/desktop variant hidden by `display:none` must NOT be double-counted.
+  - `<style>` is parsed by brace matching, so rules inside `@media` are seen
+    (wrapping the hide in `@media all` used to slip through), but a query is
+    only applied if it matches the DESKTOP render (700px) — treating
+    `@media (max-width:600px){.desktop{display:none}}` as hidden would delete a
+    legit responsive build's whole body. Later rules can un-hide (cascade);
+    only the last compound of a selector is the hide target.
+  - Element removal knows the HTML void set and auto-closing tags; a missing
+    close tag drops only the open tag instead of the rest of the document.
+  - `<img>` sizes come from the FILE (`lib/jobs/image-size.ts`, PNG/JPEG/GIF/
+    WEBP + base64 data URIs) when an attribute is missing — real email markup is
+    `width="700" style="height:auto"`, and attribute-only sizing left both image
+    checks silently disabled (h = NaN).
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).

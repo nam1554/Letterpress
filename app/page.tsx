@@ -74,6 +74,8 @@ export default function Home() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 삭제 확인이 걸린 대상 목록(id 조인) — null이면 확인 전.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
 
@@ -203,6 +205,12 @@ export default function Home() {
     );
   });
 
+  // 실제로 지울 대상은 "화면에 보이는 선택"뿐이다 — 필터·검색으로 감춰진 잡이나
+  // 이미 사라진 잡까지 지우면 사용자가 못 본 결과물이 복구 불가능하게 날아간다.
+  const selectedIds = visibleJobs.filter((j) => selected.has(j.id)).map((j) => j.id);
+  // 확인은 "지금 화면의 그 목록"에만 유효하다 — 확인 후 필터를 바꾸면 다시 묻는다.
+  const deleteArmed = confirmDelete !== null && confirmDelete === selectedIds.join(",");
+
   function toggleSelected(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -213,15 +221,20 @@ export default function Home() {
   }
 
   function selectFailed() {
-    setSelected(new Set(jobs.filter((j) => j.status === "failed").map((j) => j.id)));
+    setSelected(new Set(visibleJobs.filter((j) => j.status === "failed").map((j) => j.id)));
   }
 
   async function deleteSelected() {
-    if (selected.size === 0) return;
+    if (selectedIds.length === 0) return;
+    if (!deleteArmed) {
+      setConfirmDelete(selectedIds.join(","));
+      return;
+    }
+    setConfirmDelete(null);
     const r = await sendJson<{ results: Array<{ id: string; ok: boolean }> }>(
       "/api/jobs/bulk-delete",
       "POST",
-      { ids: [...selected] },
+      { ids: selectedIds },
     );
     if (!r.ok) {
       setError(r.error);
@@ -413,7 +426,7 @@ export default function Home() {
               실패한 잡 선택
             </Anchor>
           )}
-          {selected.size > 0 && (
+          {selectedIds.length > 0 && (
             <Button
               data-testid="delete-selected"
               color="red"
@@ -421,7 +434,9 @@ export default function Home() {
               size="compact-xs"
               onClick={deleteSelected}
             >
-              선택 삭제 ({selected.size})
+              {deleteArmed
+                ? `정말 ${selectedIds.length}건 삭제?`
+                : `선택 삭제 (${selectedIds.length})`}
             </Button>
           )}
         </Group>

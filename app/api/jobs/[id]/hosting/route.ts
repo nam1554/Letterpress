@@ -10,7 +10,7 @@ import {
   swapEmbeddedFontsForCdn,
   templateNeedsFolder,
 } from "@/lib/hosting";
-import { getJob, listArtifacts, outputDir } from "@/lib/jobs/store";
+import { getJob, invalidateJobSize, listArtifacts, outputDir } from "@/lib/jobs/store";
 import { saveSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +90,7 @@ export async function POST(
     ? [...allFiles].filter((f) => f.includes("__"))
     : [];
 
+  invalidateJobSize(id); // hosted/ 를 새로 썼으니 잡 디스크 사용량 캐시를 버린다
   saveSettings({ cdnTemplate: template });
   return NextResponse.json({
     created,

@@ -22,6 +22,7 @@ import {
   createJob,
   deleteJob,
   getJob,
+  invalidateJobSize,
   jobDirSize,
   listJobs,
   readEvents,
@@ -187,17 +188,43 @@ describe("resolveArtifact", () => {
 });
 
 describe("jobDirSize", () => {
-  it("sums the job directory and caches only terminal jobs", async () => {
+  it("sums the job directory and caches per status", async () => {
     const job = await createJob("https://www.figma.com/design/abc/", "mock");
     await writeFile(path.join(workDir(job.id), "a.bin"), Buffer.alloc(1000));
-    const running = await jobDirSize(job); // queued → 캐시 안 됨
+    // 실행 중 잡도 짧은 TTL로 캐시한다 — 홈이 5초마다 폴링하는데 매번 work/
+    // 트리를 재귀 탐색하면 SSE 로그·다운로드와 이벤트 루프를 다툰다.
+    const running = await jobDirSize(job);
     await writeFile(path.join(workDir(job.id), "b.bin"), Buffer.alloc(500));
-    expect(await jobDirSize(job)).toBe(running + 500);
+    expect(await jobDirSize(job)).toBe(running);
 
     const done = { ...job, status: "succeeded" as const };
-    const cached = await jobDirSize(done); // 종료 → 캐시
+    const cached = await jobDirSize(done); // 상태가 바뀌었으니 다시 잰다
+    expect(cached).toBe(running + 500);
     await writeFile(path.join(workDir(job.id), "c.bin"), Buffer.alloc(9999));
-    expect(await jobDirSize(done)).toBe(cached); // 캐시 적중: 파일 추가 무시
+    expect(await jobDirSize(done)).toBe(cached); // 종료 잡은 계속 캐시 적중
+    await deleteJob(job.id);
+  });
+
+  it("re-measures after a resume puts a finished job back to work", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const done = { ...job, status: "succeeded" as const };
+    const first = await jobDirSize(done);
+    // 이어서 실행·부분 수정은 같은/복사된 workDir에서 파일을 더 만든다. 상태를
+    // 캐시 키에 포함하지 않으면 종료 잡의 옛 수치가 영원히 남는다.
+    await writeFile(path.join(workDir(job.id), "resumed.bin"), Buffer.alloc(2048));
+    await jobDirSize({ ...job, status: "running" as const });
+    expect(await jobDirSize(done)).toBe(first + 2048);
+    await deleteJob(job.id);
+  });
+
+  it("invalidates the cache when the job dir is written from outside", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const done = { ...job, status: "succeeded" as const };
+    const first = await jobDirSize(done);
+    await writeFile(path.join(workDir(job.id), "hosted.html"), Buffer.alloc(4096));
+    expect(await jobDirSize(done)).toBe(first); // 캐시 적중 (아직 무효화 전)
+    invalidateJobSize(job.id);
+    expect(await jobDirSize(done)).toBe(first + 4096);
     await deleteJob(job.id);
   });
 

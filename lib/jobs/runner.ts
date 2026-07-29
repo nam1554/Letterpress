@@ -131,9 +131,10 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
       });
       notifyJobFinished({ id: job.id, status: ok ? "succeeded" : "failed", title: job.title });
     } catch (err) {
+      const cancelled = !timedOut && controller.signal.aborted;
       const message = timedOut
         ? `제한 시간(${timeoutMinutes}분)을 초과해 중단되었습니다.`
-        : controller.signal.aborted
+        : cancelled
           ? "사용자가 취소했습니다."
           : err instanceof Error
             ? err.message
@@ -144,7 +145,9 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
         summary: message,
       });
       emit({ ts: Date.now(), type: "error", text: `실패: ${message}` });
-      notifyJobFinished({ id: job.id, status: "failed", title: job.title });
+      // 사용자가 직접 멈춘 잡은 알리지 않는다 — "변환 실패" 알림이 뜨면
+      // 무인 실행을 신뢰하라고 넣은 신호가 오히려 오염된다.
+      if (!cancelled) notifyJobFinished({ id: job.id, status: "failed", title: job.title });
     } finally {
       clearTimeout(timer);
       liveControllers.delete(job.id);

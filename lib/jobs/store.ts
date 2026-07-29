@@ -325,7 +325,19 @@ export async function deleteJob(id: string): Promise<boolean> {
 }
 
 const TERMINAL_FOR_SIZE = new Set<JobStatus>(["succeeded", "failed"]);
-const dirSizeCache = new Map<string, number>();
+/**
+ * 잡별 디스크 사용량 캐시. 상태를 함께 담아 두므로 이어서 실행·부분 수정으로
+ * 잡이 running으로 돌아왔다가 다시 끝나면 자동으로 다시 잰다. 실행 중인 잡은
+ * 짧은 TTL로만 캐시한다 — 홈 화면이 5초마다 폴링하는데 매번 work/ 트리 전체를
+ * 재귀 탐색하면 SSE 로그 스트림·다운로드와 같은 이벤트 루프를 잡아먹는다.
+ */
+const dirSizeCache = new Map<string, { bytes: number; at: number; status: JobStatus }>();
+const RUNNING_SIZE_TTL_MS = 30_000;
+
+/** 잡 디렉터리를 밖에서 건드렸을 때(예: hosted/ 생성) 캐시를 버린다. */
+export function invalidateJobSize(id: string): void {
+  dirSizeCache.delete(id);
+}
 
 async function dirSize(dir: string): Promise<number> {
   let entries;
@@ -343,12 +355,18 @@ async function dirSize(dir: string): Promise<number> {
   return sum;
 }
 
-/** 잡 디렉터리 총 바이트. 종료 잡은 캐시(파일이 더 변하지 않는다). */
+/** 잡 디렉터리 총 바이트. 종료 잡은 계속, 실행 중 잡은 짧게 캐시한다. */
 export async function jobDirSize(job: Pick<Job, "id" | "status">): Promise<number> {
   const terminal = TERMINAL_FOR_SIZE.has(job.status);
-  const cached = terminal ? dirSizeCache.get(job.id) : undefined;
-  if (cached !== undefined) return cached;
-  const size = await dirSize(jobDir(job.id));
-  if (terminal) dirSizeCache.set(job.id, size);
-  return size;
+  const cached = dirSizeCache.get(job.id);
+  if (
+    cached &&
+    cached.status === job.status &&
+    (terminal || Date.now() - cached.at < RUNNING_SIZE_TTL_MS)
+  ) {
+    return cached.bytes;
+  }
+  const bytes = await dirSize(jobDir(job.id));
+  dirSizeCache.set(job.id, { bytes, at: Date.now(), status: job.status });
+  return bytes;
 }
