@@ -20,6 +20,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import SettingsPanel from "./components/SettingsPanel";
+import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
 import { parseFigmaUrl } from "@/lib/figma";
 import { figmaLabel, relativeTime } from "./lib/format";
 
@@ -41,7 +42,6 @@ interface HealthCheck {
   ok: boolean;
   detail: string;
   hint?: string;
-  optional?: boolean;
 }
 
 const STATUS_BADGE: Record<string, { color: string; label: string }> = {
@@ -60,6 +60,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [health, setHealth] = useState<HealthCheck[] | null>(null);
+  const [backends, setBackends] = useState<BackendInfo[] | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -76,17 +77,28 @@ export default function Home() {
     setProvider((p) => p || data.defaultProvider);
   }, []);
 
+  const loadSetup = useCallback(async (force = false) => {
+    if (force) setBackends(null);
+    try {
+      const res = await fetch(`/api/setup${force ? "?force=1" : ""}`);
+      setBackends((await res.json()).backends);
+    } catch {
+      /* 표시 유지 */
+    }
+  }, []);
+
   useEffect(() => {
     // load()는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+    void loadSetup();
     fetch("/api/health")
       .then((r) => r.json())
       .then((d) => setHealth(d.checks))
       .catch(() => {});
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, loadSetup]);
 
   async function recheckHealth() {
     setHealth(null);
@@ -150,8 +162,8 @@ export default function Home() {
     } else setError("일괄 삭제 실패");
   }
 
-  const requiredFails = health?.filter((c) => !c.ok && !c.optional) ?? [];
-  const optionalFails = health?.filter((c) => !c.ok && c.optional) ?? [];
+  const requiredFails = health?.filter((c) => !c.ok) ?? [];
+  const selectedBackend = backends?.find((b) => b.id === provider);
 
   return (
     <Container size={680} py={56}>
@@ -203,16 +215,6 @@ export default function Home() {
           </Anchor>
         </Group>
       )}
-      {optionalFails.length > 0 && (
-        <Stack gap={2} mt={6} data-testid="health-optional">
-          {optionalFails.map((c) => (
-            <Text key={c.name} size="xs" c="dimmed">
-              ○ {c.name}: {c.detail}
-              {c.hint && ` — ${c.hint}`}
-            </Text>
-          ))}
-        </Stack>
-      )}
 
       <Paper withBorder p="lg" mt="xl" component="form" onSubmit={submit}>
         <TextInput
@@ -242,7 +244,13 @@ export default function Home() {
             data-testid="provider"
             value={provider}
             onChange={setProvider}
-            data={providers.map((p) => ({ value: p.id, label: p.label }))}
+            data={providers.map((p) => {
+              const b = backends?.find((x) => x.id === p.id);
+              return {
+                value: p.id,
+                label: b && !b.ready ? `${p.label} · 설정 필요` : p.label,
+              };
+            })}
             allowDeselect={false}
             w={280}
           />
@@ -255,6 +263,14 @@ export default function Home() {
             HTML 만들기
           </Button>
         </Group>
+        {selectedBackend && !selectedBackend.ready && (
+          <Alert color="yellow" variant="light" mt="sm" p="xs" data-testid="provider-warning">
+            <Text size="xs">
+              선택한 백엔드가 아직 준비되지 않았습니다 — 아래 <b>🔌 백엔드 연동</b>에서 남은
+              단계를 확인하세요. 그대로 실행하면 실패할 수 있습니다.
+            </Text>
+          </Alert>
+        )}
         {error && (
           <Text c="red" size="sm" mt="sm">
             {error}
@@ -262,7 +278,14 @@ export default function Home() {
         )}
       </Paper>
 
-      <SettingsPanel onSaved={load} />
+      <BackendSetup backends={backends} onRefresh={loadSetup} />
+
+      <SettingsPanel
+        onSaved={() => {
+          void load();
+          void loadSetup(true);
+        }}
+      />
 
       <Group justify="space-between" align="baseline" mt={48} mb="sm">
         <Title order={2} size="h4">

@@ -22,8 +22,11 @@ Figma eDM 디자인 링크를 붙여넣으면 **Claude Code가 헤드리스로 �
 5. **Python 의존성** — `python3 -m pip install pillow numpy fonttools brotli`
 6. **Node 20+ / pnpm** — 앱 실행용
 
-홈 화면 상단의 **환경 점검 배너**가 1·2·4·5를 자동 진단해 주므로, 뜨는 안내대로
-해결하면 됩니다.
+홈 화면 상단의 **환경 점검 배너**가 1·2·4·5를 자동 진단해 주고, **🔌 백엔드
+연동 패널**이 백엔드별로 설치 → 인증 → Figma 접근을 단계별로 점검해 줍니다.
+막힌 단계에는 해결 명령이 복사 버튼과 함께 표시되고, **"연동 테스트"** 버튼으로
+실제 CLI를 초소형 프롬프트로 실행해 몇 초 만에 "진짜 동작함"을 확인할 수
+있습니다 (10분짜리 실제 변환을 돌려볼 필요 없음).
 
 ## 실행
 
@@ -44,12 +47,12 @@ pnpm build && pnpm start
    - **Claude Code (local CLI)** — 기본. `claude` CLI 로그인 + claude.ai Figma
      커넥터 연결 필요. (헤드리스에서 Figma MCP가 빠지면 로그에 FATAL 표시)
    - **Gemini CLI (API 키)** — `npm i -g @google/gemini-cli` 후
-     aistudio.google.com/apikey 에서 키를 발급해 ⚙️ 설정의 "Gemini API 키"에
-     입력. (⚠️ 구글이 개인 무료 로그인 티어를 중단해 로그인 방식은 더 이상
-     동작하지 않습니다 — 2026-07 확인. 모델은 용량이 안정적인
-     `gemini-flash-latest` 기본, `GEMINI_MODEL`로 변경 가능.) Figma 접근은
-     `gemini mcp add --transport http figma https://mcp.figma.com/mcp` 등록
-     또는 Figma 토큰 REST 폴백.
+     aistudio.google.com/apikey 에서 키를 발급해 🔌 백엔드 연동 카드에 입력
+     (저장 시 즉시 검증됩니다). (⚠️ 구글이 개인 무료 로그인 티어를 중단해
+     로그인 방식은 더 이상 동작하지 않습니다 — 2026-07 확인. 모델은 용량이
+     안정적인 `gemini-flash-latest` 기본, `GEMINI_MODEL`로 변경 가능.) Figma
+     접근은 `gemini mcp add --transport http figma https://mcp.figma.com/mcp`
+     등록 또는 Figma 토큰 REST 폴백.
    - **Codex CLI (ChatGPT 구독)** — `npm i -g @openai/codex`, `codex login`.
      Figma 접근은 `codex mcp add figma --url https://mcp.figma.com/mcp` (등록 시
      브라우저 OAuth).
@@ -81,6 +84,11 @@ pnpm build && pnpm start
 **홈 화면의 "⚙️ 설정" 패널에서 전부 조정할 수 있습니다** — 기본 백엔드, 동시
 실행 수, 작업 제한 시간, Figma 토큰(무료 시트용 REST API 폴백). 저장 위치는
 `data/settings.json`(git 제외)이고, 별도 환경변수 지식 없이 사용 가능합니다.
+
+Figma 토큰과 Gemini API 키는 **저장하는 순간 실제 API로 검증**되므로, 오타를
+잡 실패가 아니라 저장 시점에 알 수 있습니다. 백엔드별 연동 상태 진단·키
+입력·연동 테스트는 **🔌 백엔드 연동 패널**에서 합니다. 준비되지 않은 백엔드를
+선택하면 폼에서 미리 경고합니다.
 
 <details>
 <summary>고급: 환경변수 오버라이드 (스크립트/CI용 — 화면 설정이 우선)</summary>

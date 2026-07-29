@@ -119,14 +119,14 @@ export function createGeminiLineMapper(onEvent: (e: AgentEvent) => void) {
 
 export const geminiProvider: AgentProvider = {
   id: "gemini",
-  label: "Gemini CLI (Google 계정)",
+  label: "Gemini CLI (API 키)",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
     if (!loggedIn()) {
       return {
         ok: false,
         summary:
-          "Gemini CLI 로그인이 필요합니다. 터미널에서 `gemini`를 실행해 구글 계정으로 로그인하세요.",
+          "Gemini API 키가 필요합니다. aistudio.google.com/apikey 에서 발급해 홈 화면의 🔌 백엔드 연동에서 저장하세요.",
       };
     }
     const prompt = task.promptOverride ?? buildEdmPrompt(task, "files");

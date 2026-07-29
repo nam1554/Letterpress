@@ -6,14 +6,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+// 선택 백엔드(Gemini/Codex)의 상세 진단은 lib/setup.ts(백엔드 연동 카드)가 담당한다.
+// 여기는 기본 변환 경로에 필수인 항목만 다룬다.
 export interface HealthCheck {
   name: string;
   ok: boolean;
   detail: string;
   /** How to fix it — shown to teammates when ok=false. */
   hint?: string;
-  /** Optional backends: failure is informational, not a blocker. */
-  optional?: boolean;
 }
 
 const CACHE_MS = 60_000;
@@ -77,81 +77,12 @@ async function checkPythonDeps(): Promise<HealthCheck> {
   }
 }
 
-async function checkGeminiCli(): Promise<HealthCheck> {
-  const name = "Gemini CLI (선택 백엔드)";
-  try {
-    const { stdout } = await execFileAsync(process.env.GEMINI_BIN ?? "gemini", ["--version"], {
-      timeout: 10_000,
-    });
-    // 무료 Code Assist 티어 중단(2026-07) — API 키가 실질 인증 경로.
-    const { getSettings } = await import("./settings");
-    const authed =
-      Boolean(getSettings().geminiApiKey) ||
-      Boolean(process.env.GEMINI_API_KEY) ||
-      existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json"));
-    return {
-      name,
-      ok: authed,
-      optional: true,
-      detail: authed ? `v${stdout.trim()} · 인증됨` : `v${stdout.trim()} · API 키 필요`,
-      hint: authed
-        ? undefined
-        : "aistudio.google.com/apikey 에서 키 발급 후 ⚙️ 설정의 'Gemini API 키'에 입력 (무료 로그인 티어는 중단됨)",
-    };
-  } catch {
-    return {
-      name,
-      ok: false,
-      optional: true,
-      detail: "미설치",
-      hint: "npm i -g @google/gemini-cli 설치 후 API 키를 설정에 입력",
-    };
-  }
-}
-
-async function checkCodexCli(): Promise<HealthCheck> {
-  const name = "Codex CLI (선택 백엔드)";
-  try {
-    await execFileAsync(process.env.CODEX_BIN ?? "codex", ["--version"], { timeout: 10_000 });
-  } catch {
-    return {
-      name,
-      ok: false,
-      optional: true,
-      detail: "미설치",
-      hint: "npm i -g @openai/codex 후 `codex login` (ChatGPT 계정)",
-    };
-  }
-  try {
-    const { stdout, stderr } = await execFileAsync(
-      process.env.CODEX_BIN ?? "codex",
-      ["login", "status"],
-      { timeout: 10_000 },
-    );
-    const detail = (stdout.trim() || stderr.trim()).split("\n")[0] || "로그인됨";
-    return { name, ok: true, optional: true, detail };
-  } catch {
-    return {
-      name,
-      ok: false,
-      optional: true,
-      detail: "로그인 필요",
-      hint: "터미널에서 `codex login` 실행 (ChatGPT Plus/Pro 계정 브라우저 인증)",
-    };
-  }
-}
-
 export async function runHealthChecks(force = false): Promise<HealthCheck[]> {
   const cached = g.__mhmHealth;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.checks;
 
   const checks = [
-    ...(await Promise.all([
-      checkClaudeCli(),
-      checkPythonDeps(),
-      checkGeminiCli(),
-      checkCodexCli(),
-    ])),
+    ...(await Promise.all([checkClaudeCli(), checkPythonDeps()])),
     checkFigmaEdmSkill(),
     checkChrome(),
   ];

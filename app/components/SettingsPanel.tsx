@@ -52,7 +52,6 @@ function Row({
 export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
   const [view, setView] = useState<SettingsView | null>(null);
   const [figmaToken, setFigmaToken] = useState("");
-  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -74,7 +73,6 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
         jobTimeoutMinutes: view.jobTimeoutMinutes,
       };
       if (figmaToken.trim()) body.figmaToken = figmaToken.trim();
-      if (geminiApiKey.trim()) body.geminiApiKey = geminiApiKey.trim();
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -87,8 +85,10 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
       }
       setView(data);
       setFigmaToken("");
-      setGeminiApiKey("");
-      notifications.show({ message: "설정을 저장했습니다.", color: "teal" });
+      notifications.show({
+        message: data.warning ? `저장했습니다 — ${data.warning}` : "설정을 저장했습니다.",
+        color: data.warning ? "yellow" : "teal",
+      });
       onSaved?.();
     } finally {
       setSaving(false);
@@ -175,26 +175,6 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
                     value={figmaToken}
                     onChange={(e) => setFigmaToken(e.currentTarget.value)}
                     placeholder={view.figmaTokenSet ? "변경하려면 입력" : "figd_…"}
-                    w={180}
-                  />
-                </Group>
-              }
-            />
-            <Row
-              label="Gemini API 키 (선택)"
-              hint="Gemini 백엔드용. 구글의 무료 로그인 티어가 중단돼 API 키가 필요합니다 — aistudio.google.com/apikey 에서 발급해 직접 붙여넣으세요. 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다."
-              control={
-                <Group gap="xs" wrap="nowrap">
-                  {view.geminiApiKeySet && !geminiApiKey && (
-                    <Text size="xs" c="green">
-                      설정됨
-                    </Text>
-                  )}
-                  <PasswordInput
-                    data-testid="setting-gemini-key"
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.currentTarget.value)}
-                    placeholder={view.geminiApiKeySet ? "변경하려면 입력" : "AIza…"}
                     w={180}
                   />
                 </Group>

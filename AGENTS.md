@@ -29,7 +29,14 @@ no auth, single user, filesystem is the database.
   this; all fs paths derive from it.
 - **Settings** (`lib/settings.ts` → `data/settings.json`, edited via the ⚙️
   panel): default provider, concurrency cap, job timeout, Figma REST fallback
-  token. Precedence: settings.json > env > default.
+  token. Precedence: settings.json > env > default. Keys/tokens are validated
+  against the real APIs at save time (`lib/setup.ts` validators).
+- **Backend setup** (`lib/setup.ts`, 🔌 panel on home): per-backend deep
+  diagnosis — CLI install, auth, Figma access via `mcp list` parsing (pure
+  parsers, tested in `setup.test.ts`) with Figma-token REST fallback awareness.
+  "연동 테스트" spawns the real CLI with a tiny prompt (`runBackendTest`,
+  in-flight deduped, 2-min cap). Home form warns when the selected backend
+  isn't ready. `lib/health.ts` keeps only the required-path checks.
 - **Lifecycle**: `lib/jobs/runner.ts` spawns providers with an AbortController
   (timeout + cancel), `store.ts` reconciles stale running jobs on read after a
   server restart. SSE route replays events then relays live ones, deduped by
