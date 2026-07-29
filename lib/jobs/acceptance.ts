@@ -85,75 +85,100 @@ function num(value: string): number {
 }
 
 /**
- * 선언 블록이 요소를 숨기는지/명시적으로 보이게 하는지. 어느 쪽도 아니면 null.
- *
- * 속성명을 정확히 비교한다 — 예전 구현은 하나의 정규식으로 값만 훑어
- * `background-color:transparent`나 `margin-left:-100px` 같은 평범한 선언까지
- * 숨김으로 읽고 정상 산출물의 본문을 통째로 지웠다.
+ * 가시성에 영향을 주는 속성. 속성별로 마지막 선언이 이기고, 하나라도 숨김이면
+ * 그 요소는 숨겨진 것으로 본다 — "아무 선언이나 보이면 해제"로 두면
+ * `.copy{display:none}` 뒤의 `.copy{color:#333}` 하나가 숨김을 취소한다.
  */
-function declaredVisibility(css: string, kind: HideKind): "hidden" | "visible" | null {
+type HideProp =
+  | "display"
+  | "visibility"
+  | "opacity"
+  | "clip"
+  | "mso-hide"
+  | "left"
+  | "top"
+  | "box"
+  | "font-size"
+  | "color"
+  | "text-indent";
+
+/** 상속되는 속성 — 자손이 다시 지정하면 그 자손의 글자는 보인다. */
+const INHERITED_HIDE = new Set<HideProp>(["font-size", "color", "text-indent"]);
+
+/**
+ * 선언 블록의 가시성 상태 (속성 → 숨김 여부). 속성명을 정확히 비교한다 —
+ * 예전 구현은 하나의 정규식으로 값만 훑어 `background-color:transparent`나
+ * `margin-left:-100px` 같은 평범한 선언까지 숨김으로 읽고 본문을 통째로 지웠다.
+ *
+ * 브라우저에서 실제로 안 보이는 것만 숨김으로 친다: `clip`은 배치된 요소에만
+ * 먹고, 1px 상자는 `overflow:hidden`이 함께 있을 때만 잘린다(td는 늘어난다).
+ * `mso-hide:all`은 Outlook 전용이라 이미지 검사(layout)에는 적용하지 않는다 —
+ * 크롬 렌더에는 그대로 보이므로 그걸로 이미지를 감출 수 있으면 안 된다.
+ */
+function visibilityState(css: string, kind: HideKind): Map<HideProp, boolean> {
+  const state = new Map<HideProp, boolean>();
   const decls = declarations(css);
-  const get = (prop: string) => decls.findLast(([p]) => p === prop)?.[1];
-  const positioned = /^(absolute|fixed)/.test(get("position") ?? "");
-  let visible = false;
+  const last = (prop: string) => decls.findLast(([p]) => p === prop)?.[1];
+  const positioned = /^(absolute|fixed)/.test(last("position") ?? "");
+  const text = kind === "text";
 
   for (const [prop, value] of decls) {
     switch (prop) {
       case "display":
-        if (value.startsWith("none")) return "hidden";
-        visible = true;
+        state.set("display", value.startsWith("none"));
         break;
       case "visibility":
-        if (value.startsWith("hidden") || value.startsWith("collapse")) return "hidden";
-        visible = true;
+        state.set("visibility", /^(hidden|collapse)/.test(value));
         break;
       case "opacity":
-        if (num(value) === 0) return "hidden";
-        if (num(value) > 0) visible = true;
+        if (Number.isFinite(num(value))) state.set("opacity", num(value) === 0);
         break;
       case "clip":
-        if (/rect\(\s*0/.test(value)) return "hidden";
+        state.set("clip", positioned && /rect\(\s*0/.test(value));
         break;
       case "mso-hide":
-        if (value.startsWith("all")) return "hidden";
+        if (text) state.set("mso-hide", value.startsWith("all"));
         break;
       // 화면 밖으로 밀어내는 관용구 — position이 걸려 있을 때만 실제로 숨겨진다.
       case "left":
       case "top":
-        if (positioned && num(value) <= -100) return "hidden";
+        state.set(prop, positioned && num(value) <= -100);
         break;
       case "font-size":
-        if (kind === "text" && num(value) === 0) return "hidden";
-        if (num(value) > 0) visible = true;
+        if (text && Number.isFinite(num(value))) state.set("font-size", num(value) === 0);
         break;
       case "color":
-        if (kind === "text" && /^(transparent|rgba\([^)]*,\s*0(\.0+)?\s*\))/.test(value)) {
-          return "hidden";
-        }
-        if (kind === "text") visible = true;
+        if (text) state.set("color", /^(transparent|rgba\([^)]*,\s*0(\.0+)?\s*\))/.test(value));
         break;
       case "text-indent":
-        if (kind === "text" && num(value) <= -100) return "hidden";
+        if (text && Number.isFinite(num(value))) state.set("text-indent", num(value) <= -100);
         break;
     }
   }
-  // 1px 클리핑(sr-only)은 가로·세로가 모두 잠길 때만 — height:1px 구분선은 정상이다.
+  // 1px 클리핑(sr-only)은 가로·세로가 모두 잠기고 넘침이 잘릴 때만.
   const box = (prop: string) => {
-    const v = get(prop);
+    const v = last(prop);
     return v !== undefined && !v.includes("%") ? num(v) : NaN;
   };
-  if (box("width") <= 1 && box("height") <= 1) return "hidden";
-  return visible ? "visible" : null;
+  const clipped = /^hidden/.test(last("overflow") ?? "") || state.get("clip") === true;
+  if (clipped && box("width") <= 1 && box("height") <= 1) state.set("box", true);
+  return state;
+}
+
+/** 상태에서 실제로 숨기고 있는 속성들. */
+function hidingProps(state: Map<HideProp, boolean>): HideProp[] {
+  return [...state].filter(([, hidden]) => hidden).map(([prop]) => prop);
 }
 
 /** 데스크톱 렌더 기준 — 픽셀 검증이 비교하는 것이 이 폭의 렌더다. */
 const DESKTOP_WIDTH = 700;
 
 /**
- * `@media` 질의가 데스크톱 렌더에 적용되는지. 모바일 전용 규칙
- * (`max-width:600px`)의 `display:none`을 숨김으로 읽으면 정상 반응형 산출물의
- * 데스크톱 콘텐츠가 통째로 사라진다. 해석할 수 없는 질의는 "적용 안 함"으로
- * 본다 — 오탐(정상 빌드 실패)이 미탐보다 비싸다.
+ * `@media` 질의가 데스크톱 렌더에 적용되는지. 폭 조건만 판정한다 — 모바일 전용
+ * 규칙(`max-width:600px`)의 `display:none`을 숨김으로 읽으면 정상 반응형
+ * 산출물의 데스크톱 콘텐츠가 통째로 사라지고, 반대로 `(-webkit-min-device-
+ * pixel-ratio:0)` 같은 관용 해킹을 "적용 안 함"으로 처리하면 그걸로 감싸기만
+ * 해도 숨김 규칙을 놓친다(데스크톱 크롬에서는 그대로 적용되는 질의다).
  */
 function mediaApplies(prelude: string): boolean {
   const query = prelude.replace(/^@media/i, "").trim().toLowerCase();
@@ -161,12 +186,12 @@ function mediaApplies(prelude: string): boolean {
   return query.split(",").some((one) => {
     if (/\bprint\b/.test(one) && !/\b(screen|all)\b/.test(one)) return false;
     for (const cond of one.matchAll(/\(([^)]*)\)/g)) {
-      const [name, raw] = cond[1].split(":").map((s) => s.trim());
-      const px = num(raw ?? "") * (/r?em\s*$/.test(raw ?? "") ? 16 : 1);
-      if (!Number.isFinite(px)) return false;
-      if (name === "max-width" && DESKTOP_WIDTH > px) return false;
-      else if (name === "min-width" && DESKTOP_WIDTH < px) return false;
-      else if (name !== "max-width" && name !== "min-width") return false;
+      const [rawName, rawValue] = cond[1].split(":").map((s) => s.trim());
+      const name = (rawName ?? "").replace(/^(min|max)-device-/, "$1-");
+      if (name !== "max-width" && name !== "min-width") continue; // 폭 외 조건은 따지지 않는다
+      const px = num(rawValue ?? "") * (/r?em\s*$/.test(rawValue ?? "") ? 16 : 1);
+      if (!Number.isFinite(px)) continue;
+      if (name === "max-width" ? DESKTOP_WIDTH > px : DESKTOP_WIDTH < px) return false;
     }
     return true;
   });
@@ -210,33 +235,49 @@ function cssRules(css: string): CssRule[] {
   return out;
 }
 
-/** 선택자 한 갈래의 마지막 복합 선택자에 붙은 클래스들 (그 요소가 숨김 대상). */
-function targetClasses(selectorPart: string): string[] {
-  const last = selectorPart.trim().split(/[\s>+~]+/).filter(Boolean).pop() ?? "";
-  if (/:{1,2}[-\w]/.test(last)) return []; // `.btn:hover{display:none}`은 기본 상태가 아니다
-  return [...last.matchAll(/\.([-\w]+)/g)].map((m) => m[1]);
+/**
+ * 선택자 한 갈래가 "단순 선택자"(복합 하나)면 그 클래스들, 아니면 null.
+ *
+ * 조상·속성·의사 선택자가 붙은 규칙은 조건부라 여기서 다루지 않는다 —
+ * `[data-ogsc] .logo{display:none}`(다크모드)나 `.mobile-only .cta{display:none}`
+ * 를 무조건 숨김으로 읽으면 그 클래스를 쓴 정상 본문이 통째로 사라진다.
+ */
+function simpleSelectorClasses(selectorPart: string): string[] | null {
+  const sel = selectorPart.trim();
+  if (!sel || /[\s>+~[\]]/.test(sel) || /:{1,2}[-\w]/.test(sel)) return null;
+  const classes = [...sel.matchAll(/\.([-\w]+)/g)].map((m) => m[1]);
+  // 클래스 외의 것(태그·id)이 섞여 있으면 대상을 특정할 수 없다.
+  return classes.length > 0 && sel.replace(/\.[-\w]+/g, "") === "" ? classes : null;
+}
+
+interface ClassHideRule {
+  classes: string[];
+  state: Map<HideProp, boolean>;
 }
 
 /**
- * `<style>` 규칙에서 "이 클래스들을 모두 가진 요소는 숨김"인 조합을 모은다 —
- * 인라인만 보면 숨김을 클래스로 옮기는 것만으로 우회된다(실측: codex 3차).
- * 뒤에 오는 규칙이 다시 보이게 하면 취소한다(캐스케이드: 나중 규칙이 이긴다).
+ * `<style>` 규칙에서 클래스 조합별 가시성 상태를 모은다 — 인라인만 보면 숨김을
+ * 클래스로 옮기는 것만으로 우회된다(실측: codex 3차). 같은 속성을 다시 지정한
+ * 뒤 규칙이 이긴다(캐스케이드).
  */
-function hiddenClassRules(html: string, kind: HideKind): string[][] {
-  const rules = new Map<string, string[]>();
+function hiddenClassRules(html: string, kind: HideKind): ClassHideRule[] {
+  const rules = new Map<string, ClassHideRule>();
   for (const style of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
     for (const rule of cssRules(style[1])) {
-      const vis = declaredVisibility(rule.body, kind);
-      if (!vis) continue;
+      const state = visibilityState(rule.body, kind);
+      if (state.size === 0) continue;
       for (const part of rule.selector.split(",")) {
-        const classes = targetClasses(part);
-        if (classes.length === 0) continue;
+        const classes = simpleSelectorClasses(part);
+        if (!classes) continue;
         const key = [...classes].sort().join(".");
-        if (vis === "hidden") rules.set(key, classes);
-        else rules.delete(key);
+        const entry = rules.get(key) ?? { classes, state: new Map<HideProp, boolean>() };
+        for (const [prop, hidden] of state) entry.state.set(prop, hidden);
+        rules.set(key, entry);
       }
     }
   }
+  // 숨기지 않는 규칙(`.copy{font-size:16px}`)도 남긴다 — 상속 숨김을 되돌리는
+  // 자손을 알아보려면 "이 클래스는 보인다"는 정보가 필요하다.
   return [...rules.values()];
 }
 
@@ -245,67 +286,124 @@ const VOID_TAGS = new Set([
   "link", "meta", "param", "source", "track", "wbr",
 ]);
 
-/** 인라인 스타일 또는 숨김 클래스로 숨겨진 요소를 내용째 제거한다 (같은 태그 중첩 감안). */
-function stripHiddenBlocks(html: string, hiddenCls: string[][], kind: HideKind): string {
+/** 닫는 태그 없이 같은 태그가 다시 열리면 자동으로 닫히는 요소들. */
+const AUTO_CLOSE_TAGS = new Set(["p", "li", "tr", "td", "th", "dd", "dt", "option"]);
+
+/** 태그에 붙은 클래스 집합. */
+function tagClasses(tag: string): Set<string> {
+  const cls = tag.match(/\bclass\s*=\s*["']([^"']*)["']/i);
+  return new Set(cls ? cls[1].split(/\s+/).filter(Boolean) : []);
+}
+
+/** 클래스 규칙 + 인라인 스타일을 합친 요소의 가시성 상태 (인라인이 나중). */
+function elementState(
+  tag: string,
+  rules: ClassHideRule[],
+  kind: HideKind,
+): Map<HideProp, boolean> {
+  const state = new Map<HideProp, boolean>();
+  if (rules.length > 0) {
+    const have = tagClasses(tag);
+    if (have.size > 0) {
+      for (const rule of rules) {
+        if (rule.classes.every((c) => have.has(c))) {
+          for (const [prop, hidden] of rule.state) state.set(prop, hidden);
+        }
+      }
+    }
+  }
+  const style = tag.match(/\bstyle\s*=\s*("[^"]*"|'[^']*')/i);
+  if (style) for (const [prop, hidden] of visibilityState(style[1].slice(1, -1), kind)) {
+    state.set(prop, hidden);
+  }
+  return state;
+}
+
+/** 여는 태그부터 요소가 끝나는 지점 — 내용 끝과 요소 끝. */
+function elementBounds(html: string, m: RegExpExecArray): { contentEnd: number; end: number } {
+  const name = m[1].toLowerCase();
+  const afterOpen = m.index + m[0].length;
+  if (m[0].endsWith("/>") || VOID_TAGS.has(name)) {
+    return { contentEnd: afterOpen, end: afterOpen };
+  }
+  const pair = new RegExp(`<${name}\\b[^>]*>|</${name}\\s*>`, "gi");
+  pair.lastIndex = afterOpen;
+  let depth = 1;
+  let nextSameTag = -1;
+  let p: RegExpExecArray | null;
+  while (depth > 0 && (p = pair.exec(html))) {
+    if (p[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) return { contentEnd: p.index, end: p.index + p[0].length };
+    } else {
+      if (nextSameTag < 0) nextSameTag = p.index;
+      depth += 1;
+    }
+  }
+  // 닫는 태그가 모자란 마크업 — 브라우저를 따른다: `<p>`·`<td>` 같은 요소는 다음
+  // 같은 태그에서 자동으로 닫히고, 그 밖에는 문서 끝까지 이 요소 안이다.
+  if (AUTO_CLOSE_TAGS.has(name) && nextSameTag >= 0) {
+    return { contentEnd: nextSameTag, end: nextSameTag };
+  }
+  return { contentEnd: html.length, end: html.length };
+}
+
+/**
+ * 상속 속성(font-size:0 등)으로만 숨겨진 요소의 내용에서, 그 속성을 다시 지정한
+ * 자손만 남긴다 — `<td style="font-size:0;line-height:0">`는 이미지 사이 여백을
+ * 없애는 관용구라 그 안의 `font-size:16px` 본문까지 지우면 정상 빌드가 "통짜
+ * 이미지"로 몰린다.
+ */
+function keepOverriders(
+  inner: string,
+  hidden: HideProp[],
+  rules: ClassHideRule[],
+  kind: HideKind,
+): string {
   const openTag = /<([a-z][a-z0-9]*)\b[^>]*>/gi;
-  const isHidden = (tag: string): boolean => {
-    const style = tag.match(/\bstyle\s*=\s*("[^"]*"|'[^']*')/i);
-    if (style && declaredVisibility(style[1].slice(1, -1), kind) === "hidden") return true;
-    if (hiddenCls.length === 0) return false;
-    const cls = tag.match(/\bclass\s*=\s*["']([^"']*)["']/i);
-    if (!cls) return false;
-    const have = new Set(cls[1].split(/\s+/).filter(Boolean));
-    return hiddenCls.some((need) => need.every((c) => have.has(c)));
-  };
+  let out = "";
+  let m: RegExpExecArray | null;
+  while ((m = openTag.exec(inner))) {
+    const state = elementState(m[0], rules, kind);
+    if (!hidden.some((prop) => state.get(prop) === false)) continue; // 더 안쪽을 본다
+    const { end } = elementBounds(inner, m);
+    out += inner.slice(m.index, end);
+    openTag.lastIndex = Math.max(end, m.index + m[0].length);
+  }
+  return out;
+}
+
+/** 숨겨진 요소를 내용째 제거한다. */
+function stripHiddenBlocks(html: string, rules: ClassHideRule[], kind: HideKind): string {
+  const openTag = /<([a-z][a-z0-9]*)\b[^>]*>/gi;
   for (;;) {
     openTag.lastIndex = 0;
     let m: RegExpExecArray | null = null;
-    while ((m = openTag.exec(html))) if (isHidden(m[0])) break;
+    let hidden: HideProp[] = [];
+    while ((m = openTag.exec(html))) {
+      hidden = hidingProps(elementState(m[0], rules, kind));
+      if (hidden.length > 0) break;
+    }
     if (!m) return html;
-    const tag = m[1].toLowerCase();
-    const dropTagOnly = () => {
-      html = html.slice(0, m!.index) + html.slice(m!.index + m![0].length);
-    };
-    if (m[0].endsWith("/>") || VOID_TAGS.has(tag)) {
-      dropTagOnly();
-      continue;
-    }
-    // 같은 이름의 여는/닫는 태그를 세며 짝이 맞는 닫는 태그까지 제거.
-    const pair = new RegExp(`<${tag}\\b[^>]*>|</${tag}\\s*>`, "gi");
-    pair.lastIndex = m.index + m[0].length;
-    let depth = 1;
-    let end = html.length;
-    let nextSameTag = -1; // 닫히지 않은 `<p>…<p>`가 자동으로 닫히는 지점
-    let p: RegExpExecArray | null;
-    while (depth > 0 && (p = pair.exec(html))) {
-      if (!p[0].startsWith("</") && nextSameTag < 0) nextSameTag = p.index;
-      depth += p[0].startsWith("</") ? -1 : 1;
-      end = p.index + p[0].length;
-    }
-    if (depth === 0) {
-      html = html.slice(0, m.index) + html.slice(end);
-    } else if (nextSameTag >= 0) {
-      // 닫는 태그가 모자라면 다음 같은 태그가 열리는 지점까지만 — 브라우저도
-      // `<p>`·`<td>` 등을 그렇게 자동으로 닫는다.
-      html = html.slice(0, m.index) + html.slice(nextSameTag);
-    } else {
-      // 짝도 후속 태그도 없는 마크업: 여는 태그만 지운다. 문서 뒷부분을 통째로
-      // 버리면 정상 산출물의 본문이 사라져 게이트가 잘못 실패한다.
-      dropTagOnly();
-    }
+    const { contentEnd, end } = elementBounds(html, m);
+    const inheritedOnly = hidden.every((prop) => INHERITED_HIDE.has(prop));
+    const kept = inheritedOnly
+      ? keepOverriders(html.slice(m.index + m[0].length, contentEnd), hidden, rules, kind)
+      : "";
+    html = html.slice(0, m.index) + kept + html.slice(end);
   }
 }
 
 /** 숨겨진 요소를 걷어낸 마크업 (kind에 따라 "글자가 안 보이는" 요소까지 제거). */
 export function stripInvisible(html: string, kind: HideKind): string {
   // 숨김 클래스 수집은 <style> 제거 전의 원본에서 해야 한다.
-  const hiddenCls = hiddenClassRules(html, kind);
+  const rules = hiddenClassRules(html, kind);
   return stripHiddenBlocks(
     html
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<!--[\s\S]*?-->/g, ""),
-    hiddenCls,
+    rules,
     kind,
   );
 }
@@ -327,21 +425,58 @@ function imgSrc(tag: string): string | null {
 /** 이미지 파일의 실측 크기 조회 (없으면 null). */
 export type ImageSizeLookup = (src: string) => ImageSize | null;
 
+export interface ImgContext {
+  /** 파일에서 읽은 실측 크기 (세로비를 채우는 데 쓴다). */
+  sizes?: ImageSizeLookup;
+  /** `<style>`의 단순 클래스 규칙이 지정한 width — 클래스로 폭을 준 이미지용. */
+  classWidths?: Map<string, string>;
+  /** 전폭 기준(= 이메일 본문 폭). %로 준 폭을 px로 환산할 때도 쓴다. */
+  canvasWidth?: number;
+}
+
+/** `<style>`의 단순 클래스 규칙에서 width 선언을 모은다. */
+function classWidths(html: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const style of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
+    for (const rule of cssRules(style[1])) {
+      const width = declarations(rule.body).findLast(([p]) => p === "width")?.[1];
+      if (!width) continue;
+      for (const part of rule.selector.split(",")) {
+        const classes = simpleSelectorClasses(part);
+        if (classes?.length === 1) out.set(classes[0], width);
+      }
+    }
+  }
+  return out;
+}
+
 /**
- * `<img>` 태그의 표시 크기. 속성/인라인 style에서 얻고, 빠진 축은 파일의 실측
- * 세로비로 채운다 — 이메일의 전폭 이미지는 대개 `width="700" height:auto`라
- * height 속성이 없어서(레퍼런스 발송본이 그렇다) 태그만 보면 세로비를 알 수
- * 없고, 그 상태로는 아래 두 검사가 조용히 무력화된다.
+ * `<img>` 태그의 표시 크기. 속성·인라인 style·클래스 규칙에서 얻고, 빠진 축은
+ * 파일의 실측 세로비로 채운다 — 이메일의 전폭 이미지는 대개
+ * `width="700" height:auto`라 height 속성이 없어서(레퍼런스 발송본이 그렇다)
+ * 태그만 보면 세로비를 알 수 없고, 그 상태로는 아래 두 검사가 무력화된다.
+ * 반대로 실측 폭을 표시 폭으로 그대로 쓰면 2× 내보내기가 전폭으로 오인되므로,
+ * 표시 폭은 마크업(px·%·클래스)에서만 읽고 실측은 비율로만 쓴다.
  */
-function imgBox(tag: string, sizes?: ImageSizeLookup): { w: number; h: number } {
-  // `width="100%"`처럼 px가 아닌 값은 숫자로 읽지 않는다.
-  const attr = (name: string) =>
-    tag.match(new RegExp(`(?<![-\\w])${name}\\s*=\\s*["']?(\\d+)\\s*(?![\\d.%])`, "i"))?.[1] ??
-    tag.match(new RegExp(`(?<![-\\w])${name}\\s*:\\s*(\\d+)\\s*px`, "i"))?.[1];
-  let w = Number(attr("width"));
-  let h = Number(attr("height"));
+function imgBox(tag: string, ctx: ImgContext = {}): { w: number; h: number } {
+  const canvas = ctx.canvasWidth ?? DESKTOP_WIDTH;
+  const declared = (name: "width" | "height"): number => {
+    const raw =
+      tag.match(new RegExp(`(?<![-\\w])${name}\\s*:\\s*([\\d.]+)\\s*(px|%)`, "i"))?.slice(1) ??
+      tag.match(new RegExp(`(?<![-\\w])${name}\\s*=\\s*["']?([\\d.]+)\\s*(%?)`, "i"))?.slice(1) ??
+      (name === "width" ? classWidthOf(tag, ctx.classWidths) : null);
+    if (!raw) return Number.NaN;
+    const value = num(raw[0]);
+    // 세로 %는 이메일에서 의미가 없다.
+    if (raw[1] === "%") return name === "width" ? (canvas * value) / 100 : Number.NaN;
+    return value;
+  };
+  // 0·1px은 표시 크기로 신뢰하지 않는다 — `height="0"` 한 줄로 검사를 끄는 길이
+  // 열린다(브라우저는 style의 height:auto를 따르므로 렌더에는 영향이 없다).
+  let w = declared("width") > 1 ? declared("width") : Number.NaN;
+  let h = declared("height") > 1 ? declared("height") : Number.NaN;
   const src = imgSrc(tag);
-  const intrinsic = src ? (sizes?.(src) ?? null) : null;
+  const intrinsic = src ? (ctx.sizes?.(src) ?? null) : null;
   if (intrinsic) {
     // 레티나(2×) 내보내기여도 세로비는 같다 — 비율만 빌려 쓴다.
     if (!Number.isFinite(w) && !Number.isFinite(h)) ({ w, h } = intrinsic);
@@ -351,15 +486,26 @@ function imgBox(tag: string, sizes?: ImageSizeLookup): { w: number; h: number } 
   return { w, h };
 }
 
+/** 클래스 규칙이 지정한 width 값 ([값, 단위]). */
+function classWidthOf(tag: string, widths?: Map<string, string>): [string, string] | null {
+  if (!widths || widths.size === 0) return null;
+  for (const cls of tagClasses(tag)) {
+    const raw = widths.get(cls);
+    const m = raw?.match(/^([\d.]+)\s*(px|%)/);
+    if (m) return [m[1], m[2]];
+  }
+  return null;
+}
+
 /**
  * 페이지 스크린샷 의심 이미지 — 폭 400px 이상이면서 세로비(h/w) 2 이상인
  * 단일 이미지는 이메일 전체/대부분을 담은 캡처다 (실측: 통짜 700×2207 =
  * 3.15, 정상 최대치인 히어로 700×385 = 0.55 · CTA 700×234 = 0.33).
  */
-export function findScreenshotLikeImages(html: string, sizes?: ImageSizeLookup): string[] {
+export function findScreenshotLikeImages(html: string, ctx: ImgContext = {}): string[] {
   const hits: string[] = [];
   for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
-    const { w, h } = imgBox(m[0], sizes);
+    const { w, h } = imgBox(m[0], ctx);
     if (w >= 400 && h / w >= 2) hits.push(imgSrc(m[0]) ?? "(unknown src)");
   }
   return hits;
@@ -371,10 +517,10 @@ export function findScreenshotLikeImages(html: string, sizes?: ImageSizeLookup):
  * 숨길 수 없다. 세로비(h/w) 합으로 계산해 레퍼런스가 2× 렌더여도 불변이다.
  * 정직한 빌드는 레이어드 아트 섹션만 이미지라 ~28%, 전체 슬라이스는 ~100%.
  */
-export function fullWidthImageAspectSum(html: string, sizes?: ImageSizeLookup): number {
+export function fullWidthImageAspectSum(html: string, ctx: ImgContext = {}): number {
   let sum = 0;
   for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
-    const { w, h } = imgBox(m[0], sizes);
+    const { w, h } = imgBox(m[0], ctx);
     if (w >= 400 && Number.isFinite(h)) sum += h / w;
   }
   return sum;
@@ -397,8 +543,8 @@ async function imageSizes(
     // 셀프컨테인 산출물은 이미지를 base64로 품는다 — 그대로 디코드해 잰다.
     const inline = src.match(/^data:image\/[-\w.+]+;base64,([\s\S]*)$/i);
     if (inline) {
-      // 헤더만 있으면 되므로 앞부분만 디코드한다 (4의 배수라 경계가 맞는다).
-      const size = imageSize(Buffer.from(inline[1].slice(0, 4096), "base64"));
+      // 앞부분만 디코드하면 ICC/EXIF 뒤에 오는 JPEG 프레임 헤더를 놓친다.
+      const size = imageSize(Buffer.from(inline[1], "base64"));
       if (size) sizes.set(src, size);
     } else if (!/^(https?:|data:|cid:|\/\/|#)/i.test(src)) {
       srcs.add(src);
@@ -487,9 +633,14 @@ export async function checkAcceptance(
     // 이미지 검사는 실제로 렌더되는 이미지만 센다 — 반응형 산출물은 같은 아트를
     // 데스크톱/모바일 두 벌로 싣고 한쪽을 숨기므로, 숨긴 쪽까지 세면 커버리지가
     // 두 배로 부풀어 정상 빌드가 "슬라이스"로 거부된다.
+    const canvas = await fileImageSize(path.join(base, "figma_full.png"));
     const rendered = stripInvisible(html, "layout");
-    const sizes = await imageSizes(out, htmlFile, rendered);
-    const screenshots = findScreenshotLikeImages(rendered, sizes);
+    const imgCtx: ImgContext = {
+      sizes: await imageSizes(out, htmlFile, rendered),
+      classWidths: classWidths(html),
+      canvasWidth: canvas?.w,
+    };
+    const screenshots = findScreenshotLikeImages(rendered, imgCtx);
     if (screenshots.length > 0) {
       failures.push(
         `${file}에 페이지 스크린샷으로 보이는 이미지가 있습니다 (폭 400px 이상 + 세로비 2 이상): ` +
@@ -497,9 +648,8 @@ export async function checkAcceptance(
           `섹션별로 나누고 본문 카피는 보이는 HTML 텍스트로 구현하세요.`,
       );
     }
-    const canvas = await fileImageSize(path.join(base, "figma_full.png"));
     if (canvas && canvas.w > 0 && canvas.h > 0) {
-      const coverage = fullWidthImageAspectSum(rendered, sizes) / (canvas.h / canvas.w);
+      const coverage = fullWidthImageAspectSum(rendered, imgCtx) / (canvas.h / canvas.w);
       if (coverage > MAX_FULL_WIDTH_IMAGE_COVERAGE) {
         failures.push(
           `${file}의 전폭 이미지(폭 400px 이상)가 이메일 세로의 ${Math.round(coverage * 100)}%를 덮습니다 ` +

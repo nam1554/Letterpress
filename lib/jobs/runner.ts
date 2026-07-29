@@ -59,6 +59,9 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
     throw err;
   }
 
+  /** 사용자가 직접 멈춘 실행 (제한 시간 초과는 진짜 실패라 제외). */
+  const isCancelled = () => !timedOut && controller.signal.aborted;
+
   void (async () => {
     try {
       const provider = getProvider(job.provider);
@@ -129,9 +132,13 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
         type: ok ? "done" : "error",
         text: ok ? `완료: ${summary}` : `실패: ${summary}`,
       });
-      notifyJobFinished({ id: job.id, status: ok ? "succeeded" : "failed", title: job.title });
+      // 실제 프로바이더는 중단 시 예외가 아니라 {ok:false}로 끝난다 — 취소
+      // 판정을 catch에만 두면 여기서 "변환 실패" 알림이 그대로 나간다.
+      if (!isCancelled()) {
+        notifyJobFinished({ id: job.id, status: ok ? "succeeded" : "failed", title: job.title });
+      }
     } catch (err) {
-      const cancelled = !timedOut && controller.signal.aborted;
+      const cancelled = isCancelled();
       const message = timedOut
         ? `제한 시간(${timeoutMinutes}분)을 초과해 중단되었습니다.`
         : cancelled

@@ -1,7 +1,11 @@
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// 알림은 잡 상태와 무관한 부가 기능이라 목으로 관찰만 한다.
+const notifyMock = vi.fn();
+vi.mock("./notify", () => ({ notifyJobFinished: (job: unknown) => notifyMock(job) }));
 
 let dir: string;
 
@@ -15,7 +19,7 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-import { startJob } from "./runner";
+import { cancelJob, startJob } from "./runner";
 import { mockProvider } from "../providers/mock";
 import { abortAllForShutdown, liveControllers } from "./live";
 import { createEditJob, createJob, getJob, listArtifacts, updateJob, type Job } from "./store";
@@ -93,6 +97,40 @@ describe("runner + quality gate (mock provider)", () => {
       mockProvider.run = realRun;
     }
   }, 30_000);
+
+  it("does not send a failure notification when the user cancels", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const realRun = mockProvider.run;
+    // 실제 백엔드(claude-code·codex·gemini)는 중단 시 예외를 던지지 않고
+    // {ok:false}로 끝난다 — 취소 판정을 catch에만 두면 여기서 알림이 나간다.
+    mockProvider.run = async () => {
+      cancelJob(job.id);
+      return { ok: false, summary: "사용자가 취소했습니다." };
+    };
+    notifyMock.mockClear();
+    try {
+      await startJob(job);
+      const done = await waitTerminal(job.id);
+      expect(done.status).toBe("failed");
+      expect(notifyMock).not.toHaveBeenCalled();
+    } finally {
+      mockProvider.run = realRun;
+    }
+  }, 20_000);
+
+  it("still notifies on a real failure", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const realRun = mockProvider.run;
+    mockProvider.run = async () => ({ ok: false, summary: "CLI가 죽었습니다." });
+    notifyMock.mockClear();
+    try {
+      await startJob(job);
+      await waitTerminal(job.id);
+      expect(notifyMock).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    } finally {
+      mockProvider.run = realRun;
+    }
+  }, 20_000);
 
   it("aborts every live job on shutdown", () => {
     const controller = new AbortController();

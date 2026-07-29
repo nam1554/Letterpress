@@ -48,7 +48,10 @@ no auth, single user, filesystem is the database.
   submits the CURRENTLY VISIBLE selection, after a confirm click, so a filter or
   search can't delete rows the user never saw; `lib/jobs/notify.ts` fires a
   best-effort macOS notification on job finish (`notifyOnFinish` setting,
-  default on) — but not on user cancel, which is not a failure.
+  default on) — but not on user cancel, which is not a failure. Cancel is
+  detected on BOTH runner paths: the real backends resolve `{ok:false}` on
+  abort rather than throwing, so a guard in the `catch` block alone does
+  nothing outside the mock provider.
 - **Settings** (`lib/settings.ts` → `data/settings.json`, edited via the ⚙️
   panel): default provider, concurrency cap, job timeout, Figma REST fallback
   token. Precedence: settings.json > env > default. Keys/tokens are validated
@@ -105,23 +108,44 @@ no auth, single user, filesystem is the database.
   - Hidden-ness is decided per DECLARATION (property name compared exactly),
     never by regex-matching values across a style string —
     `background-color:transparent` / `margin-left:-100px` are not hidden, and
-    `left:-9999px` only counts with `position:absolute|fixed`.
+    `left:-9999px` only counts with `position:absolute|fixed`. State is kept
+    per property (last declaration wins), so `.copy{display:none}` followed by
+    `.copy{color:#333}` stays hidden — only a re-declaration of the SAME
+    property un-hides.
+  - Only what actually disappears in Chrome (the render compare.py verifies)
+    counts for images: `mso-hide:all` is Outlook-only so it applies to text
+    only, `clip:rect(0…)` needs `position:absolute|fixed`, and a 1px box needs
+    `overflow:hidden` (a 1px `<td>` still stretches around its image).
+    Otherwise wrapping a screenshot in one of those hides it from the gate.
+  - Inherited hides (`font-size:0`, `color:transparent`, `text-indent`) keep
+    descendants that re-declare the property, instead of dropping the subtree.
+  - Only SIMPLE class selectors register a hide. Conditional ones
+    (`[data-ogsc] .logo`, `.mobile-only .cta`) are ignored — treating them as
+    unconditional deletes an honest build's body copy, which costs more than
+    the narrow evasion it leaves open.
   - Two hide kinds: `text` (adds font-size:0 / color:transparent) vs `layout`.
     Image checks use `layout` only — `<td style="font-size:0">` around an image
     is the standard gap-killer idiom and its image must stay countable, while a
     mobile/desktop variant hidden by `display:none` must NOT be double-counted.
   - `<style>` is parsed by brace matching, so rules inside `@media` are seen
-    (wrapping the hide in `@media all` used to slip through), but a query is
-    only applied if it matches the DESKTOP render (700px) — treating
+    (wrapping the hide in `@media all` used to slip through). Only WIDTH
+    conditions are evaluated, against the desktop render (700px): treating
     `@media (max-width:600px){.desktop{display:none}}` as hidden would delete a
-    legit responsive build's whole body. Later rules can un-hide (cascade);
-    only the last compound of a selector is the hide target.
-  - Element removal knows the HTML void set and auto-closing tags; a missing
-    close tag drops only the open tag instead of the rest of the document.
-  - `<img>` sizes come from the FILE (`lib/jobs/image-size.ts`, PNG/JPEG/GIF/
-    WEBP + base64 data URIs) when an attribute is missing — real email markup is
-    `width="700" style="height:auto"`, and attribute-only sizing left both image
-    checks silently disabled (h = NaN).
+    legit responsive build's body, while vetoing on an unparsed feature let
+    `@media (-webkit-min-device-pixel-ratio:0)` — which does apply in Chrome —
+    smuggle a hide past the gate.
+  - Element removal knows the HTML void set and the auto-closing tags
+    (`p`/`td`/`li`…). An unclosed non-auto-closing tag swallows the rest of the
+    document, exactly as a browser does — otherwise one unclosed
+    `<div style="display:none">` at the end pads the live-text count.
+  - `<img>` ASPECT comes from the FILE (`lib/jobs/image-size.ts`, PNG/JPEG/GIF/
+    WEBP + base64 data URIs, decoded in full — a JPEG's SOF can sit behind a
+    20KB ICC profile) when the height attribute is missing, since real email
+    markup is `width="700" style="height:auto"`. DISPLAY WIDTH only ever comes
+    from markup (px, `%` × canvas width, or a simple class rule) — using the
+    file's pixel width would read a 2× export of a narrow element as full-width.
+    A declared width/height of 0 or 1 is ignored (`height="0"` next to
+    `height:auto` renders normally but used to switch both checks off).
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).

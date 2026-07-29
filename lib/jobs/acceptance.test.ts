@@ -232,11 +232,88 @@ describe("checkAcceptance", () => {
       `<td class="swap">${copy}</td>`;
     expect(liveTextChars(unhidden)).toBe(400);
 
-    // 자손 선택자는 마지막 요소만 숨긴다 — `.wrap`까지 지우면 안 된다.
+    // 조건부 선택자(조상·속성)는 숨김으로 치지 않는다 — `[data-ogsc] .logo`
+    // (다크모드)나 `.mobile-only .cta` 같은 규칙을 무조건 숨김으로 읽으면 그
+    // 클래스를 쓴 정상 본문이 통째로 사라진다. 대신 그 안의 숨김 텍스트
+    // 2자는 세어진다(미탐보다 오탐이 비싸다는 판단).
     const descendant =
       `<style>.wrap .sr-only{display:none}</style>` +
       `<div class="wrap">${copy}<span class="sr-only">숨김</span></div>`;
-    expect(liveTextChars(descendant)).toBe(400);
+    expect(liveTextChars(descendant)).toBe(402);
+    const darkMode =
+      `<style>[data-ogsc] .cta{display:none}</style><a class="cta">${copy}</a>`;
+    expect(liveTextChars(darkMode)).toBe(400);
+  });
+
+  it("keeps text under a font-size:0 wrapper that its children override", () => {
+    // `font-size:0;line-height:0`은 이미지 사이 여백을 없애는 관용구다(레퍼런스
+    // 발송본에 실재). 상속 속성이라 자손이 다시 지정하면 그 글자는 보인다 —
+    // 감싸기만 했다고 본문을 통째로 지우면 정상 빌드가 게이트에서 죽는다.
+    const copy = "보이는본문".repeat(32); // 160자
+    const wrapped =
+      `<table style="font-size:0;line-height:0"><tr>` +
+      `<td style="font-size:16px">${copy}</td></tr></table>`;
+    expect(liveTextChars(wrapped)).toBe(160);
+    // 클래스로 되돌린 경우도 같다.
+    const viaClass =
+      `<style>.body-copy{font-size:16px}</style>` +
+      `<div style="font-size:0"><p class="body-copy">${copy}</p></div>`;
+    expect(liveTextChars(viaClass)).toBe(160);
+    // 되돌리지 않은 글자는 여전히 세지 않는다.
+    expect(liveTextChars(`<div style="font-size:0">${copy}</div>`)).toBe(0);
+  });
+
+  it("does not let an unrelated later rule cancel a hide", () => {
+    const copy = "가".repeat(400);
+    // `.copy{display:none}` 뒤의 `.copy{color:#333}`는 display를 되돌리지 않는다.
+    const unrelated =
+      `<style>.copy{display:none}.copy{color:#333}</style><div class="copy">${copy}</div>`;
+    expect(liveTextChars(unrelated)).toBe(0);
+    // 같은 속성을 되돌린 규칙만 해제한다.
+    const same =
+      `<style>.copy{display:none}.copy{display:block}</style><div class="copy">${copy}</div>`;
+    expect(liveTextChars(same)).toBe(400);
+  });
+
+  it("sees hide rules wrapped in non-width media queries", () => {
+    const copy = "가".repeat(400);
+    // `(-webkit-min-device-pixel-ratio:0)`는 데스크톱 크롬에서 그대로 적용되는
+    // 관용 해킹이다 — 폭 조건이 아니면 질의를 따지지 않는다.
+    for (const q of [
+      "@media only screen and (-webkit-min-device-pixel-ratio:0)",
+      "@media screen and (min-resolution:1dppx)",
+      "@media all and (min-width:1px)",
+    ]) {
+      const html = `<style>${q}{.c{color:transparent}}</style><div class="c">${copy}</div>`;
+      expect(liveTextChars(html)).toBe(0);
+    }
+    // 모바일 전용 규칙은 여전히 데스크톱 렌더를 숨기지 않는다.
+    const mobile =
+      `<style>@media screen and (max-width:600px){.c{display:none}}</style>` +
+      `<div class="c">${copy}</div>`;
+    expect(liveTextChars(mobile)).toBe(400);
+  });
+
+  it("does not let an Outlook-only or shrink-wrapped wrapper hide an image", async () => {
+    const { findScreenshotLikeImages } = await import("./acceptance");
+    const shot = `<img src="images/whole.png" width="700" height="2200">`;
+    // 크롬 렌더(픽셀 검증이 보는 화면)에는 그대로 보이는 감싸기들 —
+    // 이걸로 이미지를 검사에서 숨길 수 있으면 통짜 스크린샷이 통과한다.
+    for (const wrapper of [
+      `<div style="mso-hide:all">${shot}</div>`, // Outlook 전용
+      `<td style="width:1px;height:1px">${shot}</td>`, // td는 늘어난다
+      `<div style="clip:rect(0,0,0,0)">${shot}</div>`, // position 없이는 무효
+    ]) {
+      expect(findScreenshotLikeImages(wrapper)).toEqual(["images/whole.png"]);
+    }
+    // 진짜로 안 보이는 감싸기는 여전히 제외된다.
+    for (const wrapper of [
+      `<div style="display:none">${shot}</div>`,
+      `<div style="width:1px;height:1px;overflow:hidden">${shot}</div>`,
+    ]) {
+      const { stripInvisible } = await import("./acceptance");
+      expect(findScreenshotLikeImages(stripInvisible(wrapper, "layout"))).toEqual([]);
+    }
   });
 
   it("keeps the rest of the document when a hidden tag has no closing tag", () => {
@@ -246,6 +323,9 @@ describe("checkAcceptance", () => {
     expect(liveTextChars(`<hr style="display:none"><p>${body}</p>`)).toBe(200);
     expect(liveTextChars(`<input type="hidden" style="display:none"><p>${body}</p>`)).toBe(200);
     expect(liveTextChars(`<p style="display:none">닫히지 않은 스페이서<p>${body}</p>`)).toBe(200);
+    // 반대로 자동으로 닫히지 않는 요소가 열린 채로 끝나면 브라우저는 그 뒤를
+    // 전부 그 요소 안으로 넣는다 — 숨김 텍스트를 채워 넣는 통로가 되면 안 된다.
+    expect(liveTextChars(`<p>짧은</p><div style="display:none">${body}`)).toBe(2);
   });
 
   it("sizes height-less full-width images from the image file itself", async () => {
@@ -256,12 +336,35 @@ describe("checkAcceptance", () => {
     expect(fullWidthImageAspectSum(tag)).toBe(0);
     expect(findScreenshotLikeImages(tag)).toEqual([]);
     // 실측(2× 내보내기여도 비율은 같다)을 주면 잡힌다.
-    const sizes = () => ({ w: 1400, h: 4414 });
-    expect(fullWidthImageAspectSum(tag, sizes)).toBeCloseTo(4414 / 1400, 5);
-    expect(findScreenshotLikeImages(tag, sizes)).toEqual(["images/whole.png"]);
-    // 폭이 %로만 주어진 이미지도 실측으로 판정한다.
+    const ctx = { sizes: () => ({ w: 1400, h: 4414 }) };
+    expect(fullWidthImageAspectSum(tag, ctx)).toBeCloseTo(4414 / 1400, 5);
+    expect(findScreenshotLikeImages(tag, ctx)).toEqual(["images/whole.png"]);
+    // 폭이 %로만 주어진 이미지도 본문 폭으로 환산해 판정한다.
     const pct = `<img src="images/whole.png" width="100%">`;
-    expect(findScreenshotLikeImages(pct, sizes)).toEqual(["images/whole.png"]);
+    expect(findScreenshotLikeImages(pct, ctx)).toEqual(["images/whole.png"]);
+    // height="0"·"1"로 검사를 끌 수 없다 — 브라우저는 style의 height:auto를 따른다.
+    for (const h of ["0", "1"]) {
+      const cheat = `<img src="images/whole.png" width="700" height="${h}" style="height:auto">`;
+      expect(findScreenshotLikeImages(cheat, ctx)).toEqual(["images/whole.png"]);
+    }
+  });
+
+  it("does not read a 2x export's intrinsic size as its display width", async () => {
+    const { fullWidthImageAspectSum, findScreenshotLikeImages } = await import("./acceptance");
+    // 300×700 슬롯에 들어가는 2× 내보내기(600×1400). 실측 폭을 표시 폭으로 쓰면
+    // 전폭 이미지로 오인해 정상 빌드를 "스크린샷/슬라이스"로 거부한다.
+    const ctx = {
+      sizes: () => ({ w: 600, h: 1400 }),
+      classWidths: new Map([["mock", "300px"]]),
+    };
+    for (const tag of [
+      `<img class="mock" src="images/phone.png">`,
+      `<img src="images/phone.png" width="300">`,
+      `<img src="images/phone.png" style="width:300px">`,
+    ]) {
+      expect(findScreenshotLikeImages(tag, ctx)).toEqual([]);
+      expect(fullWidthImageAspectSum(tag, ctx)).toBe(0);
+    }
   });
 
   it("rejects a height-less sliced build end to end", async () => {
@@ -302,6 +405,25 @@ describe("checkAcceptance", () => {
     const a = await checkAcceptance(job.id);
     expect(a.ok).toBe(false);
     expect(a.failures.join(" ")).toContain("스크린샷");
+
+    // ICC 프로파일(APP2 20KB)이 앞에 붙은 JPEG — 앞부분만 디코드하면 프레임
+    // 헤더에 닿지 못해 크기를 못 재고 두 이미지 검사가 통째로 꺼진다.
+    const icc = Buffer.alloc(2 + 20_000);
+    icc.writeUInt16BE(0xffe2, 0);
+    icc.writeUInt16BE(20_000, 2);
+    const sof = Buffer.alloc(2 + 17);
+    sof.writeUInt16BE(0xffc0, 0);
+    sof.writeUInt16BE(17, 2);
+    sof.writeUInt16BE(2207, 5);
+    sof.writeUInt16BE(700, 7);
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8]), icc, sof]);
+    await writeFile(
+      path.join(outputDir(job.id), "edm_responsive.html"),
+      `<html><body><p>${"보이는본문텍스트".repeat(20)}</p>` +
+        `<img src="data:image/jpeg;base64,${jpg.toString("base64")}" width="700" ` +
+        `style="height:auto"></body></html>`,
+    );
+    expect((await checkAcceptance(job.id)).failures.join(" ")).toContain("스크린샷");
   });
 
   it("counts only rendered images — hidden variants and font-size:0 cells", async () => {
