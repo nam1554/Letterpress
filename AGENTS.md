@@ -94,6 +94,18 @@ no auth, single user, filesystem is the database.
   because Windows refuses to delete open files. Launchers: `시작하기.command`
   (zsh) and `시작하기.bat` → `scripts/start-windows.ps1` (PowerShell 5.1 syntax,
   CRLF via `.gitattributes`).
+  The .ps1 MUST keep its UTF-8 BOM: Windows PowerShell 5.1 reads a BOM-less file
+  as legacy ANSI, which mangles the Korean strings (official
+  `about_Character_Encoding`). The .bat stays pure ASCII (cmd uses the OEM code
+  page). Package-manager calls go through `cmd /c` — PowerShell picks `npm.ps1`
+  over `npm.cmd` via PATHEXT and then trips over the execution policy.
+  No exit hook is used: `PowerShell.Exiting` and `finally` were both measured
+  NOT to run under `-File`; cleanup relies on the shared console (a `-NoNewWindow`
+  child dies with the window) plus the next launch detecting a stale server.
+  Without Windows hardware, validate with a portable pwsh: parse with
+  `[Parser]::ParseFile`, lint with `Invoke-ScriptAnalyzer`, then dot-source the
+  script from a harness that stubs `Get-NetTCPConnection`/`Start-Process`/
+  `Invoke-WebRequest`/`Read-Host` and points `$env:ComSpec` at a shell shim.
 - **Chrome discovery** goes through `lib/chrome.ts` (chrome-launcher) and is
   exported to the agent as `CHROME_BIN`; `compare.py` reads that env first.
   A hard-coded `/Applications/...` path meant pixel-verify could never run off
