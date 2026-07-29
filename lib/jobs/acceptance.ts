@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { outputDir, workDir } from "./store";
 
@@ -50,6 +50,21 @@ export interface AcceptanceOptions {
    * 실행했다는 사실(증거물 + verify.json 존재)은 여전히 요구한다.
    */
   requireVerifyPass?: boolean;
+  /**
+   * 이 시각 이후에 쓰인 verify.json만 이번 실행의 증거로 인정한다. edit 잡은
+   * 원본 workDir을 복사해 오고 resume은 같은 workDir을 재사용하므로, 지정하지
+   * 않으면 이전 실행이 남긴 PASS만으로 게이트를 통과할 수 있다.
+   */
+  freshSince?: number;
+}
+
+/** 파일 메타데이터, 없으면 null. */
+async function statOrNull(file: string) {
+  try {
+    return await stat(file);
+  } catch {
+    return null;
+  }
 }
 
 export async function checkAcceptance(
@@ -71,17 +86,28 @@ export async function checkAcceptance(
     failures.push("output/에 반응형 변형(*_responsive.html)이 없습니다.");
   }
 
-  const missingEvidence = VERIFY_EVIDENCE.filter((f) => !existsSync(path.join(base, f)));
+  // 0바이트 파일은 없는 것으로 친다 — compare.py가 쓰다 죽으면 그렇게 남는다.
+  const evidence = await Promise.all(
+    VERIFY_EVIDENCE.map(async (f) => ({ f, st: await statOrNull(path.join(base, f)) })),
+  );
+  const missingEvidence = evidence.filter(({ st }) => !st || st.size === 0).map(({ f }) => f);
   if (missingEvidence.length > 0) {
     failures.push(
-      `픽셀 검증 증거물이 작업 루트에 없습니다: ${missingEvidence.join(", ")} — compare.py 검증 단계를 실행하세요.`,
+      `픽셀 검증 증거물이 작업 루트에 없거나 비어 있습니다: ${missingEvidence.join(", ")} — compare.py 검증 단계를 실행하세요.`,
     );
   }
 
   const verify = await readVerifySummary(jobId);
+  const verifyStat = await statOrNull(path.join(base, "verify.json"));
+  const stale =
+    opts.freshSince !== undefined && (!verifyStat || verifyStat.mtimeMs < opts.freshSince);
   if (!verify) {
     failures.push(
       "verify.json이 없거나 읽을 수 없습니다 — compare.py(검증 단계)가 작업 루트에 남겨야 합니다.",
+    );
+  } else if (stale) {
+    failures.push(
+      "verify.json이 이번 실행에서 갱신되지 않았습니다 — 이전 실행이 남긴 결과입니다. compare.py 검증 단계를 다시 실행하세요.",
     );
   } else if (verify.result !== "PASS") {
     const detail = [

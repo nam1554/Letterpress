@@ -16,6 +16,7 @@ afterAll(async () => {
 });
 
 import { startJob } from "./runner";
+import { mockProvider } from "../providers/mock";
 import { abortAllForShutdown, liveControllers } from "./live";
 import { createEditJob, createJob, getJob, listArtifacts, updateJob, type Job } from "./store";
 
@@ -72,6 +73,26 @@ describe("runner + quality gate (mock provider)", () => {
 
     await chmod(path.join(dir, job.id), 0o700);
   });
+
+  it("fails an edit job that reuses the source's verification instead of re-running it", async () => {
+    const source = await createJob("https://www.figma.com/design/abc/", "mock");
+    await startJob(source);
+    await waitTerminal(source.id);
+
+    const edit = await createEditJob((await getJob(source.id))!, "헤드라인 변경");
+    // 산출물도 verify.json도 원본에서 복사돼 이미 자리에 있다. 에이전트가
+    // 아무것도 하지 않아도 성공으로 보이면 게이트가 무의미해진다.
+    const realRun = mockProvider.run;
+    mockProvider.run = async () => ({ ok: true, summary: "아무것도 생성하지 않음" });
+    try {
+      await startJob(edit);
+      const done = await waitTerminal(edit.id);
+      expect(done.status).toBe("failed");
+      expect(done.summary).toContain("품질 게이트");
+    } finally {
+      mockProvider.run = realRun;
+    }
+  }, 30_000);
 
   it("aborts every live job on shutdown", () => {
     const controller = new AbortController();

@@ -101,6 +101,30 @@ describe("checkAcceptance", () => {
     expect(a.verify?.result).toBe("FAIL");
   });
 
+  it("rejects a verify.json left behind by an earlier attempt", async () => {
+    const job = await fullJob();
+    // edit 잡은 원본 workDir을 복사해 오고 resume은 같은 workDir을 재사용한다 —
+    // 이전 실행의 PASS가 이번 실행의 증거로 둔갑하면 안 된다.
+    const a = await checkAcceptance(job.id, { freshSince: Date.now() + 1000 });
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("갱신되지");
+  });
+
+  it("accepts a verify.json written during this attempt", async () => {
+    const job = await fullJob();
+    const a = await checkAcceptance(job.id, { freshSince: Date.now() - 60_000 });
+    expect(a.ok).toBe(true);
+  });
+
+  it("treats an empty evidence file as missing", async () => {
+    const job = await fullJob();
+    // compare.py가 쓰다 죽으면 0바이트 파일이 남는다 — existsSync는 통과시킨다.
+    await writeFile(path.join(workDir(job.id), "my_full.png"), "");
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("my_full.png");
+  });
+
   it("only warns when images/ is empty", async () => {
     const job = await fullJob();
     await rm(path.join(outputDir(job.id), "images"), { recursive: true });

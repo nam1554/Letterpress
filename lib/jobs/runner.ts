@@ -23,6 +23,9 @@ export interface StartOptions {
  */
 export async function startJob(job: Job, opts: StartOptions = {}): Promise<void> {
   const { promptOverride, resume } = opts;
+  // 이 시도가 시작된 시각 — 품질 게이트가 이전 실행의 검증 결과를 이번 증거로
+  // 인정하지 않도록 하는 기준점.
+  const startedAt = Date.now();
   // 설정 읽기 실패는 전역 상태를 만들기 전에 터져야 한다.
   // A runaway agent must not run forever. Full pipeline is typically 10-25 min.
   const timeoutMinutes = getSettings().jobTimeoutMinutes;
@@ -66,7 +69,9 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
 
       // 부분 수정(edit) 잡은 의도적으로 원본 Figma와 달라지므로 verify PASS를
       // 강제하지 않는다 (산출물 계약 + 검증 실행 여부는 그대로 요구).
-      const gateOpts = { requireVerifyPass: !job.editOf };
+      // freshSince: edit은 원본 workDir을 복사해 오고 resume은 같은 workDir을
+      // 재사용하므로, 이전 실행의 verify.json을 이번 증거로 인정하지 않는다.
+      const gateOpts = { requireVerifyPass: !job.editOf, freshSince: startedAt };
       const task: AgentTask = {
         jobId: job.id,
         figmaUrl: job.figmaUrl,
