@@ -13,13 +13,12 @@ CLI agent job converts it to email-safe HTML (via the vendored `figma-edm`
 skill), and the artifacts are downloadable as a zip. Not a deployed service —
 no auth, single user, filesystem is the database.
 
-- **The `figma-edm` skill is vendored at `skills/figma-edm/`** — this repo copy
-  is the single source of truth for the app; edit and commit it here. All
-  backends read its files via `FIGMA_EDM_SKILL_DIR` (repo path; the spawned
-  CLI's cwd is the job workDir, so skill auto-discovery can't work). A copy may
-  also exist at `~/.claude/skills/figma-edm` for the user's interactive
-  sessions — that one is NOT used by the app; sync deliberate improvements
-  both ways when it matters.
+- **The `figma-edm` skill lives at `skills/figma-edm/` and ONLY there** — it is
+  managed and versioned in this repo; edit and commit it here. All backends
+  read its files via `FIGMA_EDM_SKILL_DIR` (repo path; the spawned CLI's cwd
+  is the job workDir, so skill auto-discovery can't work). The old
+  `~/.claude/skills/figma-edm` copy was removed (2026-07-29) — do not
+  reference or recreate it.
 
 - Design doc: `docs/superpowers/specs/2026-07-28-marketing-html-maker-design.md`
 
