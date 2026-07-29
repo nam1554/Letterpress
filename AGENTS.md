@@ -58,7 +58,8 @@ no auth, single user, filesystem is the database.
 ## Verification habits
 
 - `pnpm vitest run` (unit), `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`.
-- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_CODEX_SMOKE=1` smoke tests
+- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_GEMINI_SMOKE=1` /
+  `RUN_CODEX_SMOKE=1` smoke tests
   (spawn a trivial prompt; small token cost).
 - Browser E2E: mock provider end-to-end via chrome-devtools MCP.
 

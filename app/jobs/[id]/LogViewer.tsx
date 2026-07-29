@@ -27,6 +27,9 @@ const LOG_COLOR: Record<string, string> = {
  */
 export default function LogViewer({ events }: { events: AgentEvent[] }) {
   const viewport = useRef<HTMLDivElement>(null);
+  // 사용자가 위로 스크롤해 읽는 중엔 자동 스크롤로 끌어내리지 않는다 —
+  // 바닥 근처(40px)에 있을 때만 새 이벤트를 따라간다.
+  const stickToBottom = useRef(true);
 
   // TanStack Virtual은 내부적으로 가변 인스턴스를 쓰는 설계라 React Compiler
   // 최적화 대상에서 제외해도 무방하다 (공식 권장 사용 패턴 그대로).
@@ -39,7 +42,7 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
   });
 
   useEffect(() => {
-    if (events.length > 0) {
+    if (events.length > 0 && stickToBottom.current) {
       virtualizer.scrollToIndex(events.length - 1, { align: "end" });
     }
   }, [events.length, virtualizer]);
@@ -48,6 +51,10 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
     <div
       ref={viewport}
       data-testid="log"
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      }}
       style={{
         height: 288,
         overflowY: "auto",

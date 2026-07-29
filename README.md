@@ -1,12 +1,20 @@
 # Marketing HTML Maker
 
-Figma eDM 디자인 링크를 붙여넣으면 **Claude Code가 헤드리스로 이메일 HTML을
+Figma eDM 디자인 링크를 붙여넣으면 **AI 에이전트가 헤드리스로 이메일 HTML을
 생성**하고, 브라우저에서 결과물(HTML + images/)을 zip으로 다운로드하는 **로컬
-전용** 도구입니다. 서비스 배포용이 아닙니다.
+전용** 도구입니다. 서비스 배포용이 아닙니다. 백엔드는 Claude Code(기본) ·
+Gemini CLI · Codex CLI · Mock 중 선택할 수 있습니다.
 
 생성 파이프라인은 사용자 홈의 `figma-edm` 스킬(픽셀 검증 포함)을 그대로
-사용하며, 목표 산출물 형태는 `(로컬 참고 산출물 — 저장소에 없음)`
-패키지와 동일합니다 (700px 테이블 레이아웃, `images/` 상대경로, 반응형 변형).
+사용하며, 산출물은 실무 발송 패키지 형태(700px 테이블 레이아웃, `images/`
+상대경로, 반응형 변형, base64 자립형 프리뷰)입니다.
+
+## 빠른 시작 (3줄 요약)
+
+1. Finder에서 **`시작하기.command` 더블클릭** → 브라우저가 자동으로 열립니다
+2. 화면 상단 **환경 점검**과 **🔌 백엔드 연동** 패널이 빨간/노란 항목을
+   안내하면 그대로 해결 (해결 명령 복사 버튼 제공)
+3. Figma 디자인 링크를 붙여넣고 **HTML 만들기** → 10~20분 후 zip 다운로드
 
 ## 팀원 온보딩 (처음 받은 사람용)
 
@@ -120,8 +128,11 @@ Figma 토큰과 Gemini API 키는 **저장하는 순간 실제 API로 검증**�
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| 로그에 `FATAL: Figma MCP ...` | 헤드리스 세션에서 Figma MCP 미연결 — `claude`에서 Figma 커넥터 로그인 확인 |
+| 로그에 `FATAL: Figma MCP ...` | 헤드리스 세션에서 Figma MCP 미연결 — 🔌 백엔드 연동 패널의 "Figma 접근" 단계 안내대로 재연결 |
 | `claude 실행 실패: spawn claude ENOENT` | CLI 미설치 또는 PATH 문제 — `which claude` 확인, 필요 시 `CLAUDE_BIN=/절대/경로` env 지정 |
+| Gemini 로그인 화면에서 `IneligibleTierError` | 구글이 무료 로그인 티어를 중단(2026-07) — 로그인 대신 API 키를 🔌 백엔드 연동 카드에 입력 |
+| Gemini 503 "model is overloaded" | 무료 키에서 pro 모델 용량 제한 — 기본값(`gemini-flash-latest`)을 그대로 쓰거나 시간대를 바꿔 재시도 |
+| 시작하기.command: "포트 3000 사용 중" | 이미 앱이 떠 있거나 다른 프로그램이 점유 — 기존 창을 닫거나 `PORT=3001 ./시작하기.command` |
 | 잡이 `failed: 서버가 재시작되어…` | dev 서버 재시작으로 중단된 잡 — "다시 실행" 버튼으로 재실행 |
 | 픽셀 검증에서 계속 FAIL 반복 | 대부분 스킬 `references/gotchas.md`에 있는 케이스 — 로그의 compare 출력 확인 |
 | 다운로드 zip에 파일이 없음 | 잡이 succeeded 인지 확인 — 실패한 잡은 output/ 이 비어 있을 수 있음 |
@@ -129,26 +140,38 @@ Figma 토큰과 Gemini API 키는 **저장하는 순간 실제 API로 검증**�
 ## 구조 (에이전트 백엔드 교체 가능)
 
 ```
-lib/providers/types.ts     AgentProvider 인터페이스 — 백엔드 계약
-lib/providers/claude-code.ts   claude -p --output-format stream-json spawn
+lib/providers/types.ts         AgentProvider 인터페이스 — 백엔드 계약
+lib/providers/claude-code.ts   claude -p stream-json (기본 백엔드)
+lib/providers/gemini.ts        gemini -p stream-json (API 키)
+lib/providers/codex.ts         codex exec --json (ChatGPT 구독)
 lib/providers/mock.ts          샘플 산출물 (개발/검증용)
-lib/providers/registry.ts      env AGENT_PROVIDER 로 기본값 선택
+lib/providers/jsonl-cli.ts     공용 spawn 러너 (프로세스 그룹 정리 포함)
+lib/providers/prompt.ts        공용 eDM 프롬프트 + Figma REST 폴백 절
+lib/providers/registry.ts      백엔드 등록/기본값 선택
+lib/setup.ts               백엔드 연동 진단 · 연동 테스트 · 키 검증
 lib/jobs/                  파일시스템 잡 스토어 + 실행 러너
-app/api/jobs/**            생성/목록/상태/SSE/다운로드/미리보기 라우트
+lib/hosting.ts             CDN 교체본 ({folder}/{file} 템플릿 치환)
+lib/email-check.ts         발송 전 정적 검사 7종
+app/api/**                 잡 CRUD/SSE/다운로드 · 설정 · 연동 라우트 (zod 검증)
 data/jobs/<id>/work/output/    다운로드 대상 산출물 (git 제외)
 ```
 
-다른 구독 모델(Codex, Gemini CLI 등)로 바꾸려면 `lib/providers/`에
-`AgentProvider` 구현 파일 1개를 추가하고 `registry.ts`에 등록하면 됩니다.
-기본 프로바이더는 `AGENT_PROVIDER` 환경변수로 지정합니다 (`claude-code` | `mock`).
+새 백엔드 추가 = `lib/providers/`에 `AgentProvider` 구현 파일 1개 +
+`registry.ts` 등록 1줄. 기본 백엔드는 ⚙️ 설정 패널(또는 `AGENT_PROVIDER`
+env)로 지정합니다 (`claude-code` | `gemini` | `codex` | `mock`).
 
 ## 테스트
 
 ```bash
-pnpm vitest run                 # 유닛 테스트 (URL 파싱 등)
+pnpm vitest run     # 유닛 테스트 40개 (URL/파서/잡 스토어/CDN 치환/연동 진단)
+
+# 실제 CLI spawn 스모크 (각 백엔드, 토큰 소량 소모 — 옵트인)
 RUN_CLAUDE_SMOKE=1 pnpm vitest run lib/providers/claude-code.smoke.test.ts
-                                # 실제 claude CLI spawn 파이프 스모크 (토큰 소량 소모)
+RUN_GEMINI_SMOKE=1 pnpm vitest run lib/providers/gemini.smoke.test.ts
+RUN_CODEX_SMOKE=1  pnpm vitest run lib/providers/codex.smoke.test.ts
 ```
+
+UI에서 백엔드별 **"연동 테스트"** 버튼을 눌러도 같은 검증이 됩니다.
 
 ## AI 작업 준비 (Next.js 16.2)
 
