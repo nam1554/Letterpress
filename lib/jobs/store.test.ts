@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -22,12 +22,14 @@ import {
   createJob,
   deleteJob,
   getJob,
+  jobDirSize,
   listJobs,
   readEvents,
   reserveJobId,
   resolveArtifact,
   subscribe,
   updateJob,
+  workDir,
 } from "./store";
 import { liveControllers } from "./live";
 
@@ -181,5 +183,30 @@ describe("resolveArtifact", () => {
     expect(resolveArtifact("deadbeef", "images/logo.png")).toContain(
       path.join("deadbeef", "work", "output", "images", "logo.png"),
     );
+  });
+});
+
+describe("jobDirSize", () => {
+  it("sums the job directory and caches only terminal jobs", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    await writeFile(path.join(workDir(job.id), "a.bin"), Buffer.alloc(1000));
+    const running = await jobDirSize(job); // queued → 캐시 안 됨
+    await writeFile(path.join(workDir(job.id), "b.bin"), Buffer.alloc(500));
+    expect(await jobDirSize(job)).toBe(running + 500);
+
+    const done = { ...job, status: "succeeded" as const };
+    const cached = await jobDirSize(done); // 종료 → 캐시
+    await writeFile(path.join(workDir(job.id), "c.bin"), Buffer.alloc(9999));
+    expect(await jobDirSize(done)).toBe(cached); // 캐시 적중: 파일 추가 무시
+    await deleteJob(job.id);
+  });
+
+  it("invalidates the cache on deleteJob", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const done = { ...job, status: "failed" as const };
+    expect(await jobDirSize(done)).toBeGreaterThan(0); // job.json 존재 → 캐시됨
+    await deleteJob(job.id);
+    // 캐시가 남았다면 이전 값이 돌아온다 — 무효화됐으면 디렉터리 부재로 0
+    expect(await jobDirSize(done)).toBe(0);
   });
 });

@@ -320,5 +320,35 @@ export async function deleteJob(id: string): Promise<boolean> {
   live.reconciling.delete(id);
   live.listeners.delete(id);
   live.seqs.delete(id);
+  dirSizeCache.delete(id);
   return true;
+}
+
+const TERMINAL_FOR_SIZE = new Set<JobStatus>(["succeeded", "failed"]);
+const dirSizeCache = new Map<string, number>();
+
+async function dirSize(dir: string): Promise<number> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0; // 디렉터리 없음/권한 오류 — 크기는 부가 정보라 0으로
+  }
+  let sum = 0;
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) sum += await dirSize(p);
+    else if (e.isFile()) sum += (await stat(p).catch(() => null))?.size ?? 0;
+  }
+  return sum;
+}
+
+/** 잡 디렉터리 총 바이트. 종료 잡은 캐시(파일이 더 변하지 않는다). */
+export async function jobDirSize(job: Pick<Job, "id" | "status">): Promise<number> {
+  const terminal = TERMINAL_FOR_SIZE.has(job.status);
+  const cached = terminal ? dirSizeCache.get(job.id) : undefined;
+  if (cached !== undefined) return cached;
+  const size = await dirSize(jobDir(job.id));
+  if (terminal) dirSizeCache.set(job.id, size);
+  return size;
 }
