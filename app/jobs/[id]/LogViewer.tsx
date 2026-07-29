@@ -10,11 +10,12 @@ export interface AgentEvent {
   seq?: number;
 }
 
+// 웜 터미널 서피스에 맞춘 로그 색 (클로드 스타일 테라코타 액센트).
 const LOG_COLOR: Record<string, string> = {
-  status: "#7dd3c8",
-  tool: "#6b7f7a",
-  error: "#f87171",
-  done: "#4ade80",
+  status: "#e0a382",
+  tool: "#8a867a",
+  error: "#f28b82",
+  done: "#a5c496",
   log: "var(--terminal-ink)",
 };
 
