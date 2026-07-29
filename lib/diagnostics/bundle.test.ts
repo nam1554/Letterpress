@@ -73,3 +73,19 @@ describe("진단 번들 — 잡 파일 경로", () => {
     expect(scrubForBundle(events)).not.toContain("SUPER_SECRET");
   });
 });
+
+describe("진단 번들 — 모든 항목이 문을 지나는가", () => {
+  it("번들에 실리는 텍스트 중 스크럽을 건너뛴 항목이 없다", async () => {
+    // health.json이 그 구멍이었다 — CLI 오류 원문(detail)이 그대로 실렸다.
+    const { bundleTexts } = await import("./bundle");
+    const texts = await bundleTexts({ jobs: [] });
+    const secret = "figd_SUPER_SECRET_TOKEN_1234";
+    for (const [name, content] of Object.entries(texts)) {
+      expect(content, `${name}에 비밀값이 남아 있다`).not.toContain(secret);
+    }
+    // 최소한 이 항목들은 반드시 들어 있어야 검사가 의미가 있다.
+    expect(Object.keys(texts)).toEqual(
+      expect.arrayContaining(["summary.md", "settings.json", "health.json", "backends.json"]),
+    );
+  }, 30_000);
+});

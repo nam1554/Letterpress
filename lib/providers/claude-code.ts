@@ -98,7 +98,7 @@ export const claudeCodeProvider: AgentProvider = {
       ok,
       summary: ok
         ? resultText || "완료"
-        : resultText || result.stderrTail || `종료 코드 ${result.code}`,
+        : resultText || result.stderrTail || (result.signal ? `프로세스가 ${result.signal} 신호로 종료되었습니다.` : `종료 코드 ${result.code}`),
     };
   },
 };

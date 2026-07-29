@@ -110,3 +110,18 @@ describe("runJsonlCli", () => {
     expect(await readFile(marker, "utf8")).toBe(first);
   }, 15_000);
 });
+
+describe("신호 종료", () => {
+  it("신호로 죽은 실행은 spawn 오류가 아니라 '실행됨'이고, 신호 이름을 남긴다", async () => {
+    const controller = new AbortController();
+    const r = run(`setInterval(() => {}, 100)`, controller.signal);
+    await new Promise((res) => setTimeout(res, 300));
+    // 취소가 아니라 외부에서 죽는 상황(OOM 킬러 등)을 흉내낸다.
+    process.kill(-0, 0); // no-op: 아래에서 execa가 띄운 자식을 직접 죽인다
+    const { execa } = await import("execa");
+    await execa("pkill", ["-KILL", "-f", "setInterval\\(\\(\\) => \\{\\}, 100\\)"]).catch(() => {});
+    const result = await r.result;
+    expect(result.kind).toBe("closed"); // spawn-error가 아니어야 stderr 꼬리가 살아남는다
+    expect(result.signal).toBe("SIGKILL");
+  }, 15_000);
+});

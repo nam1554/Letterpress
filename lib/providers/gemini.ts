@@ -170,7 +170,7 @@ export const geminiProvider: AgentProvider = {
       ok,
       summary: ok
         ? finalResponse || "완료"
-        : errorText || finalResponse || result.stderrTail || `종료 코드 ${result.code}`,
+        : errorText || finalResponse || result.stderrTail || (result.signal ? `프로세스가 ${result.signal} 신호로 종료되었습니다.` : `종료 코드 ${result.code}`),
     };
   },
 };

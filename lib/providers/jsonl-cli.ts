@@ -14,6 +14,8 @@ import { execa } from "execa";
  */
 export interface JsonlCliResult {
   kind: "closed" | "aborted" | "spawn-error";
+  /** 신호로 종료된 경우 그 이름 (예: SIGKILL) — 진단에 필요하다. */
+  signal?: string;
   /** Exit code (kind === "closed"). */
   code?: number | null;
   /** Spawn failure (kind === "spawn-error"). */
@@ -76,9 +78,15 @@ export async function runJsonlCli(opts: {
   // 지만 분명히 "실행은 됐다". 이것을 spawn 오류로 분류하면 프로바이더가
   // stderr 꼬리를 버리고 "CLI를 실행할 수 없습니다"라고 말해, 사용자가 멀쩡한
   // CLI를 재설치하러 간다 (OOM으로 죽은 경우 등).
-  const { exitCode, isTerminated } = result as { exitCode?: number; isTerminated?: boolean };
+  const { exitCode, isTerminated, signal } = result as {
+    exitCode?: number;
+    isTerminated?: boolean;
+    signal?: string;
+  };
   if (typeof exitCode === "number") return { kind: "closed", code: exitCode, stderrTail };
-  if (isTerminated) return { kind: "closed", code: null, stderrTail };
+  // 신호로 죽었어도 "실행은 됐다" — 다만 어떤 신호였는지는 남겨야 사용자가
+  // "종료 코드 null"만 보고 영문을 모르는 일이 없다.
+  if (isTerminated) return { kind: "closed", code: null, signal, stderrTail };
   if (result instanceof Error) return { kind: "spawn-error", error: result, stderrTail };
   return { kind: "closed", code: null, stderrTail };
 }

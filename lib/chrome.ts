@@ -18,8 +18,14 @@ let cached: { value: string | null } | null = null;
 
 /** 실행 가능한 Chrome 경로. 없으면 null. */
 export function findChrome(): string | null {
-  if (!cached) cached = { value: resolveChrome() };
-  return cached.value;
+  if (cached) return cached.value;
+  const value = resolveChrome();
+  // 못 찾은 결과는 캐시하지 않는다 — 사용자가 안내대로 Chrome을 설치하고
+  // "다시 점검"을 눌러도 서버를 재시작하기 전까지 계속 빨간불이면,
+  // 안내 자체가 거짓말이 된다. (탐색이 느린 경우는 "찾았을 때"뿐이다.)
+  if (value === null) return null;
+  cached = { value };
+  return value;
 }
 
 /** 테스트·환경 변경 후 다시 찾게 한다. */

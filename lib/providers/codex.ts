@@ -125,7 +125,7 @@ export const codexProvider: AgentProvider = {
       ok,
       summary: ok
         ? lastMessage || "완료"
-        : errorText || lastMessage || result.stderrTail || `종료 코드 ${result.code}`,
+        : errorText || lastMessage || result.stderrTail || (result.signal ? `프로세스가 ${result.signal} 신호로 종료되었습니다.` : `종료 코드 ${result.code}`),
     };
   },
 };

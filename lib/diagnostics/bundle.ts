@@ -154,20 +154,20 @@ export async function buildSummary(input: BundleInput): Promise<string> {
 
 /** 번들에 넣을 텍스트 파일들 (경로 → 내용). 파일 스트림은 라우트가 따로 붙인다. */
 export async function bundleTexts(input: BundleInput): Promise<Record<string, string>> {
-  const values = secrets();
   const out: Record<string, string> = {
     "summary.md": await buildSummary(input),
-    "settings.json": JSON.stringify(maskedSettings(), null, 2),
+    "settings.json": scrubForBundle(JSON.stringify(maskedSettings(), null, 2)),
   };
   const health = await runHealthChecks(false).catch(() => []);
-  out["health.json"] = JSON.stringify(health, null, 2);
+  // detail에 CLI 오류 원문이 담긴다 — 여기도 예외 없이 문을 지난다.
+  out["health.json"] = scrubForBundle(JSON.stringify(health, null, 2));
   const backends = await getBackendSetup(false).catch(() => []);
-  out["backends.json"] = scrub(JSON.stringify(backends, null, 2), values);
+  out["backends.json"] = scrubForBundle(JSON.stringify(backends, null, 2));
   const log = readRecentLog();
-  if (log) out["logs/app.log"] = scrub(log, values);
+  if (log) out["logs/app.log"] = scrubForBundle(log);
   const launcherLog = await readFile(path.join(process.cwd(), "시작-기록.log"), "utf8").catch(
     () => "",
   );
-  if (launcherLog) out["logs/launcher.log"] = scrub(launcherLog.slice(-300_000), values);
+  if (launcherLog) out["logs/launcher.log"] = scrubForBundle(launcherLog.slice(-300_000));
   return out;
 }
