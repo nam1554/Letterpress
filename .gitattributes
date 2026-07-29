@@ -1,0 +1,5 @@
+# 윈도우 런처는 CRLF여야 한다 — LF로 체크아웃되면 cmd/PowerShell이 오작동한다.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+# macOS 런처는 LF 유지.
+*.command text eol=lf

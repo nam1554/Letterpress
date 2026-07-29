@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render an HTML at 700px width via headless Chrome, compare to figma_full.png band-by-band."""
 import subprocess, sys, os, json
+from pathlib import Path
 from PIL import Image
 import numpy as np
 
@@ -55,7 +56,7 @@ def render(html_path, out_png, width=700, height=2600):
     subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
         "--force-device-scale-factor=1", f"--window-size={width},{height}",
         f"--screenshot={out_png}", "--virtual-time-budget=3000",
-        f"file://{html_path}"], check=True, capture_output=True)
+        Path(html_path).resolve().as_uri()], check=True, capture_output=True)
 
 def autocrop(img, bg=BG, tol=6):
     a = np.asarray(img.convert("RGB")).astype(int)

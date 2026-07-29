@@ -43,8 +43,12 @@ help. The value here is **guarantees, not vibes**:
 - **Figma MCP** tools: `get_screenshot`, `get_design_context`, `get_metadata`
   (claude.ai Figma server). Extract `fileKey` + `nodeId` from the URL:
   `figma.com/design/:fileKey/...?node-id=2219-8` → fileKey, nodeId `2219-8`.
-- **Local Chrome** at `/Applications/Google Chrome.app/...` for headless render.
+- **Local Chrome** for the headless render. `compare.py` finds it per platform;
+  set `CHROME_BIN` to override (the Letterpress app passes it in).
 - **Python**: `PIL numpy fonttools brotli` (`python3 -m pip install ...`).
+  On Windows `python3` does not exist — use `py -3` for every `python3` command
+  in this skill (the bundled scripts call `sys.executable` internally, so they
+  are fine either way).
 - A working directory (the "EDM_DIR"). The bundled scripts read/write there via
   the `EDM_DIR` env var (default: cwd). Set it once: `export EDM_DIR=/path/to/work`.
 

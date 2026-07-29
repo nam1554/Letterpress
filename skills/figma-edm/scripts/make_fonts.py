@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Subset Pretendard weights to glyphs used in the email, base64 -> @font-face CSS."""
-import subprocess, base64, os, re
+import subprocess, base64, os, re, sys
 
 SP = os.environ.get("EDM_DIR", os.getcwd())
 FD = os.path.join(SP, "fonts")
@@ -42,7 +42,7 @@ total = 0
 for name, wt in WEIGHTS:
     src = os.path.join(FD, f"Pretendard-{name}.woff2")
     out = os.path.join(FD, f"sub-{name}.woff2")
-    subprocess.run(["python3","-m","fontTools.subset", src, f"--text={charset}",
+    subprocess.run([sys.executable,"-m","fontTools.subset", src, f"--text={charset}",
         "--flavor=woff2", "--layout-features=*", f"--output-file={out}"],
         check=True, capture_output=True)
     b = open(out,"rb").read(); total += len(b)

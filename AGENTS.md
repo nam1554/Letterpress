@@ -84,6 +84,16 @@ no auth, single user, filesystem is the database.
     a restart hangs on "실행 중" with no recovery path.
   - `reserveJobId()` never returns an id whose directory exists; a collision
     would silently overwrite an existing job.
+- **Cross-platform**: macOS is the verified platform; Windows support is in the
+  code but not yet run on real hardware. Rules: no hard-coded tool paths
+  (`lib/chrome.ts` / `lib/python.ts` resolve them, `CHROME_BIN` / `PYTHON_BIN`
+  override); spawn only through `jsonl-cli.ts` (execa handles `.cmd` shims and
+  tree-kill); `python3` does not exist on Windows (`py -3`), and the bundled
+  skill scripts call `sys.executable` instead; file URLs come from
+  `Path(...).as_uri()`, never `file://` + a raw path; `fs.rm` uses retries
+  because Windows refuses to delete open files. Launchers: `시작하기.command`
+  (zsh) and `시작하기.bat` → `scripts/start-windows.ps1` (PowerShell 5.1 syntax,
+  CRLF via `.gitattributes`).
 - **Chrome discovery** goes through `lib/chrome.ts` (chrome-launcher) and is
   exported to the agent as `CHROME_BIN`; `compare.py` reads that env first.
   A hard-coded `/Applications/...` path meant pixel-verify could never run off

@@ -316,7 +316,9 @@ export function resolveArtifact(id: string, rel: string): string | null {
 /** Delete a job and all its data. Refuses while the job is still executing. */
 export async function deleteJob(id: string): Promise<boolean> {
   if (liveControllers.has(id)) return false;
-  await rm(jobDir(id), { recursive: true, force: true });
+  // 윈도우는 열려 있는 파일을 지우지 못해 EBUSY/EPERM을 낸다 — 방금 끝난 잡의
+  // 로그 핸들이 닫히는 데 잠깐 걸릴 수 있어 Node의 재시도를 켠다.
+  await rm(jobDir(id), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   live.reconciling.delete(id);
   live.listeners.delete(id);
   live.seqs.delete(id);

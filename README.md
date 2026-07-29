@@ -29,7 +29,8 @@ Gemini CLI · Codex CLI · Mock 중 선택할 수 있습니다.
 2. **Figma 연결** — Claude Code에 claude.ai Figma 커넥터가 연결·로그인돼
    있어야 합니다 (`claude` 대화에서 Figma 링크가 읽히면 정상).
 
-**나머지는 `시작하기.command`가 처리합니다:**
+**나머지는 런처가 처리합니다** (macOS는 `시작하기.command`, Windows는
+`시작하기.bat`을 더블클릭):
 
 - Node.js가 없거나 버전이 낮으면 → 설치 방법을 화면에 안내하고 다운로드
   페이지를 열어 줍니다 (Homebrew가 있으면 물어본 뒤 바로 설치)
@@ -41,6 +42,21 @@ Gemini CLI · Codex CLI · Mock 중 선택할 수 있습니다.
 
 > `figma-edm` 스킬은 이 저장소 안에 포함돼 있습니다(`skills/figma-edm`).
 > 예전처럼 `~/.claude/skills/`에 따로 두거나 심링크를 만들 필요가 없습니다.
+
+### Windows에서
+
+`시작하기.bat`을 더블클릭하면 됩니다 (실제 동작은 `scripts/start-windows.ps1`).
+macOS 런처와 같은 일을 하되 윈도우 방식으로 처리합니다 — Node는 `winget`으로
+설치 제안, 파이썬은 `py -3`(윈도우에는 `python3` 명령이 없습니다), Chrome은
+`Program Files`/`LOCALAPPDATA`에서 탐색합니다.
+
+- **Claude Code CLI**: `winget install Anthropic.ClaudeCode` (관리자 권한 불필요)
+- **파이썬**: 설치 화면에서 **"Add python.exe to PATH"를 반드시 체크**하세요 —
+  체크하지 않으면 픽셀 검증이 실행되지 않습니다
+- WSL은 필요 없습니다. 네이티브로 동작합니다.
+
+> 윈도우 지원은 코드상으로 정리돼 있으나 실기기 검증은 아직입니다 —
+> 처음 돌리실 때 막히는 지점이 있으면 `시작-기록.log`와 함께 알려주세요.
 
 홈 화면 상단의 **환경 점검 배너**가 위 항목들을 다시 한 번 진단해 주고,
 **🔌 백엔드 연동 패널**이 백엔드별로 설치 → 인증 → Figma 접근을 단계별로

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { findChrome } from "./chrome";
+import { findPython } from "./python";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -65,20 +66,34 @@ function checkChrome(): HealthCheck {
 }
 
 async function checkPythonDeps(): Promise<HealthCheck> {
+  const name = "Python 의존성 (PIL·numpy·fonttools·brotli)";
+  // 터미널이 낯선 사용자를 위해: 런처가 물어보고 대신 설치해 준다.
+  const launcher = process.platform === "win32" ? "시작하기.bat" : "시작하기.command";
+  const python = await findPython();
+  if (!python) {
+    return {
+      name,
+      ok: false,
+      detail: "파이썬 없음",
+      hint:
+        `${launcher}를 다시 실행하면 안내합니다. 직접 설치하려면 https://www.python.org/downloads 에서 받으세요` +
+        (process.platform === "win32" ? " (설치 화면의 'Add python.exe to PATH'를 체크)." : "."),
+    };
+  }
   try {
     await execFileAsync(
-      "python3",
-      ["-c", "import PIL, numpy, fontTools, brotli"],
+      python.bin,
+      [...python.args, "-c", "import PIL, numpy, fontTools, brotli"],
       { timeout: 10_000 },
     );
-    return { name: "Python 의존성 (PIL·numpy·fonttools·brotli)", ok: true, detail: "OK" };
+    return { name, ok: true, detail: "OK" };
   } catch {
+    const cmd = [python.bin, ...python.args].join(" ");
     return {
-      name: "Python 의존성 (PIL·numpy·fonttools·brotli)",
+      name,
       ok: false,
       detail: "import 실패",
-      // 터미널이 낯선 사용자를 위해: 런처가 물어보고 대신 설치해 준다.
-      hint: "시작하기.command를 다시 실행하면 설치 여부를 물어봅니다. 직접 하려면: python3 -m pip install pillow numpy fonttools brotli",
+      hint: `${launcher}를 다시 실행하면 설치 여부를 물어봅니다. 직접 하려면: ${cmd} -m pip install pillow numpy fonttools brotli`,
     };
   }
 }
