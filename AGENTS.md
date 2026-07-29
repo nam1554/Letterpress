@@ -96,56 +96,50 @@ no auth, single user, filesystem is the database.
   It also blocks screenshot-shipping (observed: codex gamed the gate three
   ways in a row — whole-email screenshot, then sr-only hidden copy, then a
   7-slice + transparent-class copy). Three stacked checks, each with a test:
-  VISIBLE live text ≥100 chars (hidden/transparent elements stripped, including
-  via `<style>` class rules — collect classes BEFORE removing style blocks);
-  no single image ≥400px wide with h/w ≥2 (a page capture); full-width images'
+  VISIBLE live text ≥100 chars (hidden/transparent elements not counted,
+  `<style>` class rules included); no single image ≥400px wide with h/w ≥2
+  (a page capture); full-width images'
   aspect-ratio sum ≤70% of the figma_full canvas aspect (a sliced capture —
   honest builds run ~28%). Visible text can't be faked: text not in the design
   breaks pixel-verify, hidden text isn't counted.
-  The anti-gaming parsing is where the false-positive risk lives — a wrong
-  "hidden" verdict fails an honest 15-min build and burns a repair run. Rules
-  that a code review found broken and that now have regression tests:
-  - Hidden-ness is decided per DECLARATION (property name compared exactly),
-    never by regex-matching values across a style string —
-    `background-color:transparent` / `margin-left:-100px` are not hidden, and
-    `left:-9999px` only counts with `position:absolute|fixed`. State is kept
-    per property (last declaration wins), so `.copy{display:none}` followed by
-    `.copy{color:#333}` stays hidden — only a re-declaration of the SAME
-    property un-hides.
-  - Only what actually disappears in Chrome (the render compare.py verifies)
-    counts for images: `mso-hide:all` is Outlook-only so it applies to text
-    only, `clip:rect(0…)` needs `position:absolute|fixed`, and a 1px box needs
-    `overflow:hidden` (a 1px `<td>` still stretches around its image).
-    Otherwise wrapping a screenshot in one of those hides it from the gate.
-  - Inherited hides (`font-size:0`, `color:transparent`, `text-indent`) keep
-    descendants that re-declare the property, instead of dropping the subtree.
-  - Only SIMPLE class selectors register a hide. Conditional ones
-    (`[data-ogsc] .logo`, `.mobile-only .cta`) are ignored — treating them as
-    unconditional deletes an honest build's body copy, which costs more than
-    the narrow evasion it leaves open.
-  - Two hide kinds: `text` (adds font-size:0 / color:transparent) vs `layout`.
-    Image checks use `layout` only — `<td style="font-size:0">` around an image
-    is the standard gap-killer idiom and its image must stay countable, while a
-    mobile/desktop variant hidden by `display:none` must NOT be double-counted.
-  - `<style>` is parsed by brace matching, so rules inside `@media` are seen
-    (wrapping the hide in `@media all` used to slip through). Only WIDTH
-    conditions are evaluated, against the desktop render (700px): treating
-    `@media (max-width:600px){.desktop{display:none}}` as hidden would delete a
-    legit responsive build's body, while vetoing on an unparsed feature let
-    `@media (-webkit-min-device-pixel-ratio:0)` — which does apply in Chrome —
-    smuggle a hide past the gate.
-  - Element removal knows the HTML void set and the auto-closing tags
-    (`p`/`td`/`li`…). An unclosed non-auto-closing tag swallows the rest of the
-    document, exactly as a browser does — otherwise one unclosed
-    `<div style="display:none">` at the end pads the live-text count.
+  The anti-gaming judgement is where the false-positive risk lives — a wrong
+  "hidden" verdict fails an honest 15-min build and burns a repair run. Three
+  code-review rounds killed the hand-rolled regex version of this (unclosed
+  tags, descendant selectors, rule order, class-width cascade — a new divergence
+  every round), so parsing and selector matching now live in a real parser:
+  `lib/jobs/html-visibility.ts` (cheerio = parse5 + css-select) exposes
+  `renderHtml(html, "text" | "layout")` and the gate only decides WHAT counts as
+  hidden. Rules, each with a regression test:
+  - The reference render is desktop Chrome at 700px — the same screen compare.py
+    pixel-verifies. Anything that does NOT disappear there is not hidden:
+    `mso-hide:all` is Outlook-only (text checks only), `clip` needs
+    `position:absolute|fixed`, a 0/1px box needs `overflow:hidden`, and
+    `@media (prefers-color-scheme: dark)` does not apply. Conversely
+    `@media (-webkit-min-device-pixel-ratio:0)` DOES apply, so it can't be used
+    as a wrapper to smuggle a hide past the gate; only width conditions are
+    evaluated (against 700px), so mobile-only rules never hide desktop content.
+  - Hidden-ness is per DECLARATION (property name compared exactly) and per
+    property, last declaration wins — `background-color:transparent` and
+    `margin-left:-100px` are not hides, and `.copy{display:none}` followed by
+    `.copy{color:#333}` stays hidden. Rules apply in document order; specificity
+    is deliberately not modelled (email CSS is flat).
+  - Two hide kinds: `text` adds the inherited hides (font-size:0,
+    color:transparent, text-indent) on top of `layout`. Image checks use
+    `layout` only, so `<td style="font-size:0">` (the standard gap-killer, in
+    the reference send) keeps its image countable while a `display:none`
+    mobile variant is not double-counted. Inherited hides don't drop the
+    subtree — a child that re-declares the property is visible again.
   - `<img>` ASPECT comes from the FILE (`lib/jobs/image-size.ts`, PNG/JPEG/GIF/
-    WEBP + base64 data URIs, decoded in full — a JPEG's SOF can sit behind a
-    20KB ICC profile) when the height attribute is missing, since real email
-    markup is `width="700" style="height:auto"`. DISPLAY WIDTH only ever comes
-    from markup (px, `%` × canvas width, or a simple class rule) — using the
-    file's pixel width would read a 2× export of a narrow element as full-width.
-    A declared width/height of 0 or 1 is ignored (`height="0"` next to
-    `height:auto` renders normally but used to switch both checks off).
+    WEBP + base64 data URIs decoded in full — a JPEG's SOF can sit behind a 20KB
+    ICC profile), since real markup is `width="700" style="height:auto"`.
+    DISPLAY WIDTH comes from markup only (px, `%` of the 700px body, class
+    rules), capped by `max-width`; the file's pixel width is used only when
+    markup gives none AND it is ≥700 (a 2x export of a narrow slot must not read
+    as full-width art). A declared width/height of 0 or 1 is ignored —
+    `height="0"` next to `height:auto` renders normally but used to switch both
+    image checks off.
+  - Test fixtures must be valid markup (a `<td>` outside a table is dropped by
+    parse5, exactly as a browser drops it).
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).

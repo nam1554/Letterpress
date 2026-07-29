@@ -167,7 +167,7 @@ describe("checkAcceptance", () => {
       `<div style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">` +
       `${"가".repeat(400)}<div style="color:#000">중첩도 함께 제거</div></div>` +
       `<div style="display:none;">${"나".repeat(200)}</div>` +
-      `<td style="mso-hide:all">${"다".repeat(200)}</td>` +
+      `<table><tr><td style="mso-hide:all">${"다".repeat(200)}</td></tr></table>` +
       `<p>보이는것만</p>`;
     expect(liveTextChars(srOnly)).toBe(5);
     // opacity:0.9·font-size:14px 같은 정상 스타일은 숨김으로 오인하지 않는다.
@@ -179,7 +179,7 @@ describe("checkAcceptance", () => {
     // color:transparent를 썼다 — 클래스 규칙까지 해석해야 잡힌다.
     const html =
       `<style>.email-copy{position:absolute;left:0;top:0;color:transparent;width:1px;overflow:visible}</style>` +
-      `<td class="email-copy">${"가".repeat(400)}</td><p>보이는것만</p>`;
+      `<table><tr><td class="email-copy">${"가".repeat(400)}</td></tr></table><p>보이는것만</p>`;
     expect(liveTextChars(html)).toBe(5);
   });
 
@@ -196,7 +196,7 @@ describe("checkAcceptance", () => {
       "height:1px;background:#eee;width:100%", // 1px 구분선
       "font-size:14px;color:#333",
     ]) {
-      expect(liveTextChars(`<td style="${style}">${body}</td>`)).toBe(300);
+      expect(liveTextChars(`<table><tr><td style="${style}">${body}</td></tr></table>`)).toBe(300);
     }
     // 진짜 숨김은 여전히 잡는다.
     for (const style of [
@@ -206,7 +206,7 @@ describe("checkAcceptance", () => {
       "position:absolute;left:-9999px",
       "width:1px;height:1px;overflow:hidden",
     ]) {
-      expect(liveTextChars(`<td style="${style}">${body}</td>`)).toBe(0);
+      expect(liveTextChars(`<table><tr><td style="${style}">${body}</td></tr></table>`)).toBe(0);
     }
   });
 
@@ -216,33 +216,37 @@ describe("checkAcceptance", () => {
     // `@media all`로 읽어 클래스를 놓쳤다.
     const wrapped =
       `<style>@media all{.email-copy{color:transparent}.pad{padding:0}}</style>` +
-      `<td class="email-copy">${copy}</td><p>보이는것만</p>`;
+      `<table><tr><td class="email-copy">${copy}</td></tr></table><p>보이는것만</p>`;
     expect(liveTextChars(wrapped)).toBe(5);
 
     // 반대로 모바일 전용 규칙은 데스크톱 렌더를 숨기지 않는다 — 이걸 숨김으로
     // 읽으면 정상 반응형 산출물의 본문이 사라져 게이트가 잘못 실패한다.
     const responsive =
       `<style>@media only screen and (max-width:600px){.desktop-only{display:none}}</style>` +
-      `<td class="desktop-only">${copy}</td>`;
+      `<table><tr><td class="desktop-only">${copy}</td></tr></table>`;
     expect(liveTextChars(responsive)).toBe(400);
 
     // 나중 규칙이 다시 보이게 하면 취소된다 (캐스케이드).
     const unhidden =
       `<style>.swap{display:none} @media all{.swap{display:block}}</style>` +
-      `<td class="swap">${copy}</td>`;
+      `<table><tr><td class="swap">${copy}</td></tr></table>`;
     expect(liveTextChars(unhidden)).toBe(400);
 
-    // 조건부 선택자(조상·속성)는 숨김으로 치지 않는다 — `[data-ogsc] .logo`
-    // (다크모드)나 `.mobile-only .cta` 같은 규칙을 무조건 숨김으로 읽으면 그
-    // 클래스를 쓴 정상 본문이 통째로 사라진다. 대신 그 안의 숨김 텍스트
-    // 2자는 세어진다(미탐보다 오탐이 비싸다는 판단).
+    // 자손 선택자는 조상 조건을 실제로 따진다 — 파서가 선택자를 매칭하므로
+    // `.wrap .sr-only`는 `.wrap` 안의 것만 숨기고 `.wrap` 자체는 남는다.
     const descendant =
       `<style>.wrap .sr-only{display:none}</style>` +
       `<div class="wrap">${copy}<span class="sr-only">숨김</span></div>`;
-    expect(liveTextChars(descendant)).toBe(402);
+    expect(liveTextChars(descendant)).toBe(400);
+    // 조상 조건이 문서에 없으면(다크모드 전용 `[data-ogsc]`) 숨겨지지 않는다.
     const darkMode =
       `<style>[data-ogsc] .cta{display:none}</style><a class="cta">${copy}</a>`;
     expect(liveTextChars(darkMode)).toBe(400);
+    // 태그로 한정한 무조건 규칙은 그대로 숨김이다.
+    const tagQualified =
+      `<style>td.copy{display:none}</style>` +
+      `<table><tr><td class="copy">${copy}</td></tr></table>`;
+    expect(liveTextChars(tagQualified)).toBe(0);
   });
 
   it("keeps text under a font-size:0 wrapper that its children override", () => {
@@ -294,6 +298,51 @@ describe("checkAcceptance", () => {
     expect(liveTextChars(mobile)).toBe(400);
   });
 
+  it("resolves CSS the way the verified render does", () => {
+    const copy = "가".repeat(400);
+    // 규칙 순서: 뒤 규칙이 이긴다. 다른 클래스에 걸린 규칙이라도 마찬가지다.
+    const cascade =
+      `<style>.b{color:#333}.a{display:none}.b{display:block}</style>` +
+      `<div class="a b">${copy}</div>`;
+    expect(liveTextChars(cascade)).toBe(400);
+    // 조상 조건이 실제로 있으면 숨김이다 (`.wrap .copy`).
+    const scoped =
+      `<style>.wrap .copy{display:none}</style>` +
+      `<div class="wrap"><div class="copy">${copy}</div></div>`;
+    expect(liveTextChars(scoped)).toBe(0);
+    // 다크모드 전용 규칙은 라이트로 렌더되는 검증 화면에 적용되지 않는다.
+    const dark =
+      `<style>@media (prefers-color-scheme: dark){.copy{display:none}}</style>` +
+      `<div class="copy">${copy}</div>`;
+    expect(liveTextChars(dark)).toBe(400);
+    // 높이 0으로 잘린 상자는 폭 선언이 없어도 숨김이다.
+    expect(liveTextChars(`<div style="height:0;overflow:hidden">${copy}</div>`)).toBe(0);
+  });
+
+  it("measures image display size like the browser (max-width, cascade, %)", async () => {
+    const { fullWidthImageAspectSum, findScreenshotLikeImages } = await import("./acceptance");
+    const sizes = () => ({ w: 600, h: 1400 });
+    // `width:100%;max-width:300px`는 300px로 렌더된다 — 상한을 무시하면 2단
+    // 칼럼 이미지가 전폭 아트로 오인돼 정상 빌드가 거부된다.
+    const column = `<img src="a.png" style="width:100%;max-width:300px">`;
+    expect(findScreenshotLikeImages(column, sizes)).toEqual([]);
+    expect(fullWidthImageAspectSum(column, sizes)).toBe(0);
+    // 폭 클래스가 여럿이면 나중 규칙이 이긴다 — 앞 클래스를 미끼로 좁은 폭을
+    // 심어 검사를 끌 수 없다.
+    const decoy =
+      `<style>.pad{width:100px}.hero{width:700px}</style>` +
+      `<img class="pad hero" src="a.png">`;
+    expect(findScreenshotLikeImages(decoy, () => ({ w: 700, h: 2000 }))).toEqual(["a.png"]);
+    // %는 본문 폭(700) 기준이다 — 레퍼런스 PNG를 2×로 뽑아 기준을 흔들 수 없다.
+    const pct = `<img src="a.png" width="100%">`;
+    expect(findScreenshotLikeImages(pct, () => ({ w: 1400, h: 4000 }))).toEqual(["a.png"]);
+    // 폭을 아무데서도 지정하지 않은 이미지는 실측이 본문 폭 이상일 때만 전폭
+    // 아트로 본다 — 좁은 슬롯의 2× 내보내기(600px)를 전폭으로 읽으면 안 된다.
+    const noSize = `<img src="a.png" style="display:block;max-width:100%">`;
+    expect(findScreenshotLikeImages(noSize, sizes)).toEqual([]);
+    expect(findScreenshotLikeImages(noSize, () => ({ w: 700, h: 2200 }))).toEqual(["a.png"]);
+  });
+
   it("does not let an Outlook-only or shrink-wrapped wrapper hide an image", async () => {
     const { findScreenshotLikeImages } = await import("./acceptance");
     const shot = `<img src="images/whole.png" width="700" height="2200">`;
@@ -311,8 +360,7 @@ describe("checkAcceptance", () => {
       `<div style="display:none">${shot}</div>`,
       `<div style="width:1px;height:1px;overflow:hidden">${shot}</div>`,
     ]) {
-      const { stripInvisible } = await import("./acceptance");
-      expect(findScreenshotLikeImages(stripInvisible(wrapper, "layout"))).toEqual([]);
+      expect(findScreenshotLikeImages(wrapper)).toEqual([]);
     }
   });
 
@@ -336,7 +384,7 @@ describe("checkAcceptance", () => {
     expect(fullWidthImageAspectSum(tag)).toBe(0);
     expect(findScreenshotLikeImages(tag)).toEqual([]);
     // 실측(2× 내보내기여도 비율은 같다)을 주면 잡힌다.
-    const ctx = { sizes: () => ({ w: 1400, h: 4414 }) };
+    const ctx = () => ({ w: 1400, h: 4414 });
     expect(fullWidthImageAspectSum(tag, ctx)).toBeCloseTo(4414 / 1400, 5);
     expect(findScreenshotLikeImages(tag, ctx)).toEqual(["images/whole.png"]);
     // 폭이 %로만 주어진 이미지도 본문 폭으로 환산해 판정한다.
@@ -353,12 +401,9 @@ describe("checkAcceptance", () => {
     const { fullWidthImageAspectSum, findScreenshotLikeImages } = await import("./acceptance");
     // 300×700 슬롯에 들어가는 2× 내보내기(600×1400). 실측 폭을 표시 폭으로 쓰면
     // 전폭 이미지로 오인해 정상 빌드를 "스크린샷/슬라이스"로 거부한다.
-    const ctx = {
-      sizes: () => ({ w: 600, h: 1400 }),
-      classWidths: new Map([["mock", "300px"]]),
-    };
+    const ctx = () => ({ w: 600, h: 1400 });
     for (const tag of [
-      `<img class="mock" src="images/phone.png">`,
+      `<style>.mock{width:300px}</style><img class="mock" src="images/phone.png">`,
       `<img src="images/phone.png" width="300">`,
       `<img src="images/phone.png" style="width:300px">`,
     ]) {

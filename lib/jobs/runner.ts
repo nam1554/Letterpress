@@ -36,6 +36,9 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
 
   let timedOut = false;
   const timer = setTimeout(() => {
+    // 이미 사용자가 멈춘 실행을 뒤늦게 "제한 시간 초과"로 덮어쓰지 않는다 —
+    // CLI는 분리된 프로세스 그룹이라 죽는 데 시간이 걸릴 수 있다.
+    if (controller.signal.aborted) return;
     timedOut = true;
     controller.abort();
   }, timeoutMinutes * 60_000);
