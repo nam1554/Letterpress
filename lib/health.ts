@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { findChrome } from "./chrome";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -51,13 +52,15 @@ function checkFigmaEdmSkill(): HealthCheck {
 }
 
 function checkChrome(): HealthCheck {
-  const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-  const ok = existsSync(chrome);
+  const chrome = findChrome();
   return {
     name: "Google Chrome (픽셀 검증용)",
-    ok,
-    detail: ok ? "설치됨" : "미설치",
-    hint: ok ? undefined : "픽셀 검증(compare.py)이 헤드리스 Chrome을 사용합니다. Chrome을 설치하세요.",
+    ok: chrome !== null,
+    detail: chrome ?? "미설치",
+    hint: chrome
+      ? undefined
+      : "픽셀 검증(compare.py)이 헤드리스 Chrome을 사용합니다 — https://www.google.com/chrome 에서 설치하세요. " +
+        "표준 위치가 아닌 곳에 설치했다면 CHROME_BIN 환경변수로 경로를 지정할 수 있습니다.",
   };
 }
 

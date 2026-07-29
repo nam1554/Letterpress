@@ -32,8 +32,11 @@ no auth, single user, filesystem is the database.
   ChatGPT plan usage limit; treat as experimental. `gemini` dies mid-pipeline
   with `[API Error]` once the API key's quota runs out (a smoke prompt passes,
   a real conversion doesn't) — needs a paid-tier key for real use.
-  Shared pieces: `jsonl-cli.ts` (spawn + JSONL stream handling — partial lines,
-  stderr tail, abort/close race), `prompt.ts` (shared eDM prompt + agent env).
+  Shared pieces: `jsonl-cli.ts` (execa: line streaming, stderr tail, and
+  `killDescendants` so a cancel kills the CLI's grandchildren — the wrappers
+  re-spawn the real binary; on Windows that becomes `taskkill`, and execa also
+  runs `.cmd` shims that Node refuses to spawn since CVE-2024-27980),
+  `prompt.ts` (shared eDM prompt + agent env, including `CHROME_BIN`).
   Add a new backend = one file + one `registry.ts` entry. Parsers are exported
   pure functions with tests in `parsers.test.ts`.
 - **Job state** lives in `data/jobs/<id>/` (`job.json` atomic-written,
@@ -81,6 +84,10 @@ no auth, single user, filesystem is the database.
     a restart hangs on "실행 중" with no recovery path.
   - `reserveJobId()` never returns an id whose directory exists; a collision
     would silently overwrite an existing job.
+- **Chrome discovery** goes through `lib/chrome.ts` (chrome-launcher) and is
+  exported to the agent as `CHROME_BIN`; `compare.py` reads that env first.
+  A hard-coded `/Applications/...` path meant pixel-verify could never run off
+  macOS, and the gate then fails an otherwise correct build for "no verify.json".
 - **Quality gate**: success is judged by the filesystem, not the agent's
   self-report. `lib/jobs/acceptance.ts` checks the deliverable contract
   (`output/*_figma.html` + `*_responsive.html`, verify evidence images in the

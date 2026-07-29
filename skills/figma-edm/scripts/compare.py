@@ -5,8 +5,51 @@ from PIL import Image
 import numpy as np
 
 SP = os.environ.get("EDM_DIR", os.getcwd())
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BG = (236, 238, 243)  # body bg #eceef3
+
+
+def find_chrome():
+    """헤드리스 렌더에 쓸 Chrome. 경로를 박아두면 그 OS 밖에서는 검증이 통째로
+    실패하고, 품질 게이트가 정상 산출물까지 실패시킨다. CHROME_BIN으로 직접
+    지정할 수도 있다."""
+    override = os.environ.get("CHROME_BIN", "").strip()
+    if override:
+        return override
+    if sys.platform == "darwin":
+        candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            os.path.expanduser("~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+    elif sys.platform == "win32":
+        roots = [os.environ.get(k) for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        candidates = [
+            os.path.join(r, sub)
+            for r in roots
+            if r
+            for sub in (
+                r"Google\Chrome\Application\chrome.exe",
+                r"Microsoft\Edge\Application\msedge.exe",
+            )
+        ]
+    else:
+        candidates = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    sys.exit(
+        "Chrome을 찾지 못했습니다 — https://www.google.com/chrome 에서 설치하거나 "
+        "CHROME_BIN 환경변수로 실행 파일 경로를 지정하세요."
+    )
+
+
+CHROME = find_chrome()
 
 def render(html_path, out_png, width=700, height=2600):
     subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
