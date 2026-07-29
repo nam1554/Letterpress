@@ -78,7 +78,7 @@ export const codexProvider: AgentProvider = {
         summary: "Codex CLI 로그인이 필요합니다. 터미널에서 `codex login`을 실행하세요.",
       };
     }
-    const prompt = task.promptOverride ?? buildEdmPrompt(task, "files");
+    const prompt = task.promptOverride ?? buildEdmPrompt(task);
 
     let lastMessage = "";
     let errorText = "";

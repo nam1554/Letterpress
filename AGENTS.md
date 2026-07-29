@@ -9,9 +9,17 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 # Letterpress (repo: marketing-html-maker) — agent notes
 
 Local-only Next.js app: paste a Figma eDM design URL in the browser, a headless
-CLI agent job converts it to email-safe HTML (via the user's `figma-edm`
+CLI agent job converts it to email-safe HTML (via the vendored `figma-edm`
 skill), and the artifacts are downloadable as a zip. Not a deployed service —
 no auth, single user, filesystem is the database.
+
+- **The `figma-edm` skill is vendored at `skills/figma-edm/`** — this repo copy
+  is the single source of truth for the app; edit and commit it here. All
+  backends read its files via `FIGMA_EDM_SKILL_DIR` (repo path; the spawned
+  CLI's cwd is the job workDir, so skill auto-discovery can't work). A copy may
+  also exist at `~/.claude/skills/figma-edm` for the user's interactive
+  sessions — that one is NOT used by the app; sync deliberate improvements
+  both ways when it matters.
 
 - Design doc: `docs/superpowers/specs/2026-07-28-marketing-html-maker-design.md`
 

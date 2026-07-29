@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -38,13 +37,16 @@ async function checkClaudeCli(): Promise<HealthCheck> {
 }
 
 function checkFigmaEdmSkill(): HealthCheck {
-  const skillDir = path.join(os.homedir(), ".claude", "skills", "figma-edm");
-  const ok = existsSync(skillDir);
+  // 스킬은 레포에 벤더링됨 (skills/figma-edm) — clone만으로 있어야 정상.
+  const skillDir = path.join(process.cwd(), "skills", "figma-edm");
+  const ok = existsSync(path.join(skillDir, "SKILL.md"));
   return {
     name: "figma-edm 스킬",
     ok,
-    detail: ok ? skillDir : "~/.claude/skills/figma-edm 없음",
-    hint: ok ? undefined : "figma-edm 스킬을 ~/.claude/skills/에 설치(또는 심링크)해야 변환 파이프라인이 동작합니다.",
+    detail: ok ? skillDir : "skills/figma-edm 없음",
+    hint: ok
+      ? undefined
+      : "레포의 skills/figma-edm이 없습니다 — git 체크아웃이 손상됐는지 확인하세요.",
   };
 }
 

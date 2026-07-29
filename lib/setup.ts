@@ -137,8 +137,9 @@ async function claudeSetup(): Promise<BackendSetup> {
   const list = cli.ok ? await mcpList(CLAUDE_BIN(), 45_000) : null;
   const mcp = list === null ? null : figmaMcpFromClaudeList(list);
 
-  const skillDir = path.join(os.homedir(), ".claude", "skills", "figma-edm");
-  const skillOk = existsSync(skillDir);
+  // 스킬은 레포에 벤더링됨 (skills/figma-edm) — clone만으로 있어야 정상.
+  const skillDir = path.join(process.cwd(), "skills", "figma-edm");
+  const skillOk = existsSync(path.join(skillDir, "SKILL.md"));
 
   const steps: SetupStep[] = [
     {
@@ -155,8 +156,8 @@ async function claudeSetup(): Promise<BackendSetup> {
     {
       name: "figma-edm 스킬",
       ok: skillOk,
-      detail: skillOk ? skillDir : "~/.claude/skills/figma-edm 없음",
-      command: skillOk ? undefined : "ln -s <스킬-저장소>/figma-edm ~/.claude/skills/figma-edm",
+      detail: skillOk ? skillDir : "skills/figma-edm 없음",
+      command: skillOk ? undefined : "git checkout -- skills/figma-edm",
     },
   ];
   return finish("claude-code", steps);

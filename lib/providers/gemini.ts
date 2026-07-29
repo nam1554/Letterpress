@@ -129,7 +129,7 @@ export const geminiProvider: AgentProvider = {
           "Gemini API 키가 필요합니다. aistudio.google.com/apikey 에서 발급해 홈 화면의 🔌 백엔드 연동에서 저장하세요.",
       };
     }
-    const prompt = task.promptOverride ?? buildEdmPrompt(task, "files");
+    const prompt = task.promptOverride ?? buildEdmPrompt(task);
     const mapper = createGeminiLineMapper(onEvent);
 
     const result = await runJsonlCli({

@@ -1,4 +1,3 @@
-import os from "node:os";
 import path from "node:path";
 import { getSettings } from "../settings";
 import type { AgentTask } from "./types";
@@ -12,21 +11,17 @@ export function agentEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-export const FIGMA_EDM_SKILL_DIR = path.join(os.homedir(), ".claude", "skills", "figma-edm");
-
 /**
- * The conversion instructions shared by every backend.
- * `skillAccess` differs: Claude Code loads "figma-edm" via its skill system;
- * other CLIs must read the same skill's files from disk.
+ * 레포에 벤더링된 figma-edm 스킬 — 이 사본이 앱의 단일 소스다.
+ * (~/.claude/skills/figma-edm은 사용자의 대화형 스킬로, 앱과 무관.)
+ * 스폰된 CLI는 cwd가 잡 workDir라 프로젝트 스킬 자동 발견이 불가능하므로,
+ * 모든 백엔드가 이 경로의 파일을 직접 읽는다.
  */
-export function buildEdmPrompt(
-  task: AgentTask,
-  skillAccess: "claude-skill" | "files",
-): string {
-  const skillIntro =
-    skillAccess === "claude-skill"
-      ? `Use the "figma-edm" skill and follow its full pipeline`
-      : `Read ${FIGMA_EDM_SKILL_DIR}/SKILL.md and ${FIGMA_EDM_SKILL_DIR}/references/workflow.md, then follow that pipeline exactly (the bundled scripts are in ${FIGMA_EDM_SKILL_DIR}/scripts/)`;
+export const FIGMA_EDM_SKILL_DIR = path.join(process.cwd(), "skills", "figma-edm");
+
+/** The conversion instructions shared by every backend. */
+export function buildEdmPrompt(task: AgentTask): string {
+  const skillIntro = `Read ${FIGMA_EDM_SKILL_DIR}/SKILL.md and ${FIGMA_EDM_SKILL_DIR}/references/workflow.md, then follow that pipeline exactly (the bundled scripts are in ${FIGMA_EDM_SKILL_DIR}/scripts/)`;
 
   if (task.edit) return buildEditPrompt(task, skillIntro);
 

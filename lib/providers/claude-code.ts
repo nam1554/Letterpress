@@ -47,7 +47,7 @@ export const claudeCodeProvider: AgentProvider = {
   label: "Claude Code (local CLI)",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
-    const prompt = task.promptOverride ?? buildEdmPrompt(task, "claude-skill");
+    const prompt = task.promptOverride ?? buildEdmPrompt(task);
 
     // Strip nested-session markers so the spawned CLI behaves like a fresh run.
     const env = agentEnv();
