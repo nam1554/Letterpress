@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const spawnMock = vi.fn((..._args: unknown[]) => ({ unref: vi.fn(), on: vi.fn() }));
+const spawnMock = vi.fn<(...args: unknown[]) => { unref: () => void; on: () => void }>(
+  () => ({ unref: vi.fn(), on: vi.fn() }),
+);
 vi.mock("node:child_process", () => ({ spawn: (...a: unknown[]) => spawnMock(...a) }));
 
 let dir: string;
