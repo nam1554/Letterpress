@@ -35,3 +35,16 @@ export function formatElapsed(ms: number): string {
   const s = total % 60;
   return m > 0 ? `${m}분 ${s}초` : `${s}초`;
 }
+
+/** 1_234_567 → "1.2MB". 1KB 미만은 "1KB 미만" (잡 크기 표시용). */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 1024) return "1KB 미만";
+  const units = ["KB", "MB", "GB"] as const;
+  let v = n / 1024;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u += 1;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)}${units[u]}`;
+}

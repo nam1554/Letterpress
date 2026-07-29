@@ -10,6 +10,7 @@ import {
   PasswordInput,
   Select,
   Stack,
+  Switch,
   Text,
   TextInput,
 } from "@mantine/core";
@@ -28,6 +29,7 @@ interface SettingsView {
   figmaTokenSet: boolean;
   geminiApiKeySet: boolean;
   claudeModel: string;
+  notifyOnFinish: boolean;
   providers: ProviderInfo[];
 }
 
@@ -72,6 +74,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
         maxConcurrentJobs: view.maxConcurrentJobs,
         jobTimeoutMinutes: view.jobTimeoutMinutes,
         claudeModel: view.claudeModel,
+        notifyOnFinish: view.notifyOnFinish,
       };
       if (figmaToken.trim()) body.figmaToken = figmaToken.trim();
       const r = await sendJson<SettingsView & { warning?: string }>(
@@ -168,6 +171,20 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
                   }}
                   placeholder="CLI 기본"
                   w={180}
+                />
+              }
+            />
+            <Row
+              label="완료 알림"
+              hint="변환이 끝나면(성공/실패 모두) macOS 알림센터로 알립니다 — 탭을 계속 보고 있지 않아도 됩니다."
+              control={
+                <Switch
+                  data-testid="setting-notify"
+                  checked={view.notifyOnFinish}
+                  onChange={(e) => {
+                    const notifyOnFinish = e.currentTarget.checked;
+                    setEdits((prev) => ({ ...prev, notifyOnFinish }));
+                  }}
                 />
               }
             />

@@ -8,10 +8,12 @@ import {
   Anchor,
   Badge,
   Button,
+  Checkbox,
   Container,
   Divider,
   Group,
   Paper,
+  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -24,7 +26,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
 import { parseFigmaUrl } from "@/lib/figma";
 import { fetcher } from "./lib/fetcher";
-import { figmaLabel, relativeTime } from "./lib/format";
+import { figmaLabel, formatBytes, relativeTime } from "./lib/format";
 import { sendJson } from "./lib/request";
 
 interface Job {
@@ -35,7 +37,10 @@ interface Job {
   status: string;
   createdAt: number;
   summary?: string;
+  diskBytes?: number;
 }
+
+type StatusFilter = "all" | "running" | "succeeded" | "failed";
 interface ProviderInfo {
   id: string;
   label: string;
@@ -68,6 +73,9 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [query, setQuery] = useState("");
 
   // 잡 목록은 5초 폴링 — 실행 중 잡의 상태 변화를 홈에서도 따라간다.
   const { data: jobsData } = useSWR<JobsResponse>("/api/jobs", fetcher, {
@@ -182,6 +190,55 @@ export default function Home() {
 
   const requiredFails = health?.filter((c) => !c.ok) ?? [];
   const selectedBackend = backends?.find((b) => b.id === provider);
+
+  const totalBytes = jobs.reduce((sum, j) => sum + (j.diskBytes ?? 0), 0);
+  const visibleJobs = jobs.filter((j) => {
+    if (statusFilter === "running" && j.status !== "running" && j.status !== "queued") return false;
+    if (statusFilter === "succeeded" && j.status !== "succeeded") return false;
+    if (statusFilter === "failed" && j.status !== "failed") return false;
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [j.id, j.figmaUrl, j.provider, j.title ?? "", j.summary ?? ""].some((s) =>
+      s.toLowerCase().includes(q),
+    );
+  });
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectFailed() {
+    setSelected(new Set(jobs.filter((j) => j.status === "failed").map((j) => j.id)));
+  }
+
+  async function deleteSelected() {
+    if (selected.size === 0) return;
+    const r = await sendJson<{ results: Array<{ id: string; ok: boolean }> }>(
+      "/api/jobs/bulk-delete",
+      "POST",
+      { ids: [...selected] },
+    );
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setSelected(new Set());
+    void mutate("/api/jobs");
+    const failed = r.data.results.filter((x) => !x.ok).length;
+    const deleted = r.data.results.length - failed;
+    notifications.show({
+      message:
+        failed > 0
+          ? `${deleted}건 삭제, ${failed}건은 삭제하지 못했습니다 (실행 중이거나 없음).`
+          : `작업 ${deleted}건을 삭제했습니다.`,
+      color: failed > 0 ? "yellow" : "gray",
+    });
+  }
 
   return (
     <Container size={680} py={56}>
@@ -311,8 +368,8 @@ export default function Home() {
         </Title>
         <Group gap="sm">
           {jobs.length > 0 && (
-            <Text size="xs" c="dimmed">
-              {jobs.length}건
+            <Text size="xs" c="dimmed" data-testid="disk-total">
+              {jobs.length}건 · 총 {formatBytes(totalBytes)}
             </Text>
           )}
           {jobs.some((j) => j.status === "succeeded" || j.status === "failed") && (
@@ -328,6 +385,47 @@ export default function Home() {
           )}
         </Group>
       </Group>
+
+      {jobs.length > 0 && (
+        <Group gap="sm" mb="sm" wrap="wrap">
+          <SegmentedControl
+            data-testid="status-filter"
+            size="xs"
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as StatusFilter)}
+            data={[
+              { value: "all", label: "전체" },
+              { value: "running", label: "실행 중" },
+              { value: "succeeded", label: "완료" },
+              { value: "failed", label: "실패" },
+            ]}
+          />
+          <TextInput
+            data-testid="job-search"
+            size="xs"
+            w={200}
+            placeholder="id · URL · 백엔드 · 요약 검색"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+          />
+          {jobs.some((j) => j.status === "failed") && (
+            <Anchor component="button" size="xs" onClick={selectFailed} data-testid="select-failed">
+              실패한 잡 선택
+            </Anchor>
+          )}
+          {selected.size > 0 && (
+            <Button
+              data-testid="delete-selected"
+              color="red"
+              variant="light"
+              size="compact-xs"
+              onClick={deleteSelected}
+            >
+              선택 삭제 ({selected.size})
+            </Button>
+          )}
+        </Group>
+      )}
 
       <Paper withBorder>
         {jobs.length === 0 && (
@@ -351,12 +449,25 @@ export default function Home() {
             </Button>
           </Group>
         )}
-        {jobs.map((job, i) => {
+        {jobs.length > 0 && visibleJobs.length === 0 && (
+          <Text p="lg" size="sm" c="dimmed">
+            조건에 맞는 작업이 없습니다.
+          </Text>
+        )}
+        {visibleJobs.map((job, i) => {
           const badge = STATUS_BADGE[job.status] ?? { color: "gray", label: job.status };
+          const deletable = job.status !== "running" && job.status !== "queued";
           return (
             <div key={job.id}>
               {i > 0 && <Divider />}
               <Group px="lg" py="sm" gap="sm" wrap="nowrap">
+                <Checkbox
+                  size="xs"
+                  aria-label="선택"
+                  disabled={!deletable}
+                  checked={selected.has(job.id)}
+                  onChange={() => toggleSelected(job.id)}
+                />
                 <Badge color={badge.color} variant="light" size="sm" miw={64}>
                   {badge.label}
                 </Badge>
@@ -374,6 +485,11 @@ export default function Home() {
                     {job.provider}
                   </Text>
                 </Anchor>
+                {job.diskBytes !== undefined && (
+                  <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {formatBytes(job.diskBytes)}
+                  </Text>
+                )}
                 <Tooltip label={new Date(job.createdAt).toLocaleString("ko-KR")}>
                   <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
                     {relativeTime(job.createdAt)}
