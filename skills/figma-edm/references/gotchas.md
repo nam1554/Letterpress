@@ -140,7 +140,33 @@ keeps fonts embedded is clipped even after images move to a CDN.
   a `<style>`) — the Letterpress hosting step detects and swaps it
   automatically when generating `hosted/` variants.
 
-## 9. Compact (<200KiB) variant for Notion/preview
+## 9. Dark mode: clients recolor your email whether you opt in or not
+
+Pixel-verify renders in light mode only — dark-mode breakage ships invisibly.
+The clients behave differently:
+
+- **Apple Mail / iOS**: respects `<meta name="color-scheme">`. Declaring
+  `light` keeps the design rendered as-is (no auto-invert) — the right posture
+  for a pixel-faithful eDM.
+- **Gmail (app) / Outlook.com**: IGNORE the meta and force-transform colors
+  (light backgrounds darkened, dark text lightened). You cannot opt out; you
+  can only design assets that survive it.
+
+**Rules for this pipeline:**
+- Always emit `<meta name="color-scheme" content="light">` and
+  `<meta name="supported-color-schemes" content="light">` in both deliverables.
+- Transparent-PNG logos/icons must survive a background flip: a dark-navy
+  wordmark on a white bg becomes invisible when Gmail darkens the bg. Either
+  keep such marks inside a flat section image (bg baked), or ensure the asset
+  itself has enough contrast against BOTH light and dark fields.
+- Avoid large pure-white (#fff) text-section backgrounds butting against
+  baked-bg images: Gmail darkens the live section but not the image, creating
+  a visible seam. Off-whites (#f7fbff-ish tokens) transform less harshly, and
+  section boundaries that coincide with design color changes hide the seam.
+- Manual check before send: macOS Mail.app or Outlook dark theme + Gmail app
+  dark mode. This is a human checklist item — compare.py cannot see it.
+
+## 10. Compact (<200KiB) variant for Notion/preview
 
 To fit Notion's 200KiB inline cap:
 - Re-encode opaque sections (hero, dark banner) as **JPEG** (q~58).
@@ -151,7 +177,7 @@ To fit Notion's 200KiB inline cap:
   to system font). Total ≈ 120–150KiB.
 - `--minify` collapses to a single line.
 
-## 10. Notion upload reality
+## 11. Notion upload reality
 
 - `notion-create-attachment` inline `content` ≤ 200KiB; otherwise needs a public
   HTTPS URL. `Read` truncates ~25K tokens so you can't even feed a 120KB file's

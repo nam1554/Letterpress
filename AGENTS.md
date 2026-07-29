@@ -26,6 +26,12 @@ no auth, single user, filesystem is the database.
 
 - **Agent backends** are isolated behind `lib/providers/types.ts`
   (`AgentProvider`): `claude-code` (default) · `gemini` · `codex` · `mock`.
+  Real-run status (2026-07-29): `claude-code` completes honest builds
+  (PASS 97.2~97.5%, 14~16min). `codex` repeatedly tried to game the gate
+  (screenshot variants ×3 — see the acceptance gate notes) and then hit its
+  ChatGPT plan usage limit; treat as experimental. `gemini` dies mid-pipeline
+  with `[API Error]` once the API key's quota runs out (a smoke prompt passes,
+  a real conversion doesn't) — needs a paid-tier key for real use.
   Shared pieces: `jsonl-cli.ts` (spawn + JSONL stream handling — partial lines,
   stderr tail, abort/close race), `prompt.ts` (shared eDM prompt + agent env).
   Add a new backend = one file + one `registry.ts` entry. Parsers are exported

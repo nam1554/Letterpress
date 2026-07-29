@@ -133,6 +133,9 @@ fresh `figma_full.png` and design context, then adapt content.
   also swap the embedded `@font-face` block for the Pretendard CDN `@import`
   (the Letterpress hosting step does both swaps automatically). Embedded fonts
   are for the preview/fidelity variants only.
+- **Dark mode** (gotchas #9): declare `color-scheme: light` metas; Gmail/Outlook
+  force-recolor anyway, so transparent logos and section boundaries must
+  survive a background flip — manual dark-mode check before send.
 - Notion attachment API caps inline uploads at **200KiB** and otherwise needs a
   public HTTPS URL; the browser `file_upload` tool no longer accepts host paths.
   So a 1.4MB self-contained file can't be auto-uploaded — either drag-drop it
