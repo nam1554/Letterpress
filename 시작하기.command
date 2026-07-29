@@ -6,7 +6,9 @@
 set -u
 cd "$(dirname "$0")" || exit 1
 
-PORT="${PORT:-3000}"
+# 기본 포트 25252 — IANA 미할당이고, 리눅스 임시 포트 범위(32768+) 밖이며,
+# 흔한 개발 포트(3000·5173·8080)나 Steam·Mongo 대역과 겹치지 않는다.
+PORT="${PORT:-25252}"
 URL="http://localhost:${PORT}"
 
 say() { printf "\n\033[1;36m%s\033[0m\n" "$1"; }
@@ -97,12 +99,12 @@ if curl -sf --max-time 8 "$URL/api/health" >/dev/null 2>&1; then
   exit 0
 fi
 
-# 다른 프로그램이 포트를 쓰고 있으면 빈 포트를 찾아 쓴다 — 터미널에서
-# PORT=3001 을 붙여 실행하라고 안내해봐야 비개발자에겐 막다른 길이다.
+# 그래도 겹치면 바로 옆 포트로 비켜간다 — 터미널에서 PORT=... 를 붙여
+# 실행하라고 안내해봐야 비개발자에겐 막다른 길이다.
 port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 if port_busy "$PORT"; then
   FREE_PORT=""
-  for candidate in {3001..3010}; do
+  for candidate in {25253..25262}; do
     port_busy "$candidate" || { FREE_PORT=$candidate; break; }
   done
   [ -n "$FREE_PORT" ] ||

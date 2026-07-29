@@ -17,7 +17,9 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { $null =
 $NodeMin = 20                       # Next 16 요구 버전
 $Log = Join-Path (Get-Location) '시작-기록.log'
 '' | Set-Content -Path $Log -Encoding UTF8
-$Port = if ($env:PORT) { [int]$env:PORT } else { 3000 }
+# 기본 포트 25252 — IANA 미할당이고, 리눅스 임시 포트 범위(32768+) 밖이며,
+# 흔한 개발 포트(3000·5173·8080)나 Steam·Mongo 대역과 겹치지 않는다.
+$Port = if ($env:PORT) { [int]$env:PORT } else { 25252 }
 
 function Say([string]$text) { Write-Host "`n  $text" -ForegroundColor Cyan }
 function Warn([string]$text) { Write-Host "`n  $text" -ForegroundColor Yellow }
@@ -125,7 +127,7 @@ if (PortBusy $Port) {
     exit 0
   }
   $free = $null
-  foreach ($candidate in 3001..3010) {
+  foreach ($candidate in 25253..25262) {
     if (-not (PortBusy $candidate)) { $free = $candidate; break }
   }
   if (-not $free) {
