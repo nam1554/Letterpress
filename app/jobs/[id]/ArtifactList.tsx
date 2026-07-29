@@ -15,6 +15,7 @@ import {
   Title,
 } from "@mantine/core";
 import { formatSize } from "../../lib/format";
+import { requestJson } from "../../lib/request";
 
 export interface Artifact {
   rel: string;
@@ -57,10 +58,12 @@ export default function ArtifactList({
     setCheckFor(rel);
     setChecks(null);
     latestCheck.current = rel;
-    const res = await fetch(`/api/jobs/${jobId}/check?file=${encodeURIComponent(rel)}`);
-    const result: EmailCheck[] = res.ok
-      ? (await res.json()).checks
-      : [{ name: "검사", level: "fail", detail: "검사 실패" }];
+    const r = await requestJson<{ checks: EmailCheck[] }>(
+      `/api/jobs/${jobId}/check?file=${encodeURIComponent(rel)}`,
+    );
+    const result: EmailCheck[] = r.ok
+      ? r.data.checks
+      : [{ name: "검사", level: "fail", detail: r.error }];
     if (latestCheck.current !== rel) return; // 그 사이 다른 파일로 전환됨
     setChecks(result);
   }

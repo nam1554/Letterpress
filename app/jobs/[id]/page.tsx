@@ -17,6 +17,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { Streamdown } from "streamdown";
 import { figmaLabel, formatElapsed } from "../../lib/format";
+import { requestJson, sendJson } from "../../lib/request";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
@@ -34,6 +35,12 @@ interface Job {
   verify?: VerifySummary;
   editOf?: string;
   instruction?: string;
+}
+
+interface JobDetail {
+  job: Job;
+  artifacts: Artifact[];
+  verifyFiles?: string[];
 }
 
 const STATUS_BADGE: Record<string, { color: string; label: string }> = {
@@ -70,12 +77,13 @@ export default function JobPage() {
 
   const refresh = useCallback(async () => {
     if (!id) return;
-    const res = await fetch(`/api/jobs/${id}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    setJob(data.job);
-    setArtifacts(data.artifacts);
-    setVerifyFiles(data.verifyFiles ?? []);
+    // SSE 오류 핸들러에서도 불린다 — 서버가 죽어 fetch가 거부되면 여기서
+    // 던지는 대신 조용히 다음 시도를 기다린다.
+    const r = await requestJson<JobDetail>(`/api/jobs/${id}`);
+    if (!r.ok) return;
+    setJob(r.data.job);
+    setArtifacts(r.data.artifacts);
+    setVerifyFiles(r.data.verifyFiles ?? []);
   }, [id]);
 
   useEffect(() => {
@@ -150,31 +158,27 @@ export default function JobPage() {
   }
 
   async function cancel() {
-    const res = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
-    if (!res.ok) {
-      notifications.show({ message: (await res.json()).error ?? "취소 실패", color: "red" });
-    }
+    const r = await sendJson(`/api/jobs/${id}/cancel`, "POST");
+    if (!r.ok) notifications.show({ message: r.error, color: "red" });
   }
 
   async function rerun() {
     if (!job) return;
-    const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ figmaUrl: job.figmaUrl, provider: job.provider }),
+    const r = await sendJson<{ job: { id: string } }>("/api/jobs", "POST", {
+      figmaUrl: job.figmaUrl,
+      provider: job.provider,
     });
-    const data = await res.json();
-    if (!res.ok) {
-      notifications.show({ message: data.error ?? "재실행 실패", color: "red" });
+    if (!r.ok) {
+      notifications.show({ message: r.error, color: "red" });
       return;
     }
-    router.push(`/jobs/${data.job.id}`);
+    router.push(`/jobs/${r.data.job.id}`);
   }
 
   async function resume() {
-    const res = await fetch(`/api/jobs/${id}/resume`, { method: "POST" });
-    if (!res.ok) {
-      notifications.show({ message: (await res.json()).error ?? "이어서 실행 실패", color: "red" });
+    const r = await sendJson(`/api/jobs/${id}/resume`, "POST");
+    if (!r.ok) {
+      notifications.show({ message: r.error, color: "red" });
       return;
     }
     // 종료 시 닫힌 SSE를 되살리는 가장 단순한 방법 — 새로고침으로 재구독.
@@ -184,19 +188,17 @@ export default function JobPage() {
   async function requestEdit() {
     const instruction = editText.trim();
     if (!instruction) return;
+    if (editing) return;
     setEditing(true);
     try {
-      const res = await fetch(`/api/jobs/${id}/edit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction }),
+      const r = await sendJson<{ job: { id: string } }>(`/api/jobs/${id}/edit`, "POST", {
+        instruction,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        notifications.show({ message: data.error ?? "수정 실행 실패", color: "red" });
+      if (!r.ok) {
+        notifications.show({ message: r.error, color: "red" });
         return;
       }
-      router.push(`/jobs/${data.job.id}`);
+      router.push(`/jobs/${r.data.job.id}`);
     } finally {
       setEditing(false);
     }
@@ -207,9 +209,9 @@ export default function JobPage() {
       setConfirmDelete(true);
       return;
     }
-    const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      notifications.show({ message: (await res.json()).error ?? "삭제 실패", color: "red" });
+    const r = await sendJson(`/api/jobs/${id}`, "DELETE");
+    if (!r.ok) {
+      notifications.show({ message: r.error, color: "red" });
       setConfirmDelete(false);
       return;
     }

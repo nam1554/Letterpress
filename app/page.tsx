@@ -25,6 +25,7 @@ import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
 import { parseFigmaUrl } from "@/lib/figma";
 import { fetcher } from "./lib/fetcher";
 import { figmaLabel, relativeTime } from "./lib/format";
+import { sendJson } from "./lib/request";
 
 interface Job {
   id: string;
@@ -127,20 +128,19 @@ export default function Home() {
   }, []);
 
   async function createAndGo(url: string, providerId: string) {
+    if (submitting) return; // 더블클릭 한 번이 에이전트 실행 하나를 더 만든다.
     setError("");
     setSubmitting(true);
     try {
-      const res = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ figmaUrl: url, provider: providerId }),
+      const r = await sendJson<{ job: { id: string } }>("/api/jobs", "POST", {
+        figmaUrl: url,
+        provider: providerId,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "요청 실패");
+      if (!r.ok) {
+        setError(r.error);
         return;
       }
-      router.push(`/jobs/${data.job.id}`);
+      router.push(`/jobs/${r.data.job.id}`);
     } finally {
       setSubmitting(false);
     }
@@ -157,11 +157,11 @@ export default function Home() {
       return;
     }
     setConfirmId(null);
-    const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-    if (res.ok) {
+    const r = await sendJson(`/api/jobs/${id}`, "DELETE");
+    if (r.ok) {
       notifications.show({ message: "작업을 삭제했습니다.", color: "gray" });
       void mutate("/api/jobs");
-    } else setError((await res.json()).error ?? "삭제 실패");
+    } else setError(r.error);
   }
 
   async function clearHistory() {
@@ -170,12 +170,14 @@ export default function Home() {
       return;
     }
     setConfirmClear(false);
-    const res = await fetch("/api/jobs", { method: "DELETE" });
-    if (res.ok) {
-      const { deleted } = await res.json();
-      notifications.show({ message: `완료된 작업 ${deleted}건을 삭제했습니다.`, color: "gray" });
+    const r = await sendJson<{ deleted: number }>("/api/jobs", "DELETE");
+    if (r.ok) {
+      notifications.show({
+        message: `완료된 작업 ${r.data.deleted}건을 삭제했습니다.`,
+        color: "gray",
+      });
       void mutate("/api/jobs");
-    } else setError("일괄 삭제 실패");
+    } else setError(r.error);
   }
 
   const requiredFails = health?.filter((c) => !c.ok) ?? [];

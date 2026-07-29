@@ -5,6 +5,12 @@ import useSWR, { mutate } from "swr";
 import { Button, Code, Group, Paper, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fetcher } from "../../lib/fetcher";
+import { sendJson } from "../../lib/request";
+
+interface HostingResult {
+  created: Array<{ rel: string; replaced: number }>;
+  warning?: string;
+}
 
 // 클라이언트 미리보기용 — 서버의 renderCdnUrl과 같은 치환 규칙 (lib/hosting.ts)
 function previewUrl(template: string, folder: string, file: string): string {
@@ -66,26 +72,22 @@ export default function SendPrep({
   async function create() {
     setBusy(true);
     try {
-      const res = await fetch(`/api/jobs/${jobId}/hosting`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template, folder: folder.trim() }),
+      const r = await sendJson<HostingResult>(`/api/jobs/${jobId}/hosting`, "POST", {
+        template,
+        folder: folder.trim(),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        notifications.show({ message: data.error ?? "생성 실패", color: "red" });
+      if (!r.ok) {
+        notifications.show({ message: r.error, color: "red" });
         return;
       }
+      const data = r.data;
       if (data.created.length === 0) {
         notifications.show({
           message: "치환할 상대경로 이미지가 없습니다 (이미 호스팅/내장된 파일들).",
           color: "yellow",
         });
       } else {
-        const replaced = data.created.reduce(
-          (s: number, c: { replaced: number }) => s + c.replaced,
-          0,
-        );
+        const replaced = data.created.reduce((s, c) => s + c.replaced, 0);
         notifications.show({
           message: `hosted/ 에 ${data.created.length}개 생성 (이미지 ${replaced}건 치환)`,
           color: "teal",

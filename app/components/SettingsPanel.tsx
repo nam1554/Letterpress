@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fetcher } from "../lib/fetcher";
+import { sendJson } from "../lib/request";
 
 interface ProviderInfo {
   id: string;
@@ -73,16 +74,16 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
         claudeModel: view.claudeModel,
       };
       if (figmaToken.trim()) body.figmaToken = figmaToken.trim();
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const saved = await res.json();
-      if (!res.ok) {
-        notifications.show({ message: saved.error ?? "저장 실패", color: "red" });
+      const r = await sendJson<SettingsView & { warning?: string }>(
+        "/api/settings",
+        "PUT",
+        body,
+      );
+      if (!r.ok) {
+        notifications.show({ message: r.error, color: "red" });
         return;
       }
+      const saved = r.data;
       await mutate("/api/settings", saved, { revalidate: false });
       setEdits({});
       setFigmaToken("");
@@ -97,15 +98,13 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
   }
 
   async function clearToken() {
-    const res = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ figmaToken: "" }),
-    });
-    if (res.ok) {
-      await mutate("/api/settings", await res.json(), { revalidate: false });
-      notifications.show({ message: "Figma 토큰을 삭제했습니다.", color: "gray" });
+    const r = await sendJson<SettingsView>("/api/settings", "PUT", { figmaToken: "" });
+    if (!r.ok) {
+      notifications.show({ message: r.error, color: "red" });
+      return;
     }
+    await mutate("/api/settings", r.data, { revalidate: false });
+    notifications.show({ message: "Figma 토큰을 삭제했습니다.", color: "gray" });
   }
 
   return (

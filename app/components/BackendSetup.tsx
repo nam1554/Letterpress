@@ -18,6 +18,7 @@ import {
   ThemeIcon,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { sendJson } from "../lib/request";
 
 export interface SetupStep {
   name: string;
@@ -84,16 +85,14 @@ function GeminiKeyInput({ keySet, onSaved }: { keySet: boolean; onSaved: () => v
     if (!value.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ geminiApiKey: value.trim() }),
+      const r = await sendJson<{ warning?: string }>("/api/settings", "PUT", {
+        geminiApiKey: value.trim(),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        notifications.show({ message: data.error ?? "저장 실패", color: "red" });
+      if (!r.ok) {
+        notifications.show({ message: r.error, color: "red" });
         return;
       }
+      const data = r.data;
       setValue("");
       notifications.show({
         message: data.warning
@@ -148,25 +147,19 @@ export default function BackendSetup({
   async function runTest(id: string) {
     setTesting(id);
     try {
-      const res = await fetch("/api/setup/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        notifications.show({ message: data.error ?? "테스트 실행 실패", color: "red" });
+      const r = await sendJson<TestResult>("/api/setup/test", "POST", { provider: id });
+      if (!r.ok) {
+        notifications.show({ message: r.error, color: "red" });
         return;
       }
-      setResults((r) => ({ ...r, [id]: data }));
+      const data = r.data;
+      setResults((prev) => ({ ...prev, [id]: data }));
       notifications.show({
         message: data.ok
           ? `${SHORT_NAME[id] ?? id} 연동 테스트 통과 (${Math.round(data.ms / 1000)}초)`
           : `${SHORT_NAME[id] ?? id} 연동 테스트 실패`,
         color: data.ok ? "teal" : "red",
       });
-    } catch {
-      notifications.show({ message: "테스트 요청에 실패했습니다.", color: "red" });
     } finally {
       setTesting(null);
     }
