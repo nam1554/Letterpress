@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { renderHtml } from "./html-visibility";
+import { type MeasuredImage, measureHtmlFile } from "./measure";
 import { type ImageSize, imageSize } from "./image-size";
 import { outputDir, workDir } from "./store";
 
@@ -59,48 +59,15 @@ const VERIFY_EVIDENCE = ["figma_full.png", "my_full.png", "side_by_side.png"];
  */
 const MIN_LIVE_TEXT_CHARS = 100;
 
-/** 이미지 파일의 실측 크기 조회 (없으면 null). */
-export type ImageSizeLookup = (src: string) => ImageSize | null;
-
-/** 마크업·스타일·주석·숨김 요소를 걷어낸 "보이는" 텍스트의 비공백 글자 수. */
-export function liveTextChars(html: string): number {
-  return renderHtml(html, "text").textChars;
-}
-
-/** 표시 크기까지 확정한, 화면에 실제로 렌더되는 이미지들. */
-function measuredImages(
-  html: string,
-  sizes?: ImageSizeLookup,
-): Array<{ src: string; w: number; h: number }> {
-  return renderHtml(html, "layout").images.map(({ src, width, maxWidth, height, container }) => {
-    let w = width ?? Number.NaN;
-    let h = height ?? Number.NaN;
-    const intrinsic = sizes?.(src) ?? null;
-    if (intrinsic && !Number.isFinite(w)) {
-      // 마크업에 폭이 없으면 브라우저는 실측 크기로 렌더하되 담고 있는 칸을
-      // 넘지 못한다 — 그 상한을 그대로 쓴다. (예전엔 "실측이 본문 폭 이상일
-      // 때만" 인정해서, 600px로 구운 통짜 캡처가 검사를 통째로 빠져나갔다.)
-      if (Number.isFinite(h)) w = (h * intrinsic.w) / intrinsic.h;
-      else w = Math.min(intrinsic.w, container);
-    }
-    // `width:100%;max-width:300px`는 300px로 렌더된다.
-    if (maxWidth !== undefined && Number.isFinite(w)) w = Math.min(w, maxWidth);
-    // 세로비는 실측에서 빌려온다 — 전폭 이미지는 대개 height 속성이 없다.
-    if (intrinsic && !Number.isFinite(h) && Number.isFinite(w)) {
-      h = (w * intrinsic.h) / intrinsic.w;
-    }
-    return { src, w, h };
-  });
-}
-
 /**
  * 페이지 스크린샷 의심 이미지 — 폭 400px 이상이면서 세로비(h/w) 2 이상인
  * 단일 이미지는 이메일 전체/대부분을 담은 캡처다 (실측: 통짜 700×2207 =
  * 3.15, 정상 최대치인 히어로 700×385 = 0.55 · CTA 700×234 = 0.33).
+ * 크기는 브라우저가 렌더한 실제 표시 크기다 — 마크업으로 추정하지 않는다.
  */
-export function findScreenshotLikeImages(html: string, sizes?: ImageSizeLookup): string[] {
-  return measuredImages(html, sizes)
-    .filter(({ w, h }) => w >= 400 && h / w >= 2)
+export function findScreenshotLikeImages(images: MeasuredImage[]): string[] {
+  return images
+    .filter(({ width, height }) => width >= 400 && height / width >= 2)
     .map(({ src }) => src || "(unknown src)");
 }
 
@@ -110,52 +77,12 @@ export function findScreenshotLikeImages(html: string, sizes?: ImageSizeLookup):
  * 숨길 수 없다. 세로비(h/w) 합으로 계산해 레퍼런스가 2× 렌더여도 불변이다.
  * 정직한 빌드는 레이어드 아트 섹션만 이미지라 ~28%, 전체 슬라이스는 ~100%.
  */
-export function fullWidthImageAspectSum(html: string, sizes?: ImageSizeLookup): number {
+export function fullWidthImageAspectSum(images: MeasuredImage[]): number {
   let sum = 0;
-  for (const { w, h } of measuredImages(html, sizes)) {
-    if (w >= 400 && Number.isFinite(h)) sum += h / w;
+  for (const { width, height } of images) {
+    if (width >= 400) sum += height / width;
   }
   return sum;
-}
-
-/**
- * HTML이 참조하는 상대경로 이미지의 실측 크기 표 (파일당 1회 읽기).
- * output/ 밖은 읽지 않는다.
- */
-async function imageSizes(
-  root: string,
-  htmlFile: string,
-  html: string,
-): Promise<ImageSizeLookup> {
-  const srcs = new Set<string>();
-  const sizes = new Map<string, ImageSize>();
-  for (const { src } of renderHtml(html, "layout").images) {
-    if (!src) continue;
-    // 셀프컨테인 산출물은 이미지를 base64로 품는다 — 그대로 디코드해 잰다.
-    const inline = src.match(/^data:image\/[-\w.+]+;base64,([\s\S]*)$/i);
-    if (inline) {
-      // 앞부분만 디코드하면 ICC/EXIF 뒤에 오는 JPEG 프레임 헤더를 놓친다.
-      const size = imageSize(Buffer.from(inline[1], "base64"));
-      if (size) sizes.set(src, size);
-    } else if (!/^(https?:|data:|cid:|\/\/|#)/i.test(src)) {
-      srcs.add(src);
-    }
-  }
-  await Promise.all(
-    [...srcs].map(async (src) => {
-      let file: string;
-      try {
-        file = path.resolve(path.dirname(htmlFile), decodeURIComponent(src.split(/[?#]/)[0]));
-      } catch {
-        return;
-      }
-      if (!file.startsWith(root + path.sep)) return;
-      const buf = await readFile(file).catch(() => null);
-      const size = buf && imageSize(buf);
-      if (size) sizes.set(src, size);
-    }),
-  );
-  return (src) => sizes.get(src) ?? null;
 }
 
 const MAX_FULL_WIDTH_IMAGE_COVERAGE = 0.7;
@@ -212,21 +139,25 @@ export async function checkAcceptance(
       continue;
     }
     const htmlFile = path.join(out, file);
-    const html = await readFile(htmlFile, "utf8");
-    const chars = liveTextChars(html);
-    if (chars < MIN_LIVE_TEXT_CHARS) {
+    // 실제 브라우저로 렌더해 잰다 — 보이는 텍스트와 이미지 표시 크기는
+    // 마크업만 보고 계산할 수 없다(표 자동 레이아웃·캐스케이드·미디어쿼리).
+    const measured = await measureHtmlFile(htmlFile);
+    if (!measured) {
+      // Chrome이 없거나 렌더가 실패한 경우 — 판정 불가는 실패로 다루지 않는다.
+      // 검증 증거물 검사가 이미 Chrome 부재를 별도로 잡는다.
+      warnings.push(
+        `${file}을 브라우저로 렌더하지 못해 라이브 텍스트·이미지 검사를 건너뜁니다 (Chrome 확인).`,
+      );
+      continue;
+    }
+    if (measured.textChars < MIN_LIVE_TEXT_CHARS) {
       failures.push(
-        `${file}의 "보이는" 라이브 텍스트가 ${chars}자뿐입니다 — 이메일 전체를 이미지로 굽는 방식은 거부됩니다. ` +
-          `숨김 요소(display:none, clip, 1px 등)의 텍스트는 세지 않습니다. 플랫 이미지는 레이어드 아트 섹션` +
+        `${file}의 "보이는" 라이브 텍스트가 ${measured.textChars}자뿐입니다 — 이메일 전체를 이미지로 굽는 방식은 거부됩니다. ` +
+          `숨김 요소(display:none, clip, 1px, 투명 글자 등)의 텍스트는 세지 않습니다. 플랫 이미지는 레이어드 아트 섹션` +
           `(히어로/배너/CTA 배경)에만 허용되며, 본문 카피는 반드시 화면에 보이는 실제 HTML 텍스트로 구현하세요.`,
       );
     }
-    // 이미지 검사는 실제로 렌더되는 이미지만 센다 — 반응형 산출물은 같은 아트를
-    // 데스크톱/모바일 두 벌로 싣고 한쪽을 숨기므로, 숨긴 쪽까지 세면 커버리지가
-    // 두 배로 부풀어 정상 빌드가 "슬라이스"로 거부된다.
-    const canvas = await fileImageSize(path.join(base, "figma_full.png"));
-    const sizes = await imageSizes(out, htmlFile, html);
-    const screenshots = findScreenshotLikeImages(html, sizes);
+    const screenshots = findScreenshotLikeImages(measured.images);
     if (screenshots.length > 0) {
       failures.push(
         `${file}에 페이지 스크린샷으로 보이는 이미지가 있습니다 (폭 400px 이상 + 세로비 2 이상): ` +
@@ -234,8 +165,9 @@ export async function checkAcceptance(
           `섹션별로 나누고 본문 카피는 보이는 HTML 텍스트로 구현하세요.`,
       );
     }
+    const canvas = await fileImageSize(path.join(base, "figma_full.png"));
     if (canvas && canvas.w > 0 && canvas.h > 0) {
-      const coverage = fullWidthImageAspectSum(html, sizes) / (canvas.h / canvas.w);
+      const coverage = fullWidthImageAspectSum(measured.images) / (canvas.h / canvas.w);
       if (coverage > MAX_FULL_WIDTH_IMAGE_COVERAGE) {
         failures.push(
           `${file}의 전폭 이미지(폭 400px 이상)가 이메일 세로의 ${Math.round(coverage * 100)}%를 덮습니다 ` +

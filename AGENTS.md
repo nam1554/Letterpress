@@ -147,50 +147,34 @@ no auth, single user, filesystem is the database.
   aspect-ratio sum ≤70% of the figma_full canvas aspect (a sliced capture —
   honest builds run ~28%). Visible text can't be faked: text not in the design
   breaks pixel-verify, hidden text isn't counted.
-  The anti-gaming judgement is where the false-positive risk lives — a wrong
-  "hidden" verdict fails an honest 15-min build and burns a repair run. Three
-  code-review rounds killed the hand-rolled regex version of this (unclosed
-  tags, descendant selectors, rule order, class-width cascade — a new divergence
-  every round), so parsing and selector matching now live in a real parser:
-  `lib/jobs/html-visibility.ts` (cheerio = parse5 + css-select) exposes
-  `renderHtml(html, "text" | "layout")` and the gate only decides WHAT counts as
-  hidden. Rules, each with a regression test:
-  - The reference render is desktop Chrome at 700px — the same screen compare.py
-    pixel-verifies. Anything that does NOT disappear there is not hidden:
-    `mso-hide:all` is Outlook-only (text checks only), `clip` needs
-    `position:absolute|fixed`, a 0/1px box needs `overflow:hidden`, and
-    `@media (prefers-color-scheme: dark)` does not apply. Conversely
-    `@media (-webkit-min-device-pixel-ratio:0)` DOES apply, so it can't be used
-    as a wrapper to smuggle a hide past the gate; only width conditions are
-    evaluated (against 700px), so mobile-only rules never hide desktop content.
-  - Hidden-ness is per DECLARATION (property name compared exactly) and per
-    property, last declaration wins — `background-color:transparent` and
-    `margin-left:-100px` are not hides, and `.copy{display:none}` followed by
-    `.copy{color:#333}` stays hidden. Rules apply in document order; specificity
-    is deliberately not modelled (email CSS is flat).
-  - Two hide kinds: `text` adds the inherited hides (font-size:0,
-    color:transparent, text-indent) on top of `layout`. Image checks use
-    `layout` only, so `<td style="font-size:0">` (the standard gap-killer, in
-    the reference send) keeps its image countable while a `display:none`
-    mobile variant is not double-counted. Inherited hides don't drop the
-    subtree — a child that re-declares the property is visible again.
-  - Display width is resolved against the CONTAINING CELL, not a fixed 700px:
-    `containerWidth()` walks ancestors for a declared width (`<td width="330">`,
-    `style="width:330px"`). Percent widths resolve against it, and an image with
-    no declared width is capped by it. A fixed 700px basis failed honest 2-up
-    column grids as "sliced", while the earlier "only trust intrinsic width if
-    ≥700px" rule let a whole-email capture exported at 600px through untouched.
-  - `<img>` ASPECT comes from the FILE (`lib/jobs/image-size.ts`, PNG/JPEG/GIF/
-    WEBP + base64 data URIs decoded in full — a JPEG's SOF can sit behind a 20KB
-    ICC profile), since real markup is `width="700" style="height:auto"`.
-    DISPLAY WIDTH comes from markup only (px, `%` of the 700px body, class
-    rules), capped by `max-width`; the file's pixel width is used only when
-    markup gives none AND it is ≥700 (a 2x export of a narrow slot must not read
-    as full-width art). A declared width/height of 0 or 1 is ignored —
-    `height="0"` next to `height:auto` renders normally but used to switch both
-    image checks off.
-  - Test fixtures must be valid markup (a `<td>` outside a table is dropped by
-    parse5, exactly as a browser drops it).
+  The anti-gaming measurement is done by **a real browser**, not by reading
+  markup: `lib/jobs/measure.ts` opens each deliverable in headless Chrome
+  (puppeteer-core + the path `lib/chrome.ts` already resolves) at 700px — the
+  same render compare.py pixel-verifies — and returns visible text length and
+  every image's rendered size. `checkAcceptance` only applies thresholds.
+  Why: five code-review rounds killed two generations of markup-reading code.
+  Round 3 replaced regex with a real parser (cheerio), which fixed parsing but
+  not LAYOUT: email is built from tables, so `<td width="300">` is a MINIMUM
+  that a big image stretches, and cascade/inheritance/media queries can't be
+  approximated by a handful of rules. Every fix traded a false positive for a
+  new bypass (a 600px capture slipping through, one wrapper switching the image
+  checks off) — `getComputedStyle` and `getBoundingClientRect` already know the
+  answers. `lib/jobs/html-visibility.ts` and its ~350 lines of heuristics are
+  gone; do not reintroduce markup-based visibility or size guessing.
+  - Text counts only if the browser renders it: a text node with client rects,
+    non-zero computed font-size, non-transparent color (alpha is the FOURTH rgba
+    channel — reading the third makes black text "transparent"), and no
+    ancestor with visibility:hidden / opacity:0 / a ≤1px overflow-hidden box /
+    an off-screen rect.
+  - Image size is `getBoundingClientRect()`, so retina 2x exports, `%` widths,
+    `max-width` clamps, nested tables and `height:auto` all come out right.
+  - Chrome missing or render failure = "판정 불가": the two image checks and the
+    text check are skipped with a WARNING, never a failure (the verify-evidence
+    check independently fails a job that had no Chrome).
+  - Regression tests run the real browser (`lib/jobs/acceptance.test.ts`,
+    ~50s). `lib/jobs/png-fixture.ts` makes valid PNGs — a header-only fake
+    renders as a broken image and measures 0. Every historical evasion and
+    false positive from rounds 1-5 is covered there.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
@@ -230,8 +214,8 @@ no auth, single user, filesystem is the database.
 
 - `pnpm vitest run` (unit), `pnpm typecheck`, `pnpm lint`, `pnpm build`.
   Manual check: `pnpm dev` (user normally launches via `시작하기.command`).
-- `pnpm build` emits one Turbopack NFT warning (whole-project tracing, via
-  `lib/verify.ts`). Known and deliberately not fixed — job paths are built from
+- `pnpm build` emits two Turbopack NFT warnings (whole-project tracing, via
+  `lib/verify.ts` and `app/api/diagnostics/route.ts`). Known and deliberately not fixed — job paths are built from
   runtime ids so they can't be traced statically, and the trace list is only
   consumed when producing an `output: 'standalone'` bundle, which this app does
   not use (`README.md` runs `pnpm build && pnpm start` in place). It over-
