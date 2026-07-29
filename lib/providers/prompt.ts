@@ -3,11 +3,12 @@ import path from "node:path";
 import { getSettings } from "../settings";
 import type { AgentTask } from "./types";
 
-/** Extra env for spawned agent CLIs (Figma REST fallback token, if set). */
+/** Extra env for spawned agent CLIs (Figma REST fallback / Gemini API key). */
 export function agentEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  const token = getSettings().figmaToken;
-  if (token) env.FIGMA_TOKEN = token;
+  const { figmaToken, geminiApiKey } = getSettings();
+  if (figmaToken) env.FIGMA_TOKEN = figmaToken;
+  if (geminiApiKey) env.GEMINI_API_KEY = geminiApiKey;
   return env;
 }
 

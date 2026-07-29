@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button, Code, Group, Paper, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 
 /**
  * 발송 준비: 상대경로 이미지를 CDN URL로 치환한 교체본(hosted/)을 만든다.
@@ -15,8 +17,6 @@ export default function SendPrep({
 }) {
   const [template, setTemplate] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -29,7 +29,6 @@ export default function SendPrep({
 
   async function create() {
     setBusy(true);
-    setMessage("");
     try {
       const res = await fetch(`/api/jobs/${jobId}/hosting`, {
         method: "POST",
@@ -38,17 +37,23 @@ export default function SendPrep({
       });
       const data = await res.json();
       if (!res.ok) {
-        setIsError(true);
-        setMessage(data.error ?? "생성 실패");
+        notifications.show({ message: data.error ?? "생성 실패", color: "red" });
         return;
       }
-      setIsError(false);
       if (data.created.length === 0) {
-        setMessage("치환할 상대경로 이미지가 없습니다 (이미 호스팅/내장된 파일들).");
+        notifications.show({
+          message: "치환할 상대경로 이미지가 없습니다 (이미 호스팅/내장된 파일들).",
+          color: "yellow",
+        });
       } else {
-        setMessage(
-          `hosted/ 에 ${data.created.length}개 생성 (이미지 ${data.created.reduce((s: number, c: { replaced: number }) => s + c.replaced, 0)}건 치환)`,
+        const replaced = data.created.reduce(
+          (s: number, c: { replaced: number }) => s + c.replaced,
+          0,
         );
+        notifications.show({
+          message: `hosted/ 에 ${data.created.length}개 생성 (이미지 ${replaced}건 치환)`,
+          color: "teal",
+        });
         onCreated();
       }
     } finally {
@@ -57,39 +62,28 @@ export default function SendPrep({
   }
 
   return (
-    <section className="surface-card mt-9 p-5">
-      <h2 className="eyebrow">발송 준비 — CDN 교체본</h2>
-      <p className="mt-1.5 text-xs" style={{ color: "var(--muted)" }}>
-        images/ 폴더를 CDN에 올린 뒤, 아래 URL 템플릿으로 <code>src</code>를 일괄
-        치환한 발송용 HTML을 만듭니다. 플레이스홀더: <code>{"{file}"}</code>(hero.jpg) ·{" "}
-        <code>{"{name}"}</code>(hero) · <code>{"{ext}"}</code>(jpg)
-      </p>
-      <div className="mt-3 flex items-center gap-3">
-        <input
+    <Paper withBorder p="lg" mt={36}>
+      <Title order={2} size="h6">
+        발송 준비 — CDN 교체본
+      </Title>
+      <Text size="xs" c="dimmed" mt={4}>
+        images/ 폴더를 CDN에 올린 뒤, 아래 URL 템플릿으로 <Code>src</Code>를 일괄
+        치환한 발송용 HTML을 만듭니다. 플레이스홀더: <Code>{"{file}"}</Code>
+        (hero.jpg) · <Code>{"{name}"}</Code>(hero) · <Code>{"{ext}"}</Code>(jpg)
+      </Text>
+      <Group mt="sm" gap="sm" wrap="nowrap">
+        <TextInput
           data-testid="cdn-template"
           value={template}
-          onChange={(e) => setTemplate(e.target.value)}
+          onChange={(e) => setTemplate(e.currentTarget.value)}
           placeholder="https://cdn.example.com/edm/{file}"
-          className="input flex-1 font-mono text-[13px]"
+          style={{ flex: 1 }}
+          styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
         />
-        <button
-          data-testid="cdn-create"
-          onClick={create}
-          disabled={busy || !template.trim()}
-          className="btn btn-primary shrink-0 whitespace-nowrap"
-        >
-          {busy ? "생성 중…" : "교체본 생성"}
-        </button>
-      </div>
-      {message && (
-        <p
-          data-testid="cdn-message"
-          className="mt-2 text-xs"
-          style={{ color: isError ? "var(--err)" : "var(--ok)" }}
-        >
-          {message}
-        </p>
-      )}
-    </section>
+        <Button data-testid="cdn-create" onClick={create} loading={busy} disabled={!template.trim()}>
+          교체본 생성
+        </Button>
+      </Group>
+    </Paper>
   );
 }

@@ -1,6 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  Accordion,
+  Button,
+  Group,
+  NumberInput,
+  PasswordInput,
+  Select,
+  Stack,
+  Text,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 
 interface ProviderInfo {
   id: string;
@@ -11,16 +22,38 @@ interface SettingsView {
   maxConcurrentJobs: number;
   jobTimeoutMinutes: number;
   figmaTokenSet: boolean;
+  geminiApiKeySet: boolean;
   providers: ProviderInfo[];
+}
+
+function Row({
+  label,
+  hint,
+  control,
+}: {
+  label: string;
+  hint: string;
+  control: React.ReactNode;
+}) {
+  return (
+    <Group justify="space-between" align="center" wrap="nowrap" gap="xl">
+      <div>
+        <Text size="sm">{label}</Text>
+        <Text size="xs" c="dimmed" maw={360}>
+          {hint}
+        </Text>
+      </div>
+      {control}
+    </Group>
+  );
 }
 
 /** 홈 화면의 접이식 설정 패널 — 환경변수 없이 모든 설정을 화면에서. */
 export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
-  const [open, setOpen] = useState(false);
   const [view, setView] = useState<SettingsView | null>(null);
   const [figmaToken, setFigmaToken] = useState("");
+  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -34,7 +67,6 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
   async function save() {
     if (!view) return;
     setSaving(true);
-    setMessage("");
     try {
       const body: Record<string, unknown> = {
         defaultProvider: view.defaultProvider,
@@ -42,6 +74,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
         jobTimeoutMinutes: view.jobTimeoutMinutes,
       };
       if (figmaToken.trim()) body.figmaToken = figmaToken.trim();
+      if (geminiApiKey.trim()) body.geminiApiKey = geminiApiKey.trim();
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -49,12 +82,13 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setMessage(data.error ?? "저장 실패");
+        notifications.show({ message: data.error ?? "저장 실패", color: "red" });
         return;
       }
       setView(data);
       setFigmaToken("");
-      setMessage("저장되었습니다.");
+      setGeminiApiKey("");
+      notifications.show({ message: "설정을 저장했습니다.", color: "teal" });
       onSaved?.();
     } finally {
       setSaving(false);
@@ -69,135 +103,111 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
     });
     if (res.ok) {
       setView(await res.json());
-      setMessage("토큰을 삭제했습니다.");
+      notifications.show({ message: "Figma 토큰을 삭제했습니다.", color: "gray" });
     }
   }
 
   return (
-    <section className="surface-card mt-6 overflow-hidden">
-      <button
-        data-testid="settings-toggle"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-5 py-3 text-sm font-medium"
-      >
-        <span>⚙️ 설정</span>
-        <span style={{ color: "var(--muted)" }}>{open ? "접기 ▲" : "펼치기 ▼"}</span>
-      </button>
-
-      {open && (
-        <div
-          className="space-y-5 px-5 py-4 text-sm"
-          style={{ borderTop: "1px solid var(--border)" }}
-        >
-          <label className="flex items-center justify-between gap-4">
-            <span>
-              기본 백엔드
-              <span className="block text-xs" style={{ color: "var(--muted)" }}>
-                새 작업 폼의 기본 선택값
-              </span>
-            </span>
-            <select
-              data-testid="setting-provider"
-              value={view.defaultProvider}
-              onChange={(e) => setView({ ...view, defaultProvider: e.target.value })}
-              className="input w-auto"
-            >
-              {view.providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex items-center justify-between gap-4">
-            <span>
-              동시 실행 작업 수
-              <span className="block text-xs" style={{ color: "var(--muted)" }}>
-                변환 1건이 10~25분 걸립니다. 머신 부하를 고려해 1~3 권장
-              </span>
-            </span>
-            <input
-              data-testid="setting-concurrent"
-              type="number"
-              min={1}
-              max={5}
-              value={view.maxConcurrentJobs}
-              onChange={(e) => setView({ ...view, maxConcurrentJobs: Number(e.target.value) })}
-              className="input w-24"
+    <Accordion variant="contained" mt="md" chevronPosition="right">
+      <Accordion.Item value="settings">
+        <Accordion.Control data-testid="settings-toggle">⚙️ 설정</Accordion.Control>
+        <Accordion.Panel>
+          <Stack gap="md">
+            <Row
+              label="기본 백엔드"
+              hint="새 작업 폼의 기본 선택값"
+              control={
+                <Select
+                  data-testid="setting-provider"
+                  value={view.defaultProvider}
+                  onChange={(v) => v && setView({ ...view, defaultProvider: v })}
+                  data={view.providers.map((p) => ({ value: p.id, label: p.label }))}
+                  allowDeselect={false}
+                  w={260}
+                />
+              }
             />
-          </label>
-
-          <label className="flex items-center justify-between gap-4">
-            <span>
-              작업 제한 시간 (분)
-              <span className="block text-xs" style={{ color: "var(--muted)" }}>
-                초과 시 자동 중단
-              </span>
-            </span>
-            <input
-              data-testid="setting-timeout"
-              type="number"
-              min={5}
-              max={180}
-              value={view.jobTimeoutMinutes}
-              onChange={(e) => setView({ ...view, jobTimeoutMinutes: Number(e.target.value) })}
-              className="input w-24"
+            <Row
+              label="동시 실행 작업 수"
+              hint="변환 1건이 10~25분 걸립니다. 머신 부하를 고려해 1~3 권장"
+              control={
+                <NumberInput
+                  data-testid="setting-concurrent"
+                  min={1}
+                  max={5}
+                  value={view.maxConcurrentJobs}
+                  onChange={(v) => setView({ ...view, maxConcurrentJobs: Number(v) || 1 })}
+                  w={100}
+                />
+              }
             />
-          </label>
-
-          <div className="flex items-center justify-between gap-4">
-            <span>
-              Figma 토큰 (선택)
-              <span className="block max-w-90 text-xs" style={{ color: "var(--muted)" }}>
-                Figma MCP를 못 쓰는 환경(무료 시트 등)용 REST API 폴백. figma.com →
-                설정 → Security → Personal access tokens에서 발급해 직접
-                붙여넣으세요. 이 컴퓨터의 data/settings.json에만 저장됩니다.
-              </span>
-            </span>
-            <div className="flex shrink-0 items-center gap-2">
-              {view.figmaTokenSet && !figmaToken && (
-                <>
-                  <span className="text-xs" style={{ color: "var(--ok)" }}>
-                    설정됨
-                  </span>
-                  <button
-                    onClick={clearToken}
-                    className="text-xs hover:underline"
-                    style={{ color: "var(--err)" }}
-                  >
-                    삭제
-                  </button>
-                </>
-              )}
-              <input
-                data-testid="setting-figma-token"
-                type="password"
-                value={figmaToken}
-                onChange={(e) => setFigmaToken(e.target.value)}
-                placeholder={view.figmaTokenSet ? "변경하려면 입력" : "figd_…"}
-                className="input w-40"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              data-testid="settings-save"
-              onClick={save}
-              disabled={saving}
-              className="btn btn-primary"
-            >
-              {saving ? "저장 중…" : "저장"}
-            </button>
-            {message && (
-              <span className="text-xs" style={{ color: "var(--muted)" }}>
-                {message}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
+            <Row
+              label="작업 제한 시간 (분)"
+              hint="초과 시 자동 중단"
+              control={
+                <NumberInput
+                  data-testid="setting-timeout"
+                  min={5}
+                  max={180}
+                  value={view.jobTimeoutMinutes}
+                  onChange={(v) => setView({ ...view, jobTimeoutMinutes: Number(v) || 45 })}
+                  w={100}
+                />
+              }
+            />
+            <Row
+              label="Figma 토큰 (선택)"
+              hint="Figma MCP를 못 쓰는 환경(무료 시트 등)용 REST API 폴백. figma.com → 설정 → Security → Personal access tokens에서 발급해 직접 붙여넣으세요. 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다."
+              control={
+                <Group gap="xs" wrap="nowrap">
+                  {view.figmaTokenSet && !figmaToken && (
+                    <>
+                      <Text size="xs" c="green">
+                        설정됨
+                      </Text>
+                      <Button variant="subtle" color="red" size="compact-xs" onClick={clearToken}>
+                        삭제
+                      </Button>
+                    </>
+                  )}
+                  <PasswordInput
+                    data-testid="setting-figma-token"
+                    value={figmaToken}
+                    onChange={(e) => setFigmaToken(e.currentTarget.value)}
+                    placeholder={view.figmaTokenSet ? "변경하려면 입력" : "figd_…"}
+                    w={180}
+                  />
+                </Group>
+              }
+            />
+            <Row
+              label="Gemini API 키 (선택)"
+              hint="Gemini 백엔드용. 구글의 무료 로그인 티어가 중단돼 API 키가 필요합니다 — aistudio.google.com/apikey 에서 발급해 직접 붙여넣으세요. 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다."
+              control={
+                <Group gap="xs" wrap="nowrap">
+                  {view.geminiApiKeySet && !geminiApiKey && (
+                    <Text size="xs" c="green">
+                      설정됨
+                    </Text>
+                  )}
+                  <PasswordInput
+                    data-testid="setting-gemini-key"
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.currentTarget.value)}
+                    placeholder={view.geminiApiKeySet ? "변경하려면 입력" : "AIza…"}
+                    w={180}
+                  />
+                </Group>
+              }
+            />
+            <Group>
+              <Button data-testid="settings-save" onClick={save} loading={saving}>
+                저장
+              </Button>
+            </Group>
+          </Stack>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   );
 }

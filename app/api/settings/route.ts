@@ -4,8 +4,7 @@ import { listProviders } from "@/lib/providers/registry";
 
 export const dynamic = "force-dynamic";
 
-// The Figma token never leaves the server in full — the UI only needs to know
-// whether one is set.
+// 토큰/키는 원문을 응답에 싣지 않는다 — UI는 설정 여부만 알면 된다.
 function masked() {
   const s = getSettings();
   return {
@@ -13,6 +12,8 @@ function masked() {
     maxConcurrentJobs: s.maxConcurrentJobs,
     jobTimeoutMinutes: s.jobTimeoutMinutes,
     figmaTokenSet: s.figmaToken.length > 0,
+    geminiApiKeySet: s.geminiApiKey.length > 0,
+    cdnTemplate: s.cdnTemplate,
     providers: listProviders(),
   };
 }
@@ -27,6 +28,8 @@ export async function PUT(req: NextRequest) {
     maxConcurrentJobs?: number;
     jobTimeoutMinutes?: number;
     figmaToken?: string;
+    geminiApiKey?: string;
+    cdnTemplate?: string;
   };
   try {
     body = await req.json();

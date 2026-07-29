@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import {
+  Alert,
+  Anchor,
+  Badge,
+  Button,
+  Container,
+  Group,
+  Loader,
+  Text,
+  Title,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { figmaLabel, formatElapsed } from "../../lib/format";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
@@ -20,11 +31,11 @@ interface Job {
   summary?: string;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: "대기",
-  running: "실행 중",
-  succeeded: "완료",
-  failed: "실패",
+const STATUS_BADGE: Record<string, { color: string; label: string }> = {
+  queued: { color: "gray", label: "대기" },
+  running: { color: "blue", label: "실행 중" },
+  succeeded: { color: "green", label: "완료" },
+  failed: { color: "red", label: "실패" },
 };
 
 export default function JobPage() {
@@ -36,7 +47,6 @@ export default function JobPage() {
   const [verifyFiles, setVerifyFiles] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [actionError, setActionError] = useState("");
   const [notify, setNotify] = useState(false);
   const notifiedRef = useRef(false);
 
@@ -92,10 +102,9 @@ export default function JobPage() {
     // 페이지 진입 시점에 이미 끝나 있던 작업엔 알리지 않는다.
     if (job.finishedAt && Date.now() - job.finishedAt > 10_000) return;
     notifiedRef.current = true;
-    new Notification(
-      job.status === "succeeded" ? "eDM 변환 완료" : "eDM 변환 실패",
-      { body: job.title || figmaLabel(job.figmaUrl) },
-    );
+    new Notification(job.status === "succeeded" ? "eDM 변환 완료" : "eDM 변환 실패", {
+      body: job.title || figmaLabel(job.figmaUrl),
+    });
   }, [job, notify]);
 
   const running = !!job && (job.status === "queued" || job.status === "running");
@@ -124,14 +133,14 @@ export default function JobPage() {
   }
 
   async function cancel() {
-    setActionError("");
     const res = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
-    if (!res.ok) setActionError((await res.json()).error ?? "취소 실패");
+    if (!res.ok) {
+      notifications.show({ message: (await res.json()).error ?? "취소 실패", color: "red" });
+    }
   }
 
   async function rerun() {
     if (!job) return;
-    setActionError("");
     const res = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -139,7 +148,7 @@ export default function JobPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      setActionError(data.error ?? "재실행 실패");
+      notifications.show({ message: data.error ?? "재실행 실패", color: "red" });
       return;
     }
     router.push(`/jobs/${data.job.id}`);
@@ -150,101 +159,108 @@ export default function JobPage() {
       setConfirmDelete(true);
       return;
     }
-    setActionError("");
     const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      setActionError((await res.json()).error ?? "삭제 실패");
+      notifications.show({ message: (await res.json()).error ?? "삭제 실패", color: "red" });
       setConfirmDelete(false);
       return;
     }
     router.push("/");
   }
 
-  return (
-    <main className="mx-auto max-w-2xl px-6 py-14">
-      <Link href="/" className="text-sm hover:underline" style={{ color: "var(--accent)" }}>
-        ← 홈으로
-      </Link>
+  const badge = job ? (STATUS_BADGE[job.status] ?? { color: "gray", label: job.status }) : null;
 
-      <header className="mt-4 flex flex-wrap items-center gap-3">
-        <h1 className="min-w-0 flex-1 truncate text-[22px] font-bold tracking-tight">
+  return (
+    <Container size={680} py={56}>
+      <Anchor href="/" size="sm">
+        ← 홈으로
+      </Anchor>
+
+      <Group mt="md" gap="sm" wrap="nowrap" align="center">
+        <Title order={1} size={22} style={{ flex: 1, minWidth: 0 }} lineClamp={1}>
           {job?.title || (job ? figmaLabel(job.figmaUrl) : `작업 ${id}`)}
-        </h1>
-        {job && (
-          <span data-testid="job-status" className={`pill pill-${job.status}`}>
-            {STATUS_LABEL[job.status] ?? job.status}
-          </span>
+        </Title>
+        {badge && (
+          <Badge data-testid="job-status" color={badge.color} variant="light" size="lg">
+            {badge.label}
+          </Badge>
         )}
-      </header>
+      </Group>
       {job && (
-        <p className="mt-1 truncate font-mono text-xs" style={{ color: "var(--muted)" }}>
+        <Text size="xs" c="dimmed" ff="monospace" mt={4} truncate>
           {figmaLabel(job.figmaUrl)} · {job.provider} · 작업 {job.id}
-        </p>
+        </Text>
       )}
 
       {job && (
-        <div className="mt-4 flex items-center gap-2 text-sm">
-          <span
+        <Group mt="md" gap="xs">
+          <Text
             data-testid="elapsed"
-            style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}
+            size="sm"
+            c="dimmed"
+            style={{ fontVariantNumeric: "tabular-nums" }}
           >
             소요 시간 {formatElapsed((job.finishedAt ?? now) - job.createdAt)}
-          </span>
-          <span className="flex-1" />
+          </Text>
+          <div style={{ flex: 1 }} />
           {running && (
             <>
-              <button onClick={toggleNotify} className="btn btn-ghost !py-1.5 text-xs">
+              <Button variant="default" size="compact-sm" onClick={toggleNotify}>
                 {notify ? "🔔 완료 시 알림 켜짐" : "🔕 완료 시 알림"}
-              </button>
-              <button data-testid="cancel" onClick={cancel} className="btn btn-danger !py-1.5 text-xs">
+              </Button>
+              <Button
+                data-testid="cancel"
+                variant="outline"
+                color="red"
+                size="compact-sm"
+                onClick={cancel}
+              >
                 취소
-              </button>
+              </Button>
             </>
           )}
           {!running && (
             <>
-              <button data-testid="rerun" onClick={rerun} className="btn btn-ghost !py-1.5 text-xs">
+              <Button data-testid="rerun" variant="default" size="compact-sm" onClick={rerun}>
                 다시 실행
-              </button>
-              <button data-testid="delete" onClick={remove} className="btn btn-danger !py-1.5 text-xs">
+              </Button>
+              <Button
+                data-testid="delete"
+                variant="outline"
+                color="red"
+                size="compact-sm"
+                onClick={remove}
+              >
                 {confirmDelete ? "정말 삭제할까요?" : "삭제"}
-              </button>
+              </Button>
             </>
           )}
-        </div>
-      )}
-      {actionError && (
-        <p className="mt-2 text-sm" style={{ color: "var(--err)" }}>
-          {actionError}
-        </p>
+        </Group>
       )}
 
       {running && currentStep && (
-        <p
-          data-testid="current-step"
-          className="surface-card mt-4 flex items-center gap-2 p-3 text-sm"
-        >
-          <span className="pill pill-running" aria-hidden />
-          {currentStep}
-        </p>
+        <Alert data-testid="current-step" mt="md" color="blue" variant="light" p="sm">
+          <Group gap="xs">
+            <Loader size="xs" color="blue" />
+            <Text size="sm">{currentStep}</Text>
+          </Group>
+        </Alert>
       )}
 
-      <h2 className="eyebrow mt-8">진행 로그</h2>
+      <Text size="xs" fw={600} c="dimmed" mt={28}>
+        진행 로그
+      </Text>
       <LogViewer events={events} />
 
       {job?.summary && (
-        <p
-          className="surface-card mt-4 p-3.5 text-sm"
-          style={
-            job.status === "failed"
-              ? { borderColor: "var(--err)", background: "var(--err-soft)" }
-              : job.status === "succeeded"
-                ? { borderColor: "var(--ok)", background: "var(--ok-soft)" }
-                : undefined
-          }
+        <Alert
+          mt="md"
+          p="sm"
+          variant="light"
+          color={job.status === "failed" ? "red" : job.status === "succeeded" ? "green" : "gray"}
         >
-          {job.summary}
-        </p>
+          <Text size="sm">{job.summary}</Text>
+        </Alert>
       )}
 
       {!running && <VerifyReport jobId={id} files={verifyFiles} />}
@@ -254,6 +270,6 @@ export default function JobPage() {
       )}
 
       <ArtifactList jobId={id} artifacts={artifacts} running={running} />
-    </main>
+    </Container>
   );
 }

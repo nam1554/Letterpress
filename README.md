@@ -43,9 +43,13 @@ pnpm build && pnpm start
 2. 프로바이더 선택 후 "HTML 만들기"
    - **Claude Code (local CLI)** — 기본. `claude` CLI 로그인 + claude.ai Figma
      커넥터 연결 필요. (헤드리스에서 Figma MCP가 빠지면 로그에 FATAL 표시)
-   - **Gemini CLI (Google 계정)** — `npm i -g @google/gemini-cli`, 첫 실행에서
-     구글 로그인. Figma 접근은 `gemini mcp add --transport http figma
-     https://mcp.figma.com/mcp` 등록 후 첫 사용 시 브라우저 OAuth.
+   - **Gemini CLI (API 키)** — `npm i -g @google/gemini-cli` 후
+     aistudio.google.com/apikey 에서 키를 발급해 ⚙️ 설정의 "Gemini API 키"에
+     입력. (⚠️ 구글이 개인 무료 로그인 티어를 중단해 로그인 방식은 더 이상
+     동작하지 않습니다 — 2026-07 확인. 모델은 용량이 안정적인
+     `gemini-flash-latest` 기본, `GEMINI_MODEL`로 변경 가능.) Figma 접근은
+     `gemini mcp add --transport http figma https://mcp.figma.com/mcp` 등록
+     또는 Figma 토큰 REST 폴백.
    - **Codex CLI (ChatGPT 구독)** — `npm i -g @openai/codex`, `codex login`.
      Figma 접근은 `codex mcp add figma --url https://mcp.figma.com/mcp` (등록 시
      브라우저 OAuth).

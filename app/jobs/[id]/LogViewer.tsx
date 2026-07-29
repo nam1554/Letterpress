@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ScrollArea, Text } from "@mantine/core";
 
 export interface AgentEvent {
   ts: number;
@@ -19,32 +20,51 @@ const LOG_COLOR: Record<string, string> = {
 
 /** 상시 다크 터미널 서피스의 진행 로그 뷰어 (자동 스크롤). */
 export default function LogViewer({ events }: { events: AgentEvent[] }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    ref.current?.scrollTo({ top: ref.current.scrollHeight });
+    viewport.current?.scrollTo({ top: viewport.current.scrollHeight });
   }, [events]);
 
   return (
-    <div
-      ref={ref}
+    <ScrollArea
+      h={288}
+      viewportRef={viewport}
       data-testid="log"
-      className="mt-2 h-72 overflow-y-auto rounded-[10px] p-4 font-mono text-xs leading-relaxed"
-      style={{ background: "var(--terminal-bg)", color: "var(--terminal-ink)" }}
+      mt={8}
+      style={{
+        background: "var(--terminal-bg)",
+        color: "var(--terminal-ink)",
+        borderRadius: "var(--mantine-radius-md)",
+      }}
+      p="md"
     >
-      {events.length === 0 && <p style={{ opacity: 0.5 }}>이벤트 대기 중…</p>}
+      {events.length === 0 && (
+        <Text size="xs" ff="monospace" style={{ opacity: 0.5 }}>
+          이벤트 대기 중…
+        </Text>
+      )}
       {events.map((e, i) => (
-        <p
+        <Text
           key={e.seq ?? i}
-          className="whitespace-pre-wrap"
-          style={{ color: LOG_COLOR[e.type] ?? "var(--terminal-ink)" }}
+          size="xs"
+          ff="monospace"
+          style={{
+            whiteSpace: "pre-wrap",
+            lineHeight: 1.7,
+            color: LOG_COLOR[e.type] ?? "var(--terminal-ink)",
+          }}
         >
-          <span className="mr-2" style={{ opacity: 0.45, fontVariantNumeric: "tabular-nums" }}>
+          <Text
+            component="span"
+            mr={8}
+            style={{ opacity: 0.45, fontVariantNumeric: "tabular-nums" }}
+          >
             {new Date(e.ts).toLocaleTimeString("ko-KR", { hour12: false })}
-          </span>
+          </Text>
           {e.text}
-        </p>
+        </Text>
       ))}
-    </div>
+    </ScrollArea>
   );
 }

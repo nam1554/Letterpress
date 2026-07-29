@@ -2,6 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Alert,
+  Anchor,
+  Badge,
+  Button,
+  Container,
+  Divider,
+  Group,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+  Tooltip,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import SettingsPanel from "./components/SettingsPanel";
 import { parseFigmaUrl } from "@/lib/figma";
 import { figmaLabel, relativeTime } from "./lib/format";
@@ -27,20 +44,17 @@ interface HealthCheck {
   optional?: boolean;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: "대기",
-  running: "실행 중",
-  succeeded: "완료",
-  failed: "실패",
+const STATUS_BADGE: Record<string, { color: string; label: string }> = {
+  queued: { color: "gray", label: "대기" },
+  running: { color: "blue", label: "실행 중" },
+  succeeded: { color: "green", label: "완료" },
+  failed: { color: "red", label: "실패" },
 };
-
-// URL 파싱은 서버와 동일한 lib/figma.parseFigmaUrl을 그대로 사용한다
-// (순수 함수라 클라이언트 번들에서도 동작 — 검증 규칙이 항상 일치).
 
 export default function Home() {
   const router = useRouter();
   const [figmaUrl, setFigmaUrl] = useState("");
-  const [provider, setProvider] = useState("");
+  const [provider, setProvider] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState("");
@@ -48,17 +62,6 @@ export default function Home() {
   const [health, setHealth] = useState<HealthCheck[] | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-
-  async function clearHistory() {
-    if (!confirmClear) {
-      setConfirmClear(true);
-      return;
-    }
-    setConfirmClear(false);
-    const res = await fetch("/api/jobs", { method: "DELETE" });
-    if (res.ok) void load();
-    else setError("일괄 삭제 실패");
-  }
 
   const parsed = useMemo(
     () => (figmaUrl.trim() ? parseFigmaUrl(figmaUrl) : undefined),
@@ -75,7 +78,7 @@ export default function Home() {
 
   useEffect(() => {
     // load()는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
-     
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     fetch("/api/health")
       .then((r) => r.json())
@@ -84,6 +87,16 @@ export default function Home() {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
+
+  async function recheckHealth() {
+    setHealth(null);
+    try {
+      const res = await fetch("/api/health?force=1");
+      setHealth((await res.json()).checks);
+    } catch {
+      /* 표시 유지 */
+    }
+  }
 
   async function createAndGo(url: string, providerId: string) {
     setError("");
@@ -107,7 +120,7 @@ export default function Home() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    await createAndGo(figmaUrl, provider);
+    if (provider) await createAndGo(figmaUrl, provider);
   }
 
   async function removeJob(id: string) {
@@ -117,231 +130,229 @@ export default function Home() {
     }
     setConfirmId(null);
     const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-    if (res.ok) void load();
-    else setError((await res.json()).error ?? "삭제 실패");
+    if (res.ok) {
+      notifications.show({ message: "작업을 삭제했습니다.", color: "gray" });
+      void load();
+    } else setError((await res.json()).error ?? "삭제 실패");
+  }
+
+  async function clearHistory() {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    const res = await fetch("/api/jobs", { method: "DELETE" });
+    if (res.ok) {
+      const { deleted } = await res.json();
+      notifications.show({ message: `완료된 작업 ${deleted}건을 삭제했습니다.`, color: "gray" });
+      void load();
+    } else setError("일괄 삭제 실패");
   }
 
   const requiredFails = health?.filter((c) => !c.ok && !c.optional) ?? [];
   const optionalFails = health?.filter((c) => !c.ok && c.optional) ?? [];
 
-  async function recheckHealth() {
-    setHealth(null);
-    try {
-      const res = await fetch("/api/health?force=1");
-      setHealth((await res.json()).checks);
-    } catch {
-      /* 표시 유지 */
-    }
-  }
-  const recheckButton = (
-    <button
-      data-testid="health-recheck"
-      onClick={recheckHealth}
-      className="ml-2 hover:underline"
-      style={{ color: "var(--muted)" }}
-    >
-      다시 점검
-    </button>
-  );
-
   return (
-    <main className="mx-auto max-w-2xl px-6 py-14">
-      <header className="flex items-baseline gap-3">
-        <h1 className="text-[28px] font-bold tracking-tight" style={{ textWrap: "balance" }}>
+    <Container size={680} py={56}>
+      <Group align="baseline" gap="sm">
+        <Title order={1} size={28}>
           Marketing HTML Maker
-        </h1>
-        <span className="text-sm" style={{ color: "var(--muted)" }}>
+        </Title>
+        <Text c="dimmed" size="sm">
           Figma → eDM HTML
-        </span>
-      </header>
-      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+        </Text>
+      </Group>
+      <Text c="dimmed" size="sm" mt={6}>
         Figma 디자인 링크를 붙여넣으면 에이전트가 픽셀 검증까지 마친 이메일
         HTML을 만들어 드립니다. 완료 후 HTML + 이미지 폴더를 zip으로 받으세요.
-      </p>
+      </Text>
 
       {requiredFails.length > 0 && (
-        <div
+        <Alert
           data-testid="health-banner"
-          className="surface-card mt-6 p-4 text-sm"
-          style={{ borderColor: "var(--warn)", background: "var(--warn-soft)" }}
+          color="yellow"
+          variant="light"
+          mt="lg"
+          title="환경 점검이 필요합니다 — 변환이 실패할 수 있어요"
         >
-          <p className="font-semibold" style={{ color: "var(--warn)" }}>
-            환경 점검이 필요합니다 — 변환이 실패할 수 있어요
-          </p>
-          <ul className="mt-2 space-y-1.5">
+          <Stack gap={6}>
             {requiredFails.map((c) => (
-              <li key={c.name}>
+              <Text key={c.name} size="sm">
                 <b>{c.name}</b>: {c.detail}
                 {c.hint && (
-                  <span className="block text-xs" style={{ color: "var(--muted)" }}>
+                  <Text component="span" display="block" size="xs" c="dimmed">
                     → {c.hint}
-                  </span>
+                  </Text>
                 )}
-              </li>
+              </Text>
             ))}
-          </ul>
-          <p className="mt-2 text-xs">{recheckButton}</p>
-        </div>
+            <Anchor component="button" size="xs" onClick={recheckHealth} data-testid="health-recheck">
+              다시 점검
+            </Anchor>
+          </Stack>
+        </Alert>
       )}
       {health && requiredFails.length === 0 && (
-        <p className="mt-5 text-xs" data-testid="health-ok" style={{ color: "var(--ok)" }}>
-          ✓ 환경 점검 통과 — Claude CLI · figma-edm 스킬 · Chrome · Python
-          {recheckButton}
-        </p>
+        <Group gap={8} mt="md">
+          <Text data-testid="health-ok" size="xs" c="green">
+            ✓ 환경 점검 통과 — Claude CLI · figma-edm 스킬 · Chrome · Python
+          </Text>
+          <Anchor component="button" size="xs" c="dimmed" onClick={recheckHealth} data-testid="health-recheck">
+            다시 점검
+          </Anchor>
+        </Group>
       )}
       {optionalFails.length > 0 && (
-        <ul className="mt-1.5 space-y-0.5 text-xs" data-testid="health-optional" style={{ color: "var(--muted)" }}>
+        <Stack gap={2} mt={6} data-testid="health-optional">
           {optionalFails.map((c) => (
-            <li key={c.name}>
+            <Text key={c.name} size="xs" c="dimmed">
               ○ {c.name}: {c.detail}
-              {c.hint && <span> — {c.hint}</span>}
-            </li>
+              {c.hint && ` — ${c.hint}`}
+            </Text>
           ))}
-        </ul>
+        </Stack>
       )}
 
-      <form onSubmit={submit} className="surface-card mt-8 space-y-4 p-5">
-        <div>
-          <label className="eyebrow" htmlFor="figma-url">
-            Figma 디자인 URL
-          </label>
-          <input
-            id="figma-url"
-            data-testid="figma-url"
-            type="url"
-            required
-            value={figmaUrl}
-            onChange={(e) => setFigmaUrl(e.target.value)}
-            placeholder="https://www.figma.com/design/…?node-id=2343-115"
-            className="input mt-1.5 font-mono text-[13px]"
-          />
-          {parsed === null && (
-            <p className="mt-1.5 text-xs" style={{ color: "var(--err)" }}>
-              Figma 디자인 URL 형식이 아닙니다 (figma.com/design/… 링크를 붙여넣으세요)
-            </p>
-          )}
-          {parsed && (
-            <p className="mt-1.5 text-xs" data-testid="url-parsed" style={{ color: "var(--ok)" }}>
-              ✓ {parsed.title || parsed.fileKey}
-              {parsed.nodeId
-                ? ` · 노드 ${parsed.nodeId.replace(/:/g, "-")}`
-                : " · 노드 미지정 (URL에 node-id 권장)"}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <select
+      <Paper withBorder p="lg" mt="xl" component="form" onSubmit={submit}>
+        <TextInput
+          data-testid="figma-url"
+          label="Figma 디자인 URL"
+          placeholder="https://www.figma.com/design/…?node-id=2343-115"
+          required
+          value={figmaUrl}
+          onChange={(e) => setFigmaUrl(e.currentTarget.value)}
+          error={
+            parsed === null
+              ? "Figma 디자인 URL 형식이 아닙니다 (figma.com/design/… 링크를 붙여넣으세요)"
+              : undefined
+          }
+          styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
+        />
+        {parsed && (
+          <Text data-testid="url-parsed" size="xs" c="green" mt={6}>
+            ✓ {parsed.title || parsed.fileKey}
+            {parsed.nodeId
+              ? ` · 노드 ${parsed.nodeId.replace(/:/g, "-")}`
+              : " · 노드 미지정 (URL에 node-id 권장)"}
+          </Text>
+        )}
+        <Group mt="md" gap="sm">
+          <Select
             data-testid="provider"
             value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className="input w-auto"
-          >
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <button
+            onChange={setProvider}
+            data={providers.map((p) => ({ value: p.id, label: p.label }))}
+            allowDeselect={false}
+            w={280}
+          />
+          <Button
             data-testid="submit"
             type="submit"
-            disabled={submitting || parsed === null}
-            className="btn btn-primary shrink-0 whitespace-nowrap"
+            loading={submitting}
+            disabled={parsed === null}
           >
-            {submitting ? "생성 중…" : "HTML 만들기"}
-          </button>
-        </div>
+            HTML 만들기
+          </Button>
+        </Group>
         {error && (
-          <p className="text-sm" style={{ color: "var(--err)" }}>
+          <Text c="red" size="sm" mt="sm">
             {error}
-          </p>
+          </Text>
         )}
-      </form>
+      </Paper>
 
       <SettingsPanel onSaved={load} />
 
-      <div className="mt-12 flex items-baseline justify-between gap-3">
-        <h2 className="text-lg font-semibold">작업 히스토리</h2>
-        <span className="flex items-baseline gap-3 text-xs" style={{ color: "var(--muted)" }}>
-          {jobs.length > 0 && `${jobs.length}건`}
+      <Group justify="space-between" align="baseline" mt={48} mb="sm">
+        <Title order={2} size="h4">
+          작업 히스토리
+        </Title>
+        <Group gap="sm">
+          {jobs.length > 0 && (
+            <Text size="xs" c="dimmed">
+              {jobs.length}건
+            </Text>
+          )}
           {jobs.some((j) => j.status === "succeeded" || j.status === "failed") && (
-            <button
-              data-testid="clear-history"
+            <Anchor
+              component="button"
+              size="xs"
+              c="red"
               onClick={clearHistory}
-              className="hover:underline"
-              style={{ color: "var(--err)" }}
+              data-testid="clear-history"
             >
               {confirmClear ? "정말 모두 삭제?" : "완료된 작업 모두 삭제"}
-            </button>
+            </Anchor>
           )}
-        </span>
-      </div>
-      <ul className="surface-card hairline-list mt-3 overflow-hidden">
+        </Group>
+      </Group>
+
+      <Paper withBorder>
         {jobs.length === 0 && (
-          <li className="px-5 py-6 text-sm" style={{ color: "var(--muted)" }}>
-            아직 작업이 없습니다.
-            <button
+          <Group p="lg" gap="sm">
+            <Text size="sm" c="dimmed">
+              아직 작업이 없습니다.
+            </Text>
+            <Button
               data-testid="try-mock"
+              variant="light"
+              size="xs"
+              loading={submitting}
               onClick={() =>
                 createAndGo(
                   "https://www.figma.com/design/EXAMPLEfileKey12345678/?node-id=2343-115",
                   "mock",
                 )
               }
-              disabled={submitting}
-              className="btn btn-ghost ml-3 !py-1 text-xs"
-              style={{ color: "var(--accent)" }}
             >
               샘플로 체험해보기 (토큰 소모 없음)
-            </button>
-          </li>
+            </Button>
+          </Group>
         )}
-        {jobs.map((job) => (
-          <li key={job.id} className="flex items-center gap-3 px-5 py-3.5">
-            <a href={`/jobs/${job.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-              <span className={`pill pill-${job.status}`}>
-                {STATUS_LABEL[job.status] ?? job.status}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">
-                  {job.title || figmaLabel(job.figmaUrl)}
-                </span>
-                <span
-                  className="block truncate font-mono text-[11px]"
-                  style={{ color: "var(--muted)" }}
+        {jobs.map((job, i) => {
+          const badge = STATUS_BADGE[job.status] ?? { color: "gray", label: job.status };
+          return (
+            <div key={job.id}>
+              {i > 0 && <Divider />}
+              <Group px="lg" py="sm" gap="sm" wrap="nowrap">
+                <Badge color={badge.color} variant="light" size="sm" miw={64}>
+                  {badge.label}
+                </Badge>
+                <Anchor
+                  href={`/jobs/${job.id}`}
+                  underline="never"
+                  c="inherit"
+                  style={{ flex: 1, minWidth: 0 }}
                 >
-                  {job.title ? `${figmaLabel(job.figmaUrl)} · ` : ""}
-                  {job.provider}
-                </span>
-              </span>
-              <span
-                className="shrink-0 text-xs"
-                style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}
-              >
-                {relativeTime(job.createdAt)}
-              </span>
-            </a>
-            {job.status === "succeeded" && (
-              <a
-                href={`/api/jobs/${job.id}/download`}
-                className="text-xs font-medium hover:underline"
-                style={{ color: "var(--accent)" }}
-              >
-                zip
-              </a>
-            )}
-            {job.status !== "running" && job.status !== "queued" && (
-              <button
-                onClick={() => removeJob(job.id)}
-                className="text-xs hover:underline"
-                style={{ color: "var(--err)" }}
-              >
-                {confirmId === job.id ? "정말 삭제?" : "삭제"}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </main>
+                  <Text size="sm" fw={500} truncate>
+                    {job.title || figmaLabel(job.figmaUrl)}
+                  </Text>
+                  <Text size="xs" c="dimmed" ff="monospace" truncate>
+                    {job.title ? `${figmaLabel(job.figmaUrl)} · ` : ""}
+                    {job.provider}
+                  </Text>
+                </Anchor>
+                <Tooltip label={new Date(job.createdAt).toLocaleString("ko-KR")}>
+                  <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {relativeTime(job.createdAt)}
+                  </Text>
+                </Tooltip>
+                {job.status === "succeeded" && (
+                  <Anchor href={`/api/jobs/${job.id}/download`} size="xs" fw={500}>
+                    zip
+                  </Anchor>
+                )}
+                {job.status !== "running" && job.status !== "queued" && (
+                  <Anchor component="button" size="xs" c="red" onClick={() => removeJob(job.id)}>
+                    {confirmId === job.id ? "정말 삭제?" : "삭제"}
+                  </Anchor>
+                )}
+              </Group>
+            </div>
+          );
+        })}
+      </Paper>
+    </Container>
   );
 }

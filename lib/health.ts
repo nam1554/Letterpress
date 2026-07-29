@@ -83,13 +83,20 @@ async function checkGeminiCli(): Promise<HealthCheck> {
     const { stdout } = await execFileAsync(process.env.GEMINI_BIN ?? "gemini", ["--version"], {
       timeout: 10_000,
     });
-    const authed = existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json"));
+    // 무료 Code Assist 티어 중단(2026-07) — API 키가 실질 인증 경로.
+    const { getSettings } = await import("./settings");
+    const authed =
+      Boolean(getSettings().geminiApiKey) ||
+      Boolean(process.env.GEMINI_API_KEY) ||
+      existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json"));
     return {
       name,
       ok: authed,
       optional: true,
-      detail: authed ? `v${stdout.trim()} · 로그인됨` : `v${stdout.trim()} · 로그인 필요`,
-      hint: authed ? undefined : "터미널에서 `gemini`를 한 번 실행해 구글 계정으로 로그인하세요.",
+      detail: authed ? `v${stdout.trim()} · 인증됨` : `v${stdout.trim()} · API 키 필요`,
+      hint: authed
+        ? undefined
+        : "aistudio.google.com/apikey 에서 키 발급 후 ⚙️ 설정의 'Gemini API 키'에 입력 (무료 로그인 티어는 중단됨)",
     };
   } catch {
     return {
@@ -97,7 +104,7 @@ async function checkGeminiCli(): Promise<HealthCheck> {
       ok: false,
       optional: true,
       detail: "미설치",
-      hint: "npm i -g @google/gemini-cli 후 `gemini` 첫 실행에서 구글 로그인",
+      hint: "npm i -g @google/gemini-cli 설치 후 API 키를 설정에 입력",
     };
   }
 }

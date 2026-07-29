@@ -14,6 +14,8 @@ export interface Settings {
   figmaToken: string;
   /** CDN 교체본 URL 템플릿 ({file}/{name}/{ext}) — 팀에서 재사용. */
   cdnTemplate: string;
+  /** Gemini API 키 — 무료 Code Assist 티어 중단(2026-07 확인) 이후의 인증 경로. */
+  geminiApiKey: string;
 }
 
 const file = () =>
@@ -25,6 +27,7 @@ interface Stored {
   jobTimeoutMinutes?: number;
   figmaToken?: string;
   cdnTemplate?: string;
+  geminiApiKey?: string;
 }
 
 function stored(): Stored {
@@ -51,6 +54,7 @@ export function getSettings(): Settings {
     ),
     figmaToken: s.figmaToken ?? process.env.FIGMA_TOKEN ?? "",
     cdnTemplate: s.cdnTemplate ?? "",
+    geminiApiKey: s.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
   };
 }
 
@@ -65,6 +69,7 @@ export function saveSettings(patch: Partial<Stored>): Settings {
   }
   if (patch.figmaToken !== undefined) next.figmaToken = patch.figmaToken.trim();
   if (patch.cdnTemplate !== undefined) next.cdnTemplate = patch.cdnTemplate.trim();
+  if (patch.geminiApiKey !== undefined) next.geminiApiKey = patch.geminiApiKey.trim();
 
   mkdirSync(path.dirname(file()), { recursive: true });
   const tmp = `${file()}.${randomUUID().slice(0, 8)}.tmp`;

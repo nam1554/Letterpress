@@ -1,6 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Anchor,
+  Button,
+  Collapse,
+  Divider,
+  Group,
+  Loader,
+  Paper,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+} from "@mantine/core";
 import { formatSize } from "../../lib/format";
 
 export interface Artifact {
@@ -14,14 +27,13 @@ interface EmailCheck {
   detail: string;
 }
 
-const LEVEL_COLOR: Record<EmailCheck["level"], string> = {
-  ok: "var(--ok)",
-  warn: "var(--warn)",
-  fail: "var(--err)",
+const LEVEL: Record<EmailCheck["level"], { color: string; icon: string }> = {
+  ok: { color: "green", icon: "✓" },
+  warn: { color: "yellow", icon: "△" },
+  fail: { color: "red", icon: "✗" },
 };
-const LEVEL_ICON: Record<EmailCheck["level"], string> = { ok: "✓", warn: "△", fail: "✗" };
 
-/** 산출물 목록 + zip 다운로드 헤더. */
+/** 산출물 목록 + zip 다운로드 + 파일별 발송 전 검사. */
 export default function ArtifactList({
   jobId,
   artifacts,
@@ -48,82 +60,90 @@ export default function ArtifactList({
 
   return (
     <>
-      <div className="mt-9 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">산출물 ({artifacts.length})</h2>
+      <Group justify="space-between" mt={36} mb="sm">
+        <Title order={2} size="h4">
+          산출물 ({artifacts.length})
+        </Title>
         {artifacts.length > 0 && (
-          <a
-            data-testid="download-zip"
-            href={`/api/jobs/${jobId}/download`}
-            className="btn btn-primary"
-          >
+          <Button data-testid="download-zip" component="a" href={`/api/jobs/${jobId}/download`}>
             전체 zip 다운로드
-          </a>
+          </Button>
         )}
-      </div>
-      <ul className="surface-card hairline-list mt-3 overflow-hidden">
+      </Group>
+      <Paper withBorder>
         {artifacts.length === 0 && (
-          <li className="px-5 py-5 text-sm" style={{ color: "var(--muted)" }}>
+          <Text size="sm" c="dimmed" p="lg">
             {running ? "작업이 끝나면 여기에 파일이 나타납니다." : "산출물이 없습니다."}
-          </li>
+          </Text>
         )}
-        {artifacts.map((a) => (
-          <li key={a.rel}>
-            <div className="flex items-center gap-3 px-5 py-2.5 text-sm">
-              <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{a.rel}</span>
-              <span
-                className="text-xs"
-                style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}
-              >
+        {artifacts.map((a, i) => (
+          <div key={a.rel}>
+            {i > 0 && <Divider />}
+            <Group px="lg" py={10} gap="sm" wrap="nowrap">
+              <Text size="sm" ff="monospace" truncate style={{ flex: 1, minWidth: 0 }}>
+                {a.rel}
+              </Text>
+              <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {formatSize(a.size)}
-              </span>
+              </Text>
               {a.rel.endsWith(".html") && (
                 <>
-                  <button
+                  <Anchor
+                    component="button"
+                    size="xs"
+                    fw={500}
                     data-testid={`check-${a.rel}`}
                     onClick={() => toggleCheck(a.rel)}
-                    className="text-xs font-medium hover:underline"
-                    style={{ color: "var(--accent)" }}
                   >
                     {checkFor === a.rel ? "검사 닫기" : "검사"}
-                  </button>
-                  <a
+                  </Anchor>
+                  <Anchor
+                    size="xs"
+                    fw={500}
                     href={`/jobs/${jobId}/view?file=${encodeURIComponent(a.rel)}`}
                     target="_blank"
-                    className="text-xs font-medium hover:underline"
-                    style={{ color: "var(--accent)" }}
                   >
                     미리보기
-                  </a>
+                  </Anchor>
                 </>
               )}
-              <a
+              <Anchor
+                size="xs"
+                fw={500}
                 href={`/api/jobs/${jobId}/download?file=${encodeURIComponent(a.rel)}`}
-                className="text-xs font-medium hover:underline"
-                style={{ color: "var(--accent)" }}
               >
                 다운로드
-              </a>
-            </div>
-            {checkFor === a.rel && (
-              <ul
-                data-testid="check-results"
-                className="space-y-1 px-5 pb-3 text-xs"
-                style={{ background: "var(--surface-2)" }}
-              >
-                {!checks && <li className="pt-2" style={{ color: "var(--muted)" }}>검사 중…</li>}
-                {checks?.map((c) => (
-                  <li key={c.name} className="flex gap-2 pt-2">
-                    <span className="shrink-0 font-semibold" style={{ color: LEVEL_COLOR[c.level] }}>
-                      {LEVEL_ICON[c.level]} {c.name}
-                    </span>
-                    <span style={{ color: "var(--muted)" }}>{c.detail}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
+              </Anchor>
+            </Group>
+            <Collapse expanded={checkFor === a.rel}>
+              <Stack gap={6} px="lg" pb="md" pt={4} data-testid="check-results">
+                {checkFor === a.rel && !checks && (
+                  <Group gap="xs">
+                    <Loader size="xs" />
+                    <Text size="xs" c="dimmed">
+                      검사 중…
+                    </Text>
+                  </Group>
+                )}
+                {checkFor === a.rel &&
+                  checks?.map((c) => (
+                    <Group key={c.name} gap="xs" wrap="nowrap" align="flex-start">
+                      <ThemeIcon size="xs" variant="light" color={LEVEL[c.level].color} radius="xl">
+                        <Text size="xs">{LEVEL[c.level].icon}</Text>
+                      </ThemeIcon>
+                      <Text size="xs">
+                        <b>{c.name}</b>{" "}
+                        <Text component="span" c="dimmed">
+                          {c.detail}
+                        </Text>
+                      </Text>
+                    </Group>
+                  ))}
+              </Stack>
+            </Collapse>
+          </div>
         ))}
-      </ul>
+      </Paper>
     </>
   );
 }
