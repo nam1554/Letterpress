@@ -3,15 +3,16 @@ import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import { canonicalFigmaUrl, parseFigmaUrl } from "@/lib/figma";
 import { runningJobCount, startJob } from "@/lib/jobs/runner";
-import { createJob, deleteJob, listJobs } from "@/lib/jobs/store";
+import { createJob, deleteJob, jobDirSize, listJobs } from "@/lib/jobs/store";
 import { defaultProviderId, getProvider, listProviders } from "@/lib/providers/registry";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const jobs = await listJobs();
   return NextResponse.json({
-    jobs: await listJobs(),
+    jobs: await Promise.all(jobs.map(async (j) => ({ ...j, diskBytes: await jobDirSize(j) }))),
     providers: listProviders(),
     defaultProvider: defaultProviderId(),
   });

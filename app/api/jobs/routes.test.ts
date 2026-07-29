@@ -19,7 +19,7 @@ afterAll(async () => {
 });
 
 import { NextRequest } from "next/server";
-import { POST as createJobRoute } from "./route";
+import { GET as listJobsRoute, POST as createJobRoute } from "./route";
 import { DELETE as deleteJobRoute, GET as getJobRoute } from "./[id]/route";
 import { POST as cancelRoute } from "./[id]/cancel/route";
 import { POST as resumeRoute } from "./[id]/resume/route";
@@ -30,7 +30,7 @@ import { GET as downloadRoute } from "./[id]/download/route";
 import { GET as previewRoute } from "./[id]/preview/[...path]/route";
 import { GET as verifyRoute } from "./[id]/verify/[name]/route";
 import { liveControllers } from "@/lib/jobs/live";
-import { createJob, outputDir, updateJob } from "@/lib/jobs/store";
+import { createJob, outputDir, updateJob, workDir } from "@/lib/jobs/store";
 import { getSettings } from "@/lib/settings";
 
 const FIGMA_URL = "https://www.figma.com/design/abc123/My-Campaign";
@@ -43,6 +43,16 @@ const post = (body: unknown) =>
 const get = (url: string) => new NextRequest(url);
 
 afterEach(() => liveControllers.clear());
+
+describe("GET /api/jobs", () => {
+  it("includes per-job diskBytes", async () => {
+    const job = await createJob(FIGMA_URL, "mock");
+    await writeFile(path.join(workDir(job.id), "blob.bin"), Buffer.alloc(2048));
+    const body = await (await listJobsRoute()).json();
+    const row = body.jobs.find((j: { id: string }) => j.id === job.id);
+    expect(row.diskBytes).toBeGreaterThanOrEqual(2048);
+  });
+});
 
 describe("POST /api/jobs", () => {
   it("rejects a body that is not JSON", async () => {
