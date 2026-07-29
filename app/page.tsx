@@ -76,6 +76,8 @@ export default function Home() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 삭제 확인이 걸린 대상 목록(id 조인) — null이면 확인 전.
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // 준비 안 된 백엔드로 실행하기 전 한 번 더 확인.
+  const [confirmUnready, setConfirmUnready] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
 
@@ -158,7 +160,14 @@ export default function Home() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (provider) await createAndGo(figmaUrl, provider);
+    if (!provider) return;
+    // 준비 안 된 백엔드로 실행하면 10~20분을 기다린 끝에 실패한다 — 한 번 더 묻는다.
+    if (notReady && !confirmUnready) {
+      setConfirmUnready(true);
+      return;
+    }
+    setConfirmUnready(false);
+    await createAndGo(figmaUrl, provider);
   }
 
   async function removeJob(id: string) {
@@ -192,6 +201,7 @@ export default function Home() {
 
   const requiredFails = health?.filter((c) => !c.ok) ?? [];
   const selectedBackend = backends?.find((b) => b.id === provider);
+  const notReady = Boolean(selectedBackend && !selectedBackend.ready);
 
   const totalBytes = jobs.reduce((sum, j) => sum + (j.diskBytes ?? 0), 0);
   const visibleJobs = jobs.filter((j) => {
@@ -304,6 +314,36 @@ export default function Home() {
         </Group>
       )}
 
+      {/* 처음 받은 사람이 "이걸 어떻게 하라는거야"가 되지 않도록 —
+          아직 작업이 없고 환경도 안 갖춰졌을 때만 보인다. */}
+      {jobs.length === 0 && (requiredFails.length > 0 || notReady) && (
+        <Paper withBorder p="lg" mt="xl" data-testid="first-run">
+          <Text fw={600} size="sm">
+            처음이신가요? 순서는 이렇습니다
+          </Text>
+          <Stack gap={6} mt="sm">
+            <Text size="sm">
+              <b>1.</b> 터미널에서 Claude Code CLI를 설치하고 <code>claude</code>를 한 번
+              실행해 로그인합니다 — 명령은 아래 <b>🔌 백엔드 연동</b>에서 복사할 수 있어요.
+            </Text>
+            <Text size="sm">
+              <b>2.</b> <code>claude</code> 대화에서 Figma 링크가 읽히는지 확인합니다
+              (claude.ai Figma 커넥터 연결). 무료 Figma 시트라면 ⚙️ 설정에 Figma 토큰을
+              넣어도 됩니다.
+            </Text>
+            <Text size="sm">
+              <b>3.</b> 위 두 가지가 초록불이 되면 Figma 디자인 링크를 붙여넣고 실행하세요.
+              변환은 10~20분 걸립니다.
+            </Text>
+            <Text size="xs" c="dimmed">
+              지금 당장 흐름만 보고 싶다면 아래 <b>샘플로 체험해보기</b>를 누르세요 — 환경
+              없이도 결과물 다운로드까지 그대로 볼 수 있습니다. 막히면 <b>문제 신고용 파일</b>을
+              받아 담당자에게 보내주세요.
+            </Text>
+          </Stack>
+        </Paper>
+      )}
+
       <Paper withBorder p="lg" mt="xl" component="form" onSubmit={submit}>
         <TextInput
           data-testid="figma-url"
@@ -347,15 +387,17 @@ export default function Home() {
             type="submit"
             loading={submitting}
             disabled={parsed === null}
+            color={notReady ? "yellow" : undefined}
           >
-            HTML 만들기
+            {notReady ? (confirmUnready ? "실패해도 실행" : "준비 안 됨 — 그래도 실행?") : "HTML 만들기"}
           </Button>
         </Group>
-        {selectedBackend && !selectedBackend.ready && (
+        {notReady && (
           <Alert color="yellow" variant="light" mt="sm" p="xs" data-testid="provider-warning">
             <Text size="xs">
               선택한 백엔드가 아직 준비되지 않았습니다 — 아래 <b>🔌 백엔드 연동</b>에서 남은
-              단계를 확인하세요. 그대로 실행하면 실패할 수 있습니다.
+              단계를 확인하세요. 지금 실행하면 대부분 실패합니다. 환경 없이 흐름만 보고
+              싶다면 아래 <b>샘플로 체험해보기</b>를 쓰세요.
             </Text>
           </Alert>
         )}

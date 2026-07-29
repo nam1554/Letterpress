@@ -146,7 +146,15 @@ async function claudeSetup(): Promise<BackendSetup> {
       name: "CLI 설치",
       ok: cli.ok,
       detail: cli.detail,
-      hint: cli.ok ? undefined : "claude CLI 설치 후 `claude`로 로그인 (https://claude.com/claude-code)",
+      hint: cli.ok
+        ? undefined
+        : "아래 명령을 복사해 터미널에 붙여넣어 설치한 뒤, `claude`를 한 번 실행해 로그인하세요 (https://claude.com/claude-code).",
+      // 기본 백엔드의 첫 단계다 — 여기서 명령을 못 주면 팀원이 문서를 뒤져야 한다.
+      command: cli.ok
+        ? undefined
+        : process.platform === "win32"
+          ? "winget install Anthropic.ClaudeCode"
+          : "curl -fsSL https://claude.ai/install.sh | bash",
     },
     figmaAccessStep(
       mcp,
