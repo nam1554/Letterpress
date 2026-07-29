@@ -39,7 +39,11 @@ no auth, single user, filesystem is the database.
 - **Job state** lives in `data/jobs/<id>/` (`job.json` atomic-written,
   `events.ndjson` with per-job monotonic `seq`, `work/output/` = downloadable
   artifacts). Never commit `data/`. Job ids are 8-hex — `jobDir()` enforces
-  this; all fs paths derive from it.
+  this; all fs paths derive from it. `jobDirSize()` reports per-job disk usage
+  (terminal jobs cached, invalidated by `deleteJob`); `POST /api/jobs/
+  bulk-delete` removes selected jobs with per-id results; `lib/jobs/notify.ts`
+  fires a best-effort macOS notification on job finish (`notifyOnFinish`
+  setting, default on).
 - **Settings** (`lib/settings.ts` → `data/settings.json`, edited via the ⚙️
   panel): default provider, concurrency cap, job timeout, Figma REST fallback
   token. Precedence: settings.json > env > default. Keys/tokens are validated
