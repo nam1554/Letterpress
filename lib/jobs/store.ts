@@ -198,21 +198,44 @@ export function appendEvent(id: string, event: AgentEvent): void {
         ? `${event.text.slice(0, MAX_EVENT_TEXT)}… (truncated)`
         : event.text,
   };
-  // Sync append keeps event order stable relative to subscriber notification.
-  appendFileSync(eventsFile(id), `${JSON.stringify(bounded)}\n`);
-  for (const listener of live.listeners.get(id) ?? []) listener(bounded);
+  // 로깅은 최선 노력이다 — 디스크 오류나 삭제된 잡 디렉터리 때문에 실행 중인
+  // 잡이 죽어서는 안 된다.
+  try {
+    // Sync append keeps event order stable relative to subscriber notification.
+    appendFileSync(eventsFile(id), `${JSON.stringify(bounded)}\n`);
+  } catch {
+    /* 이벤트 한 줄을 잃는 편이 잡을 잃는 것보다 낫다. */
+  }
+  // 복사본을 돌린다: 한 구독자(닫힌 SSE 스트림 등)의 예외나 구독 해제가 다른
+  // 구독자에게 전파되면 안 된다.
+  for (const listener of [...(live.listeners.get(id) ?? [])]) {
+    try {
+      listener(bounded);
+    } catch {
+      /* 이 구독자만 건너뛴다. */
+    }
+  }
 }
 
 export async function readEvents(id: string): Promise<AgentEvent[]> {
+  let raw: string;
   try {
-    const raw = await readFile(eventsFile(id), "utf8");
-    return raw
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as AgentEvent);
+    raw = await readFile(eventsFile(id), "utf8");
   } catch {
     return [];
   }
+  const events: AgentEvent[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    // 프로세스가 append 도중 죽으면 마지막 줄이 잘린다. 그 한 줄 때문에 잡의
+    // 로그 전체(UI 표시 + SSE 리플레이)를 잃어서는 안 된다.
+    try {
+      events.push(JSON.parse(line) as AgentEvent);
+    } catch {
+      /* 깨진 줄만 건너뛴다. */
+    }
+  }
+  return events;
 }
 
 export function subscribe(id: string, listener: Listener): () => void {

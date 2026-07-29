@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,6 +25,7 @@ import {
   listJobs,
   readEvents,
   resolveArtifact,
+  subscribe,
   updateJob,
 } from "./store";
 import { liveControllers } from "./live";
@@ -88,6 +90,43 @@ describe("job store lifecycle", () => {
     expect(event.text.length).toBeLessThan(4100);
     expect(event.text.endsWith("(truncated)")).toBe(true);
     await deleteJob(job.id);
+  });
+
+  it("skips a corrupt event line instead of discarding the whole log", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    appendEvent(job.id, { ts: Date.now(), type: "log", text: "first" });
+    // 프로세스가 append 도중 죽으면 마지막 줄이 잘린 채 남는다.
+    appendFileSync(path.join(dir, job.id, "events.ndjson"), '{"ts":1,"type":"log"\n');
+    appendEvent(job.id, { ts: Date.now(), type: "log", text: "second" });
+
+    const events = await readEvents(job.id);
+    expect(events.map((e) => e.text)).toEqual(["first", "second"]);
+    await deleteJob(job.id);
+  });
+
+  it("survives a listener that throws, and still notifies the others", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const seen: string[] = [];
+    const unsubBad = subscribe(job.id, () => {
+      throw new Error("listener boom");
+    });
+    const unsubGood = subscribe(job.id, (e) => void seen.push(e.text));
+
+    expect(() =>
+      appendEvent(job.id, { ts: Date.now(), type: "log", text: "hello" }),
+    ).not.toThrow();
+    expect(seen).toEqual(["hello"]);
+
+    unsubBad();
+    unsubGood();
+    await deleteJob(job.id);
+  });
+
+  it("does not throw when the job directory is gone", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    await deleteJob(job.id);
+    // 로깅 실패가 실행 중인 잡을 죽이면 안 된다.
+    expect(() => appendEvent(job.id, { ts: Date.now(), type: "log", text: "x" })).not.toThrow();
   });
 
   it("keeps job.json parseable via atomic writes", async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -16,6 +16,7 @@ afterAll(async () => {
 });
 
 import { startJob } from "./runner";
+import { abortAllForShutdown, liveControllers } from "./live";
 import { createEditJob, createJob, getJob, listArtifacts, updateJob, type Job } from "./store";
 
 async function waitTerminal(id: string, timeoutMs = 15_000): Promise<Job> {
@@ -56,6 +57,29 @@ describe("runner + quality gate (mock provider)", () => {
     expect(done.summary).not.toContain("제한 시간");
     expect(done.verify?.result).toBe("PASS");
   }, 20_000);
+
+  // root는 퍼미션을 무시하므로 쓰기 실패를 만들 수 없다.
+  const asRoot = process.getuid?.() === 0;
+  it.skipIf(asRoot)("does not leak the live controller when start-up fails", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    // 디스크 가득참·권한 오류로 job.json 쓰기가 실패하는 상황.
+    await chmod(path.join(dir, job.id), 0o500);
+
+    await expect(startJob(job)).rejects.toThrow();
+    // 누수되면 runningJobCount()가 영구히 부풀어 동시 실행 한도가 모든 신규
+    // 작업을 막고, deleteJob도 계속 거부된다.
+    expect(liveControllers.has(job.id)).toBe(false);
+
+    await chmod(path.join(dir, job.id), 0o700);
+  });
+
+  it("aborts every live job on shutdown", () => {
+    const controller = new AbortController();
+    liveControllers.set("deadbeef", controller);
+    abortAllForShutdown();
+    expect(controller.signal.aborted).toBe(true);
+    expect(liveControllers.size).toBe(0);
+  });
 
   it("runs an edit job on a copied workDir", async () => {
     const source = await createJob("https://www.figma.com/design/abc/", "mock");

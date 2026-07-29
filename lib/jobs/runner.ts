@@ -23,11 +23,13 @@ export interface StartOptions {
  */
 export async function startJob(job: Job, opts: StartOptions = {}): Promise<void> {
   const { promptOverride, resume } = opts;
+  // 설정 읽기 실패는 전역 상태를 만들기 전에 터져야 한다.
+  // A runaway agent must not run forever. Full pipeline is typically 10-25 min.
+  const timeoutMinutes = getSettings().jobTimeoutMinutes;
+
   const controller = new AbortController();
   liveControllers.set(job.id, controller);
 
-  // A runaway agent must not run forever. Full pipeline is typically 10-25 min.
-  const timeoutMinutes = getSettings().jobTimeoutMinutes;
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -36,13 +38,22 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
 
   const emit = (e: AgentEvent) => appendEvent(job.id, e);
 
-  // resume은 실패 잡을 되살리므로 이전 종료 기록을 지운다.
-  await updateJob(
-    job.id,
-    resume
-      ? { status: "running", finishedAt: undefined, summary: undefined, verify: undefined }
-      : { status: "running" },
-  );
+  try {
+    // resume은 실패 잡을 되살리므로 이전 종료 기록을 지운다.
+    await updateJob(
+      job.id,
+      resume
+        ? { status: "running", finishedAt: undefined, summary: undefined, verify: undefined }
+        : { status: "running" },
+    );
+  } catch (err) {
+    // 시작에 실패했으면 프로세스 전역 상태를 되돌린다. 남겨두면 타이머가 계속
+    // 살아 있고, runningJobCount()가 영구히 부풀어 동시 실행 한도가 이후 모든
+    // 작업을 거부하며, deleteJob도 이 잡을 영영 지우지 못한다.
+    clearTimeout(timer);
+    liveControllers.delete(job.id);
+    throw err;
+  }
 
   void (async () => {
     try {
