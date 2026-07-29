@@ -14,6 +14,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { Streamdown } from "streamdown";
 import { figmaLabel, formatElapsed } from "../../lib/format";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
@@ -269,7 +270,10 @@ export default function JobPage() {
           variant="light"
           color={job.status === "failed" ? "red" : job.status === "succeeded" ? "green" : "gray"}
         >
-          <Text size="sm">{job.summary}</Text>
+          {/* 에이전트 요약은 마크다운(표·볼드 포함) — Streamdown으로 렌더 */}
+          <div style={{ fontSize: 13, lineHeight: 1.65, overflowX: "auto" }}>
+            <Streamdown>{job.summary}</Streamdown>
+          </div>
         </Alert>
       )}
 

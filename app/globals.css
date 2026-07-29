@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Streamdown(요약 마크다운 렌더러)의 Tailwind 클래스가 빌드에 포함되도록 등록 */
+@source "../node_modules/streamdown/dist/*.js";
 
 /* Mantine이 컴포넌트 스타일을 담당한다. 여기에는 (1) 클로드 스타일 배경 보정,
    (2) Mantine으로 표현하지 않는 커스텀 서피스(진행 로그 터미널)의 토큰만 남긴다. */
