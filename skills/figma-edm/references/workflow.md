@@ -17,6 +17,10 @@ From the URL `figma.com/design/:fileKey/Name?node-id=2219-8`: `fileKey`, nodeId 
 - `get_screenshot` on **each layered section node** (hero cover, dark banner) →
   flat images. These sections have gradients/glow/overlapping device mockups that
   are not worth rebuilding in email HTML; render them once as an image.
+  **Fetch these at 2× the display width** (`maxDimension` = 2 × the section's
+  long edge; REST: `scale=2`) — a 700px-wide section render shipped at 700px is
+  blurry on every retina/high-DPI screen. Display at half size via width/height
+  attrs. (Only `figma_full.png` — the comparison reference — stays at 1×.)
 
 ## 2. Assets
 
@@ -30,8 +34,9 @@ From the URL `figma.com/design/:fileKey/Name?node-id=2219-8`: `fileKey`, nodeId 
   re-fetch.
 - Resize illustrations to ~2× their display size and compress (`sips -Z` or PIL
   — keep RGBA; JPEG/RGB conversion belongs to the compact build only).
-- Flat section images (hero/banner) at native width (e.g. 700) are fine as PNG for
-  the full build; JPEG versions are made later for the compact build.
+- Flat section images (hero/banner) at **2× display width** (e.g. 1400 for a
+  700px slot) as PNG for the full build — opaque full-bleed ones may be JPEG
+  (q≈80) to keep weight down; JPEG versions for the compact build are made later.
 
 ## 3. Fonts
 
@@ -54,6 +59,13 @@ python3 build_email.py             # → ~/Downloads/aisurfer_newsletter_{figma,
 - `responsive` variant: same content + media-query breakpoints (700/600/480/360).
 - Layout is nested `<table role="presentation">` with all styles inline; images
   are base64 `data:` URIs; fonts from `pretendard_faces.css`.
+- **No background images** (CSS `background-image`/`background:url()` or the
+  `background=` attribute) — Outlook desktop drops them (gotchas #7). If the
+  design overlays text on section art, either bake the text into the flat
+  section render (default), or — when the copy must stay live HTML text for
+  later edits — add the bulletproof VML fallback (`<v:rect><v:fill>` inside
+  `<!--[if gte mso 9]>`) plus a solid `bgcolor` so every client shows something
+  sane.
 
 ## 5. Verify (iterate here)
 

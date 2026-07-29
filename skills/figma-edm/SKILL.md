@@ -70,15 +70,18 @@ content in place — see "Adapting" below.
    for exact text, color tokens, per-element coordinates, and asset download URLs.
 2. **Get assets.** Download the asset URLs. **Render layered sections (hero, dark
    banner with gradients/glow/overlays) as ONE flat image** via `get_screenshot`
-   of that section's node — do not reconstruct layers in email HTML. Keep simple
-   illustrations as individual PNGs; resize/compress to display size. Standalone
-   illustrations/logos must come from the ORIGINAL image source, never from
-   `get_screenshot` (it flattens the canvas background in — gotchas #6);
-   alpha-check every non-flat asset after download.
+   of that section's node — do not reconstruct layers in email HTML. Fetch every
+   raster asset (flat sections included) at **2× display size** for retina
+   screens. Standalone illustrations/logos must come from the ORIGINAL image
+   source, never from `get_screenshot` (it flattens the canvas background in —
+   gotchas #6); alpha-check every non-flat asset after download.
 3. **Fonts.** Run `make_fonts.py` to subset every Pretendard weight used down to
    only the glyphs in the copy (~130KB for 5 weights) → embedded @font-face.
 4. **Build.** `python3 build_email.py` → figma + responsive files. Images are
-   base64-inlined; layout is nested `<table>` with inline styles.
+   base64-inlined; layout is nested `<table>` with inline styles. **Never rely
+   on background images** (Outlook drops them — gotchas #7): bake overlay text
+   into the flat section image, or use the VML fallback + `bgcolor` when the
+   text must stay live.
 5. **VERIFY (the point of this skill).** `python3 compare.py <html> <out.png>`.
    It renders at a **820px window** (see gotchas: avoids the 700px scrollbar
    artifact), crops to the container, aligns each band, and prints per-band
@@ -126,6 +129,10 @@ fresh `figma_full.png` and design context, then adapt content.
 - Email HTML with base64 assets works in Apple Mail / Outlook / most ESPs.
   **Gmail web ignores embedded fonts and `data:` images** — for Gmail bulk sends,
   host images on a server/CDN and swap `<img src>` to URLs.
+- **Gmail clips bodies over ~102KB** (gotchas #8) — the send/hosted variant must
+  also swap the embedded `@font-face` block for the Pretendard CDN `@import`
+  (the Letterpress hosting step does both swaps automatically). Embedded fonts
+  are for the preview/fidelity variants only.
 - Notion attachment API caps inline uploads at **200KiB** and otherwise needs a
   public HTTPS URL; the browser `file_upload` tool no longer accepts host paths.
   So a 1.4MB self-contained file can't be auto-uploaded — either drag-drop it

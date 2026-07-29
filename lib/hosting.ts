@@ -49,16 +49,61 @@ export interface HostingResult {
 export function applyCdnTemplate(html: string, template: string, folder = ""): HostingResult {
   const files = new Set<string>();
   let replaced = 0;
-  const result = html.replace(
-    // 대소문자·공백 관용: src="…", SRC = '…' 모두 허용
-    /(src\s*=\s*["'])images\/([^"']+)(["'])/gi,
-    (_m, pre: string, file: string, post: string) => {
-      files.add(file);
-      replaced += 1;
-      return `${pre}${renderCdnUrl(template, file, folder)}${post}`;
+  const swap = (file: string) => {
+    files.add(file);
+    replaced += 1;
+    return renderCdnUrl(template, file, folder);
+  };
+  const result = html
+    // 대소문자·공백 관용: src="…", SRC = '…' 모두 허용. background="images/…"
+    // 속성도 같은 형태다 (Outlook용 폴백 속성).
+    .replace(
+      /((?:src|background)\s*=\s*["'])images\/([^"']+)(["'])/gi,
+      (_m, pre: string, file: string, post: string) => `${pre}${swap(file)}${post}`,
+    )
+    // CSS 배경: url('images/…') / url("images/…") / url(images/…)
+    .replace(
+      /(url\(\s*['"]?)images\/([^'")]+)(['"]?\s*\))/gi,
+      (_m, pre: string, file: string, post: string) => `${pre}${swap(file)}${post}`,
+    );
+  return { html: result, replaced, files: [...files].sort() };
+}
+
+/** 발송본 폰트 정책: 임베드 서브셋 대신 CDN 전체본 (Apple Mail 등은 웹폰트 적용,
+ * Gmail/Outlook은 시스템 폰트 폴백 — 폴백 스택은 각 요소의 font-family에 이미 있다). */
+const PRETENDARD_CDN_IMPORT =
+  "@import url('https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/static/pretendard.min.css');";
+
+export interface FontSwapResult {
+  html: string;
+  /** 제거한 base64 임베드 @font-face 개수 (0이면 원본 그대로). */
+  removed: number;
+}
+
+/**
+ * base64 임베드 @font-face를 제거하고 CDN @import로 대체한다.
+ * Gmail은 본문 102KB를 넘으면 잘라내는데, 서브셋 폰트 임베드만 ~74KB라
+ * CDN 교체본(발송용)은 폰트를 밖으로 빼야 안전 범위에 들어온다.
+ */
+export function swapEmbeddedFontsForCdn(html: string): FontSwapResult {
+  let removed = 0;
+  let out = html.replace(
+    // @font-face 블록 안에 중첩 중괄호는 없으므로 [^}]*로 충분하다.
+    /@font-face\s*\{[^}]*url\(\s*["']?data:[^}]*\}/gi,
+    () => {
+      removed += 1;
+      return "";
     },
   );
-  return { html: result, replaced, files: [...files].sort() };
+  if (removed === 0) return { html, removed };
+  if (/<style[^>]*>/i.test(out)) {
+    out = out.replace(/<style[^>]*>/i, (m) => `${m}\n${PRETENDARD_CDN_IMPORT}`);
+  } else if (/<\/head>/i.test(out)) {
+    out = out.replace(/<\/head>/i, `<style>${PRETENDARD_CDN_IMPORT}</style></head>`);
+  } else {
+    out = `<style>${PRETENDARD_CDN_IMPORT}</style>${out}`;
+  }
+  return { html: out, removed };
 }
 
 /** 템플릿이 그럴듯한 https URL 형태인지 가벼운 검증. */

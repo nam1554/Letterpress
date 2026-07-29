@@ -102,7 +102,10 @@ no auth, single user, filesystem is the database.
   still yields a readable message instead of a click that silently does
   nothing. (`app/lib/fetcher.ts` stays as-is — SWR wants reads to throw.)
   Route params arrive already percent-decoded; do not decode them again.
-- **Send-prep**: `lib/hosting.ts` (CDN URL template → hosted/ variants),
+- **Send-prep**: `lib/hosting.ts` (CDN URL template → hosted/ variants — swaps
+  `src`, `background=` attrs AND CSS `url()` refs, and replaces embedded
+  base64 `@font-face` with the Pretendard CDN `@import` so the send file stays
+  under Gmail's 102KB clip),
   `lib/email-check.ts` (static pre-send checks), `lib/verify.ts` (pixel-verify
   image allowlist). Routes: `POST /api/jobs/:id/hosting`,
   `GET /api/jobs/:id/check?file=`, `GET /api/jobs/:id/verify/:name`.

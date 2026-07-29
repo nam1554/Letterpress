@@ -55,6 +55,11 @@ Requirements:
   flat image of the section's node (screenshot / REST render at native width)
   and re-verify. A flat section image is always acceptable; endless CSS
   tweaking is not.
+- Email-client safety (pixel-verify CANNOT catch these — treat as hard rules):
+  never rely on CSS/attribute background images (Outlook desktop drops them) —
+  bake overlay text into the flat section image, or add the MSO/VML fallback
+  plus a solid bgcolor. Fetch raster assets (flat section renders included) at
+  2x display size so they stay sharp on retina screens.
 - Transparency: standalone illustrations/logos/icons must be fetched from the
   ORIGINAL image source (asset export / raw image fills; REST:
   GET /v1/files/:fileKey/images), NEVER via node screenshots — screenshots

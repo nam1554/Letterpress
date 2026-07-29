@@ -7,6 +7,7 @@ import {
   applyCdnTemplate,
   isValidCdnFolder,
   isValidCdnTemplate,
+  swapEmbeddedFontsForCdn,
   templateNeedsFolder,
 } from "@/lib/hosting";
 import { getJob, listArtifacts, outputDir } from "@/lib/jobs/store";
@@ -66,15 +67,21 @@ export async function POST(
   const hostedDir = path.join(base, "hosted");
   await mkdir(hostedDir, { recursive: true });
 
-  const created: Array<{ rel: string; replaced: number }> = [];
+  const created: Array<{ rel: string; replaced: number; fontsSwapped: boolean }> = [];
   const allFiles = new Set<string>();
   for (const artifact of htmlArtifacts) {
     const html = await readFile(path.join(base, artifact.rel), "utf8");
-    const { html: hosted, replaced, files } = applyCdnTemplate(html, template, folder);
-    if (replaced === 0) continue; // 상대경로 이미지가 없는 파일(셀프컨테인 등)은 건너뜀
-    for (const f of files) allFiles.add(f);
-    await writeFile(path.join(hostedDir, artifact.rel), hosted);
-    created.push({ rel: `hosted/${artifact.rel}`, replaced });
+    const cdn = applyCdnTemplate(html, template, folder);
+    if (cdn.replaced === 0) continue; // 상대경로 이미지가 없는 파일(셀프컨테인 등)은 건너뜀
+    for (const f of cdn.files) allFiles.add(f);
+    // 발송본은 임베드 폰트(~74KB)를 CDN @import로 빼야 Gmail 102KB 클리핑을 피한다.
+    const fonts = swapEmbeddedFontsForCdn(cdn.html);
+    await writeFile(path.join(hostedDir, artifact.rel), fonts.html);
+    created.push({
+      rel: `hosted/${artifact.rel}`,
+      replaced: cdn.replaced,
+      fontsSwapped: fonts.removed > 0,
+    });
   }
 
   // '__'는 사용자 CDN(IIIF)에서 폴더 구분자 — 파일명에 섞여 있으면 의도치 않은

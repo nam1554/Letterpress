@@ -103,7 +103,44 @@ image fills were 512×512 PNGs with 71% transparent pixels.
   If an asset that shows transparency in Figma reports 0%, you fetched a
   flattened render — re-fetch from the raw source before building.
 
-## 7. Compact (<200KiB) variant for Notion/preview
+## 7. Outlook desktop drops background images
+
+CSS `background-image`, shorthand `background:url()`, and the `background=`
+attribute all render as **nothing** in Outlook desktop (Word engine) — the
+section falls back to its `bgcolor`, so overlay text floats on a flat color and
+the art silently disappears for a large share of B2B recipients. Pixel-verify
+(headless Chrome) can NOT catch this. Confirmed in production: a CTA section
+built as live text over `background="images/cta_bg.png"` verified PASS but
+would have shipped art-less to every Outlook desktop reader.
+
+**Rules:**
+- Default: **bake overlay text into the flat section render** — one `<img>`,
+  identical everywhere.
+- Only when the overlay copy must remain live HTML text (planned copy edits,
+  translation): keep the background image but add the bulletproof VML fallback
+  (`<!--[if gte mso 9]><v:rect ...><v:fill src="..."/><v:textbox>` around the
+  content) AND a solid `bgcolor` matching the art's dominant color.
+- Never ship a background image with neither fallback.
+
+## 8. Gmail clips the message at 102KB — embedded fonts blow the budget
+
+Gmail truncates any HTML body over ~102KB ("[Message clipped]"), hiding the
+rest — including the footer/unsubscribe link (a compliance problem, not just
+cosmetic). A subset Pretendard embed alone is ~70–130KB, so a send file that
+keeps fonts embedded is clipped even after images move to a CDN.
+
+**Rules:**
+- Embedded `@font-face` (base64) belongs to the **preview/fidelity variants**
+  (`*_figma.html`, `*_responsive.html`, self-contained preview) only.
+- The **send/hosted variant** must swap the embedded block for the CDN import
+  (`@import url('https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/static/pretendard.min.css')`)
+  — Apple Mail/iOS still get Pretendard; Gmail/Outlook fall back to the system
+  stack already present in every `font-family`. Target: send HTML < 102KB.
+- Keep the embedded block recognizable (standard `@font-face` + `data:` URI in
+  a `<style>`) — the Letterpress hosting step detects and swaps it
+  automatically when generating `hosted/` variants.
+
+## 9. Compact (<200KiB) variant for Notion/preview
 
 To fit Notion's 200KiB inline cap:
 - Re-encode opaque sections (hero, dark banner) as **JPEG** (q~58).
@@ -114,7 +151,7 @@ To fit Notion's 200KiB inline cap:
   to system font). Total ≈ 120–150KiB.
 - `--minify` collapses to a single line.
 
-## 8. Notion upload reality
+## 10. Notion upload reality
 
 - `notion-create-attachment` inline `content` ≤ 200KiB; otherwise needs a public
   HTTPS URL. `Read` truncates ~25K tokens so you can't even feed a 120KB file's
