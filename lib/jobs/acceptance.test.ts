@@ -164,6 +164,46 @@ describe("checkAcceptance", () => {
     expect(liveTextChars(`<p style="opacity:0.9;font-size:14px;">정상텍스트다섯</p>`)).toBe(7);
   });
 
+  it("does not count class-hidden or transparent text (round-3 tactic)", () => {
+    // 실측 재현 3탄: 숨김을 인라인이 아니라 <style> 클래스로 옮기고
+    // color:transparent를 썼다 — 클래스 규칙까지 해석해야 잡힌다.
+    const html =
+      `<style>.email-copy{position:absolute;left:0;top:0;color:transparent;width:1px;overflow:visible}</style>` +
+      `<td class="email-copy">${"가".repeat(400)}</td><p>보이는것만</p>`;
+    expect(liveTextChars(html)).toBe(5);
+  });
+
+  it("rejects a sliced-screenshot build via full-width image coverage", async () => {
+    const { fullWidthImageAspectSum } = await import("./acceptance");
+    const slice = (name: string, h: number) =>
+      `<img src="images/${name}.png" width="700" height="${h}">`;
+    // codex 3차 실측: 7조각 슬라이스 = 커버리지 100%
+    const sliced =
+      slice("header", 85) + slice("hero", 385) + slice("intro", 240) + slice("cards", 723) +
+      slice("banner", 234) + slice("closing", 311) + slice("footer", 229);
+    // 정직한 빌드: 히어로 + CTA만 이미지 = 28%
+    const honest = slice("hero", 385) + slice("cta", 234);
+    const canvasAspect = 2207 / 700;
+    expect(fullWidthImageAspectSum(sliced) / canvasAspect).toBeGreaterThan(0.7);
+    expect(fullWidthImageAspectSum(honest) / canvasAspect).toBeLessThan(0.7);
+
+    // 게이트 통합: 진짜 PNG 헤더의 figma_full.png가 있으면 커버리지로 거부한다.
+    const job = await fullJob();
+    const png = Buffer.alloc(24);
+    png.writeUInt32BE(0x89504e47, 0); // 서명 앞 4바이트 (나머지는 IHDR 위치만 맞으면 충분)
+    png.writeUInt32BE(0x49484452, 12); // "IHDR"
+    png.writeUInt32BE(700, 16);
+    png.writeUInt32BE(2207, 20);
+    await writeFile(path.join(workDir(job.id), "figma_full.png"), png);
+    await writeFile(
+      path.join(outputDir(job.id), "edm_responsive.html"),
+      `<html><body><p>${"보이는본문텍스트".repeat(20)}</p>${sliced}</body></html>`,
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("슬라이스");
+  });
+
   it("flags a page-screenshot-like image, not legit section images", async () => {
     const { findScreenshotLikeImages } = await import("./acceptance");
     const shot = `<img src="images/whole.png" width="700" height="2207" style="display:block">`;

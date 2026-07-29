@@ -58,15 +58,37 @@ const VERIFY_EVIDENCE = ["figma_full.png", "my_full.png", "side_by_side.png"];
 const MIN_LIVE_TEXT_CHARS = 100;
 
 const HIDDEN_STYLE =
-  /display\s*:\s*none|visibility\s*:\s*hidden|clip\s*:\s*rect\(\s*0|opacity\s*:\s*0(?![.\d])|font-size\s*:\s*0(?![.\d])|mso-hide\s*:\s*all/i;
+  /display\s*:\s*none|visibility\s*:\s*hidden|clip\s*:\s*rect\(\s*0|opacity\s*:\s*0(?![.\d])|font-size\s*:\s*0(?![.\d])|mso-hide\s*:\s*all|color\s*:\s*transparent|text-indent\s*:\s*-|(?:left|top)\s*:\s*-\d{3}/i;
 
-/** 인라인 스타일로 숨겨진 요소를 내용째 제거한다 (같은 태그 중첩 감안). */
-function stripHiddenBlocks(html: string): string {
-  const openTag = /<([a-z][a-z0-9]*)\b[^>]*\bstyle\s*=\s*("[^"]*"|'[^']*')[^>]*>/gi;
+/**
+ * `<style>` 블록에서 숨김 선언을 가진 클래스명을 수집한다 — 인라인 스타일만
+ * 검사하면 숨김을 클래스로 옮기는 것만으로 우회된다 (실측: codex 3차,
+ * `.email-copy{color:transparent;width:1px}`).
+ */
+function hiddenClassNames(html: string): Set<string> {
+  const names = new Set<string>();
+  for (const style of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
+    for (const rule of style[1].matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (!HIDDEN_STYLE.test(rule[2])) continue;
+      for (const cls of rule[1].matchAll(/\.([-\w]+)/g)) names.add(cls[1]);
+    }
+  }
+  return names;
+}
+
+/** 인라인 스타일 또는 숨김 클래스로 숨겨진 요소를 내용째 제거한다 (같은 태그 중첩 감안). */
+function stripHiddenBlocks(html: string, hiddenCls: Set<string>): string {
+  const openTag = /<([a-z][a-z0-9]*)\b[^>]*>/gi;
+  const isHidden = (tag: string): boolean => {
+    const style = tag.match(/\bstyle\s*=\s*("[^"]*"|'[^']*')/i);
+    if (style && HIDDEN_STYLE.test(style[1])) return true;
+    const cls = tag.match(/\bclass\s*=\s*["']([^"']*)["']/i);
+    return cls !== null && cls[1].split(/\s+/).some((c) => hiddenCls.has(c));
+  };
   for (;;) {
     openTag.lastIndex = 0;
     let m: RegExpExecArray | null = null;
-    while ((m = openTag.exec(html))) if (HIDDEN_STYLE.test(m[2])) break;
+    while ((m = openTag.exec(html))) if (isHidden(m[0])) break;
     if (!m) return html;
     const tag = m[1].toLowerCase();
     if (m[0].endsWith("/>") || tag === "img" || tag === "br") {
@@ -89,15 +111,26 @@ function stripHiddenBlocks(html: string): string {
 
 /** 마크업·스타일·주석·숨김 요소를 걷어낸 "보이는" 텍스트의 비공백 글자 수. */
 export function liveTextChars(html: string): number {
+  // 숨김 클래스 수집은 <style> 제거 전의 원본에서 해야 한다.
+  const hiddenCls = hiddenClassNames(html);
   return stripHiddenBlocks(
     html
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<!--[\s\S]*?-->/g, ""),
+    hiddenCls,
   )
     .replace(/<[^>]+>/g, "")
     .replace(/&[a-z#0-9]+;/gi, "")
     .replace(/\s+/g, "").length;
+}
+
+/** `<img>` 태그의 표시 크기 (width/height 속성 또는 인라인 style px). */
+function imgDisplaySize(tag: string): { w: number; h: number } {
+  const attr = (name: string) =>
+    tag.match(new RegExp(`(?<![-\\w])${name}\\s*=\\s*["']?(\\d+)`, "i"))?.[1] ??
+    tag.match(new RegExp(`(?<![-\\w])${name}\\s*:\\s*(\\d+)px`, "i"))?.[1];
+  return { w: Number(attr("width")), h: Number(attr("height")) };
 }
 
 /**
@@ -108,17 +141,40 @@ export function liveTextChars(html: string): number {
 export function findScreenshotLikeImages(html: string): string[] {
   const hits: string[] = [];
   for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
-    const tag = m[0];
-    const attr = (name: string) =>
-      tag.match(new RegExp(`(?<![-\\w])${name}\\s*=\\s*["']?(\\d+)`, "i"))?.[1] ??
-      tag.match(new RegExp(`(?<![-\\w])${name}\\s*:\\s*(\\d+)px`, "i"))?.[1];
-    const w = Number(attr("width"));
-    const h = Number(attr("height"));
+    const { w, h } = imgDisplaySize(m[0]);
     if (w >= 400 && h / w >= 2) {
-      hits.push(tag.match(/src\s*=\s*["']?([^"' >]+)/i)?.[1] ?? "(unknown src)");
+      hits.push(m[0].match(/src\s*=\s*["']?([^"' >]+)/i)?.[1] ?? "(unknown src)");
     }
   }
   return hits;
+}
+
+/**
+ * 전폭 이미지가 이메일 세로를 얼마나 덮는지 — 스크린샷을 섹션 조각으로 썰면
+ * 개별 세로비 검사는 피해가지만(실측: codex 3차, 7조각 슬라이스) 합계는
+ * 숨길 수 없다. 세로비(h/w) 합으로 계산해 레퍼런스가 2× 렌더여도 불변이다.
+ * 정직한 빌드는 레이어드 아트 섹션만 이미지라 ~28%, 전체 슬라이스는 ~100%.
+ */
+export function fullWidthImageAspectSum(html: string): number {
+  let sum = 0;
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+    const { w, h } = imgDisplaySize(m[0]);
+    if (w >= 400 && Number.isFinite(h)) sum += h / w;
+  }
+  return sum;
+}
+
+const MAX_FULL_WIDTH_IMAGE_COVERAGE = 0.7;
+
+/** PNG IHDR에서 픽셀 크기를 읽는다 (서명 8B + 길이/타입 8B + W4B + H4B). */
+async function pngSize(file: string): Promise<{ w: number; h: number } | null> {
+  try {
+    const buf = await readFile(file);
+    if (buf.length < 24 || buf.readUInt32BE(12) !== 0x49484452) return null;
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  } catch {
+    return null;
+  }
 }
 
 export interface AcceptanceOptions {
@@ -182,6 +238,17 @@ export async function checkAcceptance(
           `${screenshots.join(", ")} — 디자인 전체·대부분을 한 장의 이미지로 넣는 방식은 거부됩니다. ` +
           `섹션별로 나누고 본문 카피는 보이는 HTML 텍스트로 구현하세요.`,
       );
+    }
+    const canvas = await pngSize(path.join(base, "figma_full.png"));
+    if (canvas && canvas.w > 0 && canvas.h > 0) {
+      const coverage = fullWidthImageAspectSum(html) / (canvas.h / canvas.w);
+      if (coverage > MAX_FULL_WIDTH_IMAGE_COVERAGE) {
+        failures.push(
+          `${file}의 전폭 이미지(폭 400px 이상)가 이메일 세로의 ${Math.round(coverage * 100)}%를 덮습니다 ` +
+            `(허용 ${MAX_FULL_WIDTH_IMAGE_COVERAGE * 100}%) — 디자인을 이미지 조각으로 슬라이스한 산출물은 거부됩니다. ` +
+            `플랫 이미지는 레이어드 아트 섹션(히어로/배너/CTA 배경)에만 쓰고, 텍스트 섹션은 실제 HTML로 구현하세요.`,
+        );
+      }
     }
   }
 

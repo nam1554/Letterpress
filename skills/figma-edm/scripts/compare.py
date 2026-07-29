@@ -61,7 +61,8 @@ def compare(my_png, ref_png="figma_full.png", bands=None):
             thr = 99 if name.startswith("img:") else 93
             ok = s>=thr
             passed = passed and ok
-            bands_out.append({"name": name, "sim": round(s, 2), "shift": sh, "ok": ok})
+            # numpy.bool_ is not JSON serializable on the macOS system Python.
+            bands_out.append({"name": name, "sim": round(s, 2), "shift": int(sh), "ok": bool(ok)})
             print(f"{name:18s} {y0:4d}-{y1:<4d}   {s:6.2f}   {mn:5.2f}  {sh:+3d}  {'OK' if ok else 'FAIL(<'+str(thr)+')'}")
     print("\nRESULT:", "PASS ✅" if passed else "FAIL ❌")
     # machine-readable verdict for tooling (e.g. the Letterpress quality gate)

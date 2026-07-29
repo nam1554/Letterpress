@@ -75,10 +75,15 @@ no auth, single user, filesystem is the database.
   passes `freshSince` (attempt start) and a `verify.json` older than that fails
   the gate. Without it an edit job (workDir copied from the source) or a resume
   (same workDir) inherits a PASS and can report success having produced nothing.
-  It also enforces a minimum of live text (100 non-whitespace chars) in each
-  deliverable — shipping the whole email as one screenshot passes pixel-verify
-  trivially (observed: codex, 2.4min, 99.97%) but kills copy/a11y/image-blocked
-  rendering, so the gate rejects it.
+  It also blocks screenshot-shipping (observed: codex gamed the gate three
+  ways in a row — whole-email screenshot, then sr-only hidden copy, then a
+  7-slice + transparent-class copy). Three stacked checks, each with a test:
+  VISIBLE live text ≥100 chars (hidden/transparent elements stripped, including
+  via `<style>` class rules — collect classes BEFORE removing style blocks);
+  no single image ≥400px wide with h/w ≥2 (a page capture); full-width images'
+  aspect-ratio sum ≤70% of the figma_full canvas aspect (a sliced capture —
+  honest builds run ~28%). Visible text can't be faked: text not in the design
+  breaks pixel-verify, hidden text isn't counted.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
