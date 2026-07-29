@@ -21,6 +21,8 @@ export interface Settings {
    * 검증 없이 저장 — 잘못된 값은 CLI가 즉시 에러를 내 잡 실패로 표시된다.
    */
   claudeModel: string;
+  /** 잡 종료 시 macOS 알림센터 알림 (darwin 전용, 기본 켬). */
+  notifyOnFinish: boolean;
 }
 
 const file = () =>
@@ -34,6 +36,7 @@ interface Stored {
   cdnTemplate?: string;
   geminiApiKey?: string;
   claudeModel?: string;
+  notifyOnFinish?: boolean;
 }
 
 function stored(): Stored {
@@ -62,6 +65,7 @@ export function getSettings(): Settings {
     cdnTemplate: s.cdnTemplate ?? "",
     geminiApiKey: s.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
     claudeModel: s.claudeModel ?? process.env.CLAUDE_MODEL ?? "",
+    notifyOnFinish: s.notifyOnFinish ?? true,
   };
 }
 
@@ -78,6 +82,7 @@ export function saveSettings(patch: Partial<Stored>): Settings {
   if (patch.cdnTemplate !== undefined) next.cdnTemplate = patch.cdnTemplate.trim();
   if (patch.geminiApiKey !== undefined) next.geminiApiKey = patch.geminiApiKey.trim();
   if (patch.claudeModel !== undefined) next.claudeModel = patch.claudeModel.trim();
+  if (patch.notifyOnFinish !== undefined) next.notifyOnFinish = patch.notifyOnFinish;
 
   mkdirSync(path.dirname(file()), { recursive: true });
   const tmp = `${file()}.${randomUUID().slice(0, 8)}.tmp`;

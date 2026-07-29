@@ -18,6 +18,7 @@ function masked() {
     geminiApiKeySet: s.geminiApiKey.length > 0,
     cdnTemplate: s.cdnTemplate,
     claudeModel: s.claudeModel,
+    notifyOnFinish: s.notifyOnFinish,
     providers: listProviders(),
   };
 }
@@ -48,6 +49,7 @@ const settingsBody = z.object({
     .max(64, "모델 이름이 너무 깁니다.")
     .regex(/^[\w.:-]*$/, "모델 이름에 쓸 수 없는 문자가 있습니다.")
     .optional(),
+  notifyOnFinish: z.boolean().optional(),
 });
 
 export async function PUT(req: NextRequest) {

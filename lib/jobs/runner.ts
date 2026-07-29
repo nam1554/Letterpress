@@ -3,6 +3,7 @@ import { getSettings } from "../settings";
 import type { AgentEvent, AgentTask } from "../providers/types";
 import { checkAcceptance } from "./acceptance";
 import { liveControllers } from "./live";
+import { notifyJobFinished } from "./notify";
 import { appendEvent, updateJob, workDir, type Job } from "./store";
 
 export interface StartOptions {
@@ -128,6 +129,7 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
         type: ok ? "done" : "error",
         text: ok ? `완료: ${summary}` : `실패: ${summary}`,
       });
+      notifyJobFinished({ id: job.id, status: ok ? "succeeded" : "failed", title: job.title });
     } catch (err) {
       const message = timedOut
         ? `제한 시간(${timeoutMinutes}분)을 초과해 중단되었습니다.`
@@ -142,6 +144,7 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
         summary: message,
       });
       emit({ ts: Date.now(), type: "error", text: `실패: ${message}` });
+      notifyJobFinished({ id: job.id, status: "failed", title: job.title });
     } finally {
       clearTimeout(timer);
       liveControllers.delete(job.id);
