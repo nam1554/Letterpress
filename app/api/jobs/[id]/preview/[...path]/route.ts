@@ -25,7 +25,9 @@ export async function GET(
   const { id, path: parts } = await params;
   if (!(await getJob(id))) return new Response("not found", { status: 404 });
 
-  const rel = parts.map(decodeURIComponent).join("/");
+  // Next가 이미 퍼센트 디코딩해 넘긴다. 한 번 더 디코딩하면 이름에 '%'가 든
+  // 파일이 도달 불가능해지고, '100%.png' 같은 이름은 URIError로 500이 된다.
+  const rel = parts.join("/");
   const full = resolveArtifact(id, rel);
   if (!full) return new Response("invalid path", { status: 400 });
 
