@@ -266,7 +266,7 @@ export default function JobPage() {
       {!running && <VerifyReport jobId={id} files={verifyFiles} />}
 
       {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
-        <SendPrep jobId={id} onCreated={() => void refresh()} />
+        <SendPrep jobId={id} jobTitle={job?.title} onCreated={() => void refresh()} />
       )}
 
       <ArtifactList jobId={id} artifacts={artifacts} running={running} />

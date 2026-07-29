@@ -69,10 +69,13 @@ pnpm build && pnpm start
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
    전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
 4. **발송 준비** (완료된 작업에서):
-   - **CDN 교체본** — images/를 CDN에 올린 뒤 URL 템플릿(`{file}`/`{name}`/`{ext}`)
-     을 입력하면 src를 일괄 치환한 발송용 HTML을 `hosted/`에 생성
-     (예: IIIF `https://…/edm__{name}/full/max/0/default.{ext}`. 템플릿은 설정에
-     저장돼 다음 작업에서 재사용)
+   - **CDN 교체본** — images/를 CDN에 올린 뒤 URL 템플릿
+     (`{folder}`/`{file}`/`{name}`/`{ext}`)을 입력하면 src를 일괄 치환한 발송용
+     HTML을 `hosted/`에 생성. 템플릿은 설정에 저장돼 재사용하고,
+     **캠페인 폴더명(`{folder}`)** 은 생성할 때마다 입력합니다 — 기본값은
+     `제목슬러그_오늘날짜`(예: `aisurfer_edm_20260729`)이고, 캠페인마다 폴더를
+     나눠야 지난 발송본 이미지를 덮어쓰지 않습니다
+     (예: IIIF `https://…/iiif/3/{folder}__{file}/full/max/0/default.{ext}`)
    - **발송 전 검사** — HTML 산출물별 "검사" 버튼: Gmail 102KB 클리핑,
      `<script>`, 이미지 alt, 배경 이미지(Outlook), http 링크, 프리헤더,
      상대경로 이미지 잔존 여부를 점검

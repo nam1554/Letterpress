@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { checkEmailHtml } from "./email-check";
-import { applyCdnTemplate, isValidCdnTemplate, renderCdnUrl } from "./hosting";
+import {
+  applyCdnTemplate,
+  isValidCdnFolder,
+  isValidCdnTemplate,
+  renderCdnUrl,
+  templateNeedsFolder,
+} from "./hosting";
 
 describe("renderCdnUrl", () => {
   it("fills {file}/{name}/{ext} placeholders", () => {
@@ -8,6 +14,32 @@ describe("renderCdnUrl", () => {
     expect(
       renderCdnUrl("https://img.x/iiif/3/edm__{name}/full/max/0/default.{ext}", "hero.jpg"),
     ).toBe("https://img.x/iiif/3/edm__hero/full/max/0/default.jpg");
+  });
+
+  it("fills {folder} for per-campaign namespacing", () => {
+    expect(
+      renderCdnUrl(
+        "https://img.x/iiif/3/{folder}__{file}/full/max/0/default.{ext}",
+        "hero.png",
+        "aisurfer_edm_20260729",
+      ),
+    ).toBe("https://img.x/iiif/3/aisurfer_edm_20260729__hero.png/full/max/0/default.png");
+  });
+});
+
+describe("templateNeedsFolder / isValidCdnFolder", () => {
+  it("detects the {folder} placeholder", () => {
+    expect(templateNeedsFolder("https://x/{folder}/{file}")).toBe(true);
+    expect(templateNeedsFolder("https://x/{file}")).toBe(false);
+  });
+
+  it("accepts url-safe folder names only", () => {
+    expect(isValidCdnFolder("aisurfer_edm_20260729")).toBe(true);
+    expect(isValidCdnFolder("a-b.c_d")).toBe(true);
+    expect(isValidCdnFolder("한글")).toBe(false);
+    expect(isValidCdnFolder("a b")).toBe(false);
+    expect(isValidCdnFolder("a/b")).toBe(false);
+    expect(isValidCdnFolder("")).toBe(false);
   });
 });
 
@@ -28,6 +60,13 @@ describe("applyCdnTemplate", () => {
     expect(replaced).toBe(2);
     expect(out).toContain('SRC="https://cdn.x/a.png"');
     expect(out).toContain("src = 'https://cdn.x/b.jpg'");
+  });
+
+  it("threads the folder through to every replacement", () => {
+    const html = `<img src="images/a.png"><img src="images/b.png">`;
+    const { html: out } = applyCdnTemplate(html, "https://cdn.x/{folder}/{file}", "camp_20260729");
+    expect(out).toContain('src="https://cdn.x/camp_20260729/a.png"');
+    expect(out).toContain('src="https://cdn.x/camp_20260729/b.png"');
   });
 });
 
