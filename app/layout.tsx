@@ -25,8 +25,8 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "Marketing HTML Maker",
-  description: "Figma eDM 디자인을 이메일 HTML로 변환하는 로컬 도구",
+  title: "Letterpress",
+  description: "Figma eDM 디자인을 픽셀 검증된 이메일 HTML로 찍어내는 로컬 도구",
 };
 
 export default function RootLayout({

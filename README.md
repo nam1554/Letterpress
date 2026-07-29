@@ -1,4 +1,6 @@
-# Marketing HTML Maker
+# Letterpress (레터프레스)
+
+> 사내 저장소명: `marketing-html-maker`
 
 Figma eDM 디자인 링크를 붙여넣으면 **AI 에이전트가 헤드리스로 이메일 HTML을
 생성**하고, 브라우저에서 결과물(HTML + images/)을 zip으로 다운로드하는 **로컬

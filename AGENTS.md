@@ -6,7 +6,7 @@ Before any Next.js work, find and read the relevant doc in `node_modules/next/di
 
 <!-- END:nextjs-agent-rules -->
 
-# Marketing HTML Maker — agent notes
+# Letterpress (repo: marketing-html-maker) — agent notes
 
 Local-only Next.js app: paste a Figma eDM design URL in the browser, a headless
 CLI agent job converts it to email-safe HTML (via the user's `figma-edm`

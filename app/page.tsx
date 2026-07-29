@@ -185,7 +185,7 @@ export default function Home() {
     <Container size={680} py={56}>
       <Group align="baseline" gap="sm">
         <Title order={1} size={28}>
-          Marketing HTML Maker
+          Letterpress
         </Title>
         <Text c="dimmed" size="sm">
           Figma → eDM HTML
