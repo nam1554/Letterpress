@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -51,6 +52,31 @@ describe("GET /api/jobs", () => {
     const body = await (await listJobsRoute()).json();
     const row = body.jobs.find((j: { id: string }) => j.id === job.id);
     expect(row.diskBytes).toBeGreaterThanOrEqual(2048);
+  });
+});
+
+describe("POST /api/jobs/bulk-delete", () => {
+  it("rejects an empty or malformed body", async () => {
+    const { POST: bulk } = await import("./bulk-delete/route");
+    expect((await bulk(post({ ids: [] }))).status).toBe(400);
+    expect((await bulk(post({}))).status).toBe(400);
+  });
+
+  it("deletes deletable jobs, reports missing and running ones individually", async () => {
+    const { POST: bulk } = await import("./bulk-delete/route");
+    const done = await createJob(FIGMA_URL, "mock");
+    await updateJob(done.id, { status: "failed" });
+    const running = await createJob(FIGMA_URL, "mock");
+    liveControllers.set(running.id, new AbortController());
+
+    const res = await bulk(post({ ids: [done.id, "00000000", running.id] }));
+    const { results } = await res.json();
+    expect(results.map((r: { ok: boolean }) => r.ok)).toEqual([true, false, false]);
+    expect(existsSync(workDir(done.id))).toBe(false);
+    expect(existsSync(workDir(running.id))).toBe(true); // 실행 중 잡은 보존
+
+    liveControllers.clear();
+    await bulk(post({ ids: [running.id] })); // 정리
   });
 });
 
