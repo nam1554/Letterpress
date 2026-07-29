@@ -75,6 +75,10 @@ no auth, single user, filesystem is the database.
   passes `freshSince` (attempt start) and a `verify.json` older than that fails
   the gate. Without it an edit job (workDir copied from the source) or a resume
   (same workDir) inherits a PASS and can report success having produced nothing.
+  It also enforces a minimum of live text (100 non-whitespace chars) in each
+  deliverable — shipping the whole email as one screenshot passes pixel-verify
+  trivially (observed: codex, 2.4min, 99.97%) but kills copy/a11y/image-blocked
+  rendering, so the gate rejects it.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).

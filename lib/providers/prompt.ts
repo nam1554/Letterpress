@@ -54,7 +54,11 @@ Requirements:
   build→verify attempts, stop hand-tuning it — replace that section with a
   flat image of the section's node (screenshot / REST render at native width)
   and re-verify. A flat section image is always acceptable; endless CSS
-  tweaking is not.
+  tweaking is not. This escape hatch is PER SECTION: the email as a whole must
+  keep its body copy as live HTML text (selectable, translatable, readable
+  with images blocked). Shipping the entire design as one or a few screenshots
+  passes pixel-verify trivially and is REJECTED by the quality gate (it
+  requires a minimum amount of live text in each deliverable).
 - Email-client safety (pixel-verify CANNOT catch these — treat as hard rules):
   never rely on CSS/attribute background images (Outlook desktop drops them) —
   bake overlay text into the flat section image, or add the MSO/VML fallback

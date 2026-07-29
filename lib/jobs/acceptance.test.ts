@@ -15,7 +15,7 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-import { checkAcceptance, readVerifySummary } from "./acceptance";
+import { checkAcceptance, liveTextChars, readVerifySummary } from "./acceptance";
 import { createJob, outputDir, workDir } from "./store";
 
 const PASS_JSON = JSON.stringify({
@@ -25,14 +25,21 @@ const PASS_JSON = JSON.stringify({
   bands: [{ name: "header", sim: 99.1, shift: 0, ok: true }],
 });
 
+// 게이트의 라이브 텍스트 최소량(100자)을 넘는 정상 산출물 본문.
+const SAMPLE_HTML = `<html><body><table><tr><td>
+아이서퍼 고객님, 이제 문의는 채널톡으로 편하게 하세요. 기능 사용법이 궁금할 때,
+요금과 플랜 상담이 필요할 때, 오류나 불편사항을 전달하고 싶을 때 채널톡 하나로
+편하게 남겨주세요. (주)비큐AI 서울특별시 중구 퇴계로 385 준타워 9층
+</td></tr></table></body></html>`;
+
 /** 완전한 산출물 세트를 가진 잡을 만든다. */
 async function fullJob(verifyJson: string | null = PASS_JSON) {
   const job = await createJob("https://www.figma.com/design/abc/", "mock");
   const base = workDir(job.id);
   const out = outputDir(job.id);
   await mkdir(path.join(out, "images"), { recursive: true });
-  await writeFile(path.join(out, "edm_figma.html"), "<html/>");
-  await writeFile(path.join(out, "edm_responsive.html"), "<html/>");
+  await writeFile(path.join(out, "edm_figma.html"), SAMPLE_HTML);
+  await writeFile(path.join(out, "edm_responsive.html"), SAMPLE_HTML);
   await writeFile(path.join(out, "images", "logo.png"), "png");
   for (const f of ["figma_full.png", "my_full.png", "side_by_side.png", "diff_heat.png"]) {
     await writeFile(path.join(base, f), "png");
@@ -123,6 +130,25 @@ describe("checkAcceptance", () => {
     const a = await checkAcceptance(job.id);
     expect(a.ok).toBe(false);
     expect(a.failures.join(" ")).toContain("my_full.png");
+  });
+
+  it("rejects the whole-email-as-one-image shortcut", async () => {
+    const job = await fullJob();
+    // 실측 재현: codex가 이메일 전체를 스크린샷 1장 + 20자 텍스트로 만들어
+    // 픽셀 검증 99.97%로 통과했다 — 게이트가 라이브 텍스트 최소량으로 잡는다.
+    const oneImage = `<html><body><style>.x{color:red}</style>
+      <table><tr><td><img src="images/whole.png" alt="뉴스레터 전체 이미지"></td></tr></table>
+      <!-- baked screenshot --></body></html>`;
+    await writeFile(path.join(outputDir(job.id), "edm_responsive.html"), oneImage);
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("라이브 텍스트");
+    expect(a.failures.join(" ")).toContain("edm_responsive.html");
+  });
+
+  it("does not count style blocks, tags, or alt text as live text", () => {
+    const html = `<style>${"a".repeat(500)}</style><img alt="${"b".repeat(500)}"><p>실제텍스트</p>`;
+    expect(liveTextChars(html)).toBe(5);
   });
 
   it("only warns when images/ is empty", async () => {

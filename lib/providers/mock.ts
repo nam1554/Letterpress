@@ -34,6 +34,11 @@ ${media}
   <tr><td style="padding:0 32px 32px;font-family:sans-serif;">
     <a href="https://intro.aisurfer.com/" style="display:inline-block;background:#2563eb;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-size:15px;">자세히 보기</a>
   </td></tr>
+  <tr><td class="pad" style="padding:24px 32px;background:#0b1f4d;font-family:sans-serif;font-size:12px;color:#9fb0d0;line-height:1.7;">
+    정보를 넘어 방향까지 · AI 에이전트가 일하는 미디어 인텔리전스 플랫폼<br>
+    (주)비큐AI · 서울특별시 중구 퇴계로 385 준타워 9층 · 02-3487-0215<br>
+    © 2026 BECUAI Corp. All rights reserved.
+  </td></tr>
 </table>
 </td></tr></table>
 </body>
