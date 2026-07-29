@@ -57,8 +57,11 @@ Requirements:
   tweaking is not. This escape hatch is PER SECTION: the email as a whole must
   keep its body copy as live HTML text (selectable, translatable, readable
   with images blocked). Shipping the entire design as one or a few screenshots
-  passes pixel-verify trivially and is REJECTED by the quality gate (it
-  requires a minimum amount of live text in each deliverable).
+  passes pixel-verify trivially and is REJECTED by the quality gate: it
+  requires a minimum amount of VISIBLE live text in each deliverable (hidden
+  text — display:none / clip / 1px containers — does not count) and rejects
+  any image wider than 400px with an aspect ratio taller than 2:1 as a page
+  screenshot. Build the sections for real.
 - Email-client safety (pixel-verify CANNOT catch these — treat as hard rules):
   never rely on CSS/attribute background images (Outlook desktop drops them) —
   bake overlay text into the flat section image, or add the MSO/VML fallback

@@ -151,6 +151,30 @@ describe("checkAcceptance", () => {
     expect(liveTextChars(html)).toBe(5);
   });
 
+  it("does not count hidden-element text (the sr-only stuffing tactic)", () => {
+    // 실측 재현 2탄: codex가 1px/clip 숨김 div에 전체 카피를 넣어 글자 수만 채웠다.
+    const srOnly =
+      `<div style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">` +
+      `${"가".repeat(400)}<div style="color:#000">중첩도 함께 제거</div></div>` +
+      `<div style="display:none;">${"나".repeat(200)}</div>` +
+      `<td style="mso-hide:all">${"다".repeat(200)}</td>` +
+      `<p>보이는것만</p>`;
+    expect(liveTextChars(srOnly)).toBe(5);
+    // opacity:0.9·font-size:14px 같은 정상 스타일은 숨김으로 오인하지 않는다.
+    expect(liveTextChars(`<p style="opacity:0.9;font-size:14px;">정상텍스트다섯</p>`)).toBe(7);
+  });
+
+  it("flags a page-screenshot-like image, not legit section images", async () => {
+    const { findScreenshotLikeImages } = await import("./acceptance");
+    const shot = `<img src="images/whole.png" width="700" height="2207" style="display:block">`;
+    const hero = `<img src="images/hero.png" width="700" height="385">`;
+    const emoji = `<img src="images/e.png" width="100" height="200">`; // 좁은 이미지는 제외
+    const styleOnly = `<img src="images/s.png" style="width:700px;height:2100px;line-height:0">`;
+    expect(findScreenshotLikeImages(shot + hero + emoji)).toEqual(["images/whole.png"]);
+    expect(findScreenshotLikeImages(styleOnly)).toEqual(["images/s.png"]);
+    expect(findScreenshotLikeImages(hero + emoji)).toEqual([]);
+  });
+
   it("only warns when images/ is empty", async () => {
     const job = await fullJob();
     await rm(path.join(outputDir(job.id), "images"), { recursive: true });
