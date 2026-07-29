@@ -19,7 +19,7 @@ import { figmaLabel, formatElapsed } from "../../lib/format";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
-import VerifyReport from "./VerifyReport";
+import VerifyReport, { type VerifySummary } from "./VerifyReport";
 
 interface Job {
   id: string;
@@ -30,6 +30,7 @@ interface Job {
   createdAt: number;
   finishedAt?: number;
   summary?: string;
+  verify?: VerifySummary;
 }
 
 const STATUS_BADGE: Record<string, { color: string; label: string }> = {
@@ -277,7 +278,7 @@ export default function JobPage() {
         </Alert>
       )}
 
-      {!running && <VerifyReport jobId={id} files={verifyFiles} />}
+      {!running && <VerifyReport jobId={id} files={verifyFiles} verify={job?.verify} />}
 
       {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
         <SendPrep jobId={id} jobTitle={job?.title} onCreated={() => void refresh()} />

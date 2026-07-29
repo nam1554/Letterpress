@@ -43,9 +43,33 @@ Requirements:
   - an images/ folder with every image used, so the HTML can be re-hosted on a CDN
     (like the reference package: relative <img src="images/...">, plus a
     self-contained preview variant if the skill produces one)
+- Leave the pixel-verify evidence in the working directory root (EDM_DIR):
+  figma_full.png, my_full.png, side_by_side.png, diff_heat.png, verify.json
+  (compare.py writes these). The app REJECTS the job if any deliverable or
+  verify evidence is missing, or if verify.json's result is not PASS — keep
+  iterating build→verify until PASS before finishing.
+- If the URL has no node-id, enumerate the file's top-level frames (Figma
+  metadata / REST), choose the frame that is the email design (portrait,
+  roughly 600–800px wide), and log which frame you chose. If no frame looks
+  like an email design, print a single line starting with "FATAL:" listing the
+  frames, and exit.
 ${figmaAccessClause()}
 - Print short progress lines as you complete each pipeline step.
-- Finish with a one-paragraph summary of what was produced and the verify result.`;
+- Finish with a one-paragraph summary of what was produced and the verify result.${repairClause(task)}`;
+}
+
+/** 품질 게이트 미충족 후 보수 런에 붙는 부록 — 실패 항목만 고치게 한다. */
+function repairClause(task: AgentTask): string {
+  if (!task.repair) return "";
+  const list = task.repair.failures.map((f) => `- ${f}`).join("\n");
+  return `
+
+IMPORTANT — THIS IS A REPAIR RUN. A previous attempt ran in this same working
+directory and was rejected by the quality gate for these reasons:
+${list}
+The intermediate files from that attempt are still present — reuse them instead
+of starting over. Fix only what is listed above, re-run the verify step until
+RESULT: PASS, and complete the full deliverable set.`;
 }
 
 /**

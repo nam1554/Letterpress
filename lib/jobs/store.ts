@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "../providers/types";
+import type { VerifySummary } from "./acceptance";
 import { liveControllers } from "./live";
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed";
@@ -17,6 +18,8 @@ export interface Job {
   createdAt: number;
   finishedAt?: number;
   summary?: string;
+  /** 픽셀 검증 요약 (workDir/verify.json) — 완료 시 러너가 기록. */
+  verify?: VerifySummary;
 }
 
 export interface Artifact {

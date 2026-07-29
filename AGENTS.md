@@ -41,6 +41,14 @@ no auth, single user, filesystem is the database.
   (timeout + cancel), `store.ts` reconciles stale running jobs on read after a
   server restart. SSE route replays events then relays live ones, deduped by
   `seq`.
+- **Quality gate**: success is judged by the filesystem, not the agent's
+  self-report. `lib/jobs/acceptance.ts` checks the deliverable contract
+  (`output/*_figma.html` + `*_responsive.html`, verify evidence images in the
+  work root, and `verify.json` — written by the figma-edm `compare.py` — with
+  `result: PASS`). On a gate miss the runner does ONE automatic repair run in
+  the same workDir with the failures listed in the prompt (`task.repair`),
+  then re-checks. The verify summary is persisted on `job.json` (`job.verify`)
+  and surfaced as a PASS/FAIL badge in `VerifyReport`.
 - **UI**: Mantine v9 with a Claude-style theme (`app/theme.ts` — terracotta
   "clay" accent, cream/warm-dark backgrounds, serif headings; components never
   branch on theme). Job page split into

@@ -1,6 +1,12 @@
 "use client";
 
-import { Accordion, Anchor, Group, Image, Stack, Text } from "@mantine/core";
+import { Accordion, Anchor, Badge, Group, Image, Stack, Text } from "@mantine/core";
+
+export interface VerifySummary {
+  result: "PASS" | "FAIL";
+  overall?: number;
+  heightDelta?: number;
+}
 
 const LABELS: Record<string, string> = {
   side_by_side: "Figma ↔ 렌더 비교",
@@ -9,15 +15,17 @@ const LABELS: Record<string, string> = {
   my_full: "HTML 렌더 캡처",
 };
 
-/** 픽셀 검증 리포트 — 파이프라인이 남긴 비교 이미지를 눈으로 확인. */
+/** 픽셀 검증 리포트 — PASS/FAIL 판정 + 파이프라인이 남긴 비교 이미지. */
 export default function VerifyReport({
   jobId,
   files,
+  verify,
 }: {
   jobId: string;
   files: string[];
+  verify?: VerifySummary | null;
 }) {
-  if (files.length === 0) return null;
+  if (files.length === 0 && !verify) return null;
 
   const isInline = (f: string) => f === "side_by_side.png" || f === "diff_heat.png";
   const inline = files.filter(isInline);
@@ -27,7 +35,21 @@ export default function VerifyReport({
   return (
     <Accordion variant="contained" mt="md" chevronPosition="right">
       <Accordion.Item value="verify">
-        <Accordion.Control data-testid="verify-toggle">픽셀 검증 리포트</Accordion.Control>
+        <Accordion.Control data-testid="verify-toggle">
+          <Group gap="xs">
+            <span>픽셀 검증 리포트</span>
+            {verify && (
+              <Badge
+                data-testid="verify-result"
+                color={verify.result === "PASS" ? "green" : "red"}
+                variant="light"
+              >
+                {verify.result}
+                {verify.overall !== undefined ? ` · ${verify.overall}%` : ""}
+              </Badge>
+            )}
+          </Group>
+        </Accordion.Control>
         <Accordion.Panel>
           <Stack gap="md">
             {inline.map((f) => (

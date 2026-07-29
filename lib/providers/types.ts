@@ -16,6 +16,11 @@ export interface AgentTask {
   workDir: string;
   /** Dev/smoke-test escape hatch: replaces the built-in eDM prompt entirely. */
   promptOverride?: string;
+  /**
+   * 품질 게이트 미충족으로 재실행되는 보수 런 — 이전 시도의 실패 항목.
+   * buildEdmPrompt가 프롬프트에 부록으로 싣는다 (providers는 신경 쓸 필요 없음).
+   */
+  repair?: { failures: string[] };
 }
 
 export interface AgentResult {

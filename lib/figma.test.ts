@@ -16,6 +16,15 @@ describe("parseFigmaUrl", () => {
     expect(ref?.nodeId).toBeUndefined();
   });
 
+  it("resolves branch URLs to the branch file key", () => {
+    const ref = parseFigmaUrl(
+      "https://www.figma.com/design/EXAMPLEfileKey12345678/branch/Xyz789AbC/AISURFER-eDM?node-id=12-34",
+    );
+    expect(ref?.fileKey).toBe("Xyz789AbC");
+    expect(ref?.nodeId).toBe("12:34");
+    expect(ref?.title).toBe("AISURFER eDM");
+  });
+
   it("rejects non-figma URLs and garbage", () => {
     expect(parseFigmaUrl("https://example.com/design/abc")).toBeNull();
     expect(parseFigmaUrl("https://notfigma.com?u=figma.com")).toBeNull();

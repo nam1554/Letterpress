@@ -8,7 +8,9 @@ export interface FigmaRef {
 
 /**
  * Accepts figma.com /design/ /file/ /proto/ URLs and extracts fileKey + node-id.
- * Returns null for anything that is not a Figma file URL.
+ * Branch URLs (/design/KEY/branch/BRANCHKEY/...) resolve to the branch key —
+ * that is the file the design actually lives in. Returns null for anything
+ * that is not a Figma file URL (FigJam /board/, slides, ...).
  */
 export function parseFigmaUrl(input: string): FigmaRef | null {
   let url: URL;
@@ -19,8 +21,11 @@ export function parseFigmaUrl(input: string): FigmaRef | null {
   }
   if (!/(^|\.)figma\.com$/.test(url.hostname)) return null;
 
-  const match = url.pathname.match(/^\/(design|file|proto)\/([A-Za-z0-9]+)(?:\/([^/]*))?/);
+  const match = url.pathname.match(
+    /^\/(design|file|proto)\/([A-Za-z0-9]+)(?:\/branch\/([A-Za-z0-9]+))?(?:\/([^/]*))?/,
+  );
   if (!match) return null;
+  const fileKey = match[3] ?? match[2];
 
   const nodeIdRaw = url.searchParams.get("node-id") ?? undefined;
   // Figma uses "2343-115" in URLs for node "2343:115"
@@ -28,13 +33,13 @@ export function parseFigmaUrl(input: string): FigmaRef | null {
 
   let title: string | undefined;
   try {
-    title = match[3] ? decodeURIComponent(match[3]).replace(/-/g, " ").trim() : undefined;
+    title = match[4] ? decodeURIComponent(match[4]).replace(/-/g, " ").trim() : undefined;
   } catch {
-    title = match[3];
+    title = match[4];
   }
   if (!title) title = undefined;
 
-  return { url: url.toString(), fileKey: match[2], nodeId, title };
+  return { url: url.toString(), fileKey, nodeId, title };
 }
 
 /**
