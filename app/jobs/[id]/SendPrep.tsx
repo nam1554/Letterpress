@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR, { mutate } from "swr";
 import { Button, Code, Group, Paper, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { fetcher } from "../../lib/fetcher";
 
 // 클라이언트 미리보기용 — 서버의 renderCdnUrl과 같은 치환 규칙 (lib/hosting.ts)
 function previewUrl(template: string, folder: string, file: string): string {
@@ -45,20 +47,14 @@ export default function SendPrep({
   jobTitle?: string;
   onCreated: () => void;
 }) {
-  const [template, setTemplate] = useState("");
-  // null = 사용자가 아직 수정 안 함 → 제목 기반 기본값 사용 (제목이 늦게 로드돼도 반영됨)
+  // 저장된 템플릿은 SWR 캐시(/api/settings)에서 — 설정 패널과 캐시를 공유한다.
+  const { data: settings } = useSWR<{ cdnTemplate?: string }>("/api/settings", fetcher);
+  // null = 사용자가 아직 수정 안 함 → 저장된 템플릿/제목 기반 기본값 사용.
+  const [templateInput, setTemplateInput] = useState<string | null>(null);
+  const template = templateInput ?? settings?.cdnTemplate ?? "";
   const [folderInput, setFolderInput] = useState<string | null>(null);
   const folder = folderInput ?? `${titleSlug(jobTitle)}_${today()}`;
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((s) => {
-        if (s.cdnTemplate) setTemplate(s.cdnTemplate);
-      })
-      .catch(() => {});
-  }, []);
 
   const needsFolder = template.includes("{folder}");
   const folderInvalid = needsFolder && folder.trim() !== "" && !/^[A-Za-z0-9._-]+$/.test(folder.trim());
@@ -97,6 +93,7 @@ export default function SendPrep({
         if (data.warning) {
           notifications.show({ message: data.warning, color: "yellow", autoClose: 10_000 });
         }
+        void mutate("/api/settings"); // 서버가 템플릿을 설정에 저장했으므로 캐시 갱신
         onCreated();
       }
     } finally {
@@ -120,7 +117,7 @@ export default function SendPrep({
           data-testid="cdn-template"
           label="URL 템플릿 (설정에 저장돼 재사용)"
           value={template}
-          onChange={(e) => setTemplate(e.currentTarget.value)}
+          onChange={(e) => setTemplateInput(e.currentTarget.value)}
           placeholder="https://cdn.example.com/iiif/3/{folder}__{file}/full/max/0/default.{ext}"
           style={{ flex: 1 }}
           styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}

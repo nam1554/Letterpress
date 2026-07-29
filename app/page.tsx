@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import useSWR, { mutate } from "swr";
 import {
   Alert,
   Anchor,
@@ -22,6 +23,7 @@ import { notifications } from "@mantine/notifications";
 import SettingsPanel from "./components/SettingsPanel";
 import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
 import { parseFigmaUrl } from "@/lib/figma";
+import { fetcher } from "./lib/fetcher";
 import { figmaLabel, relativeTime } from "./lib/format";
 
 interface Job {
@@ -43,6 +45,11 @@ interface HealthCheck {
   detail: string;
   hint?: string;
 }
+interface JobsResponse {
+  jobs: Job[];
+  providers: ProviderInfo[];
+  defaultProvider: string;
+}
 
 const STATUS_BADGE: Record<string, { color: string; label: string }> = {
   queued: { color: "gray", label: "대기" },
@@ -54,69 +61,70 @@ const STATUS_BADGE: Record<string, { color: string; label: string }> = {
 export default function Home() {
   const router = useRouter();
   const [figmaUrl, setFigmaUrl] = useState("");
-  const [provider, setProvider] = useState<string | null>(null);
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  // null = 사용자가 아직 선택 안 함 → 서버의 기본 백엔드를 따른다.
+  const [providerChoice, setProviderChoice] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [health, setHealth] = useState<HealthCheck[] | null>(null);
-  const [backends, setBackends] = useState<BackendInfo[] | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // 잡 목록은 5초 폴링 — 실행 중 잡의 상태 변화를 홈에서도 따라간다.
+  const { data: jobsData } = useSWR<JobsResponse>("/api/jobs", fetcher, {
+    refreshInterval: 5000,
+  });
+  const jobs = jobsData?.jobs ?? [];
+  const providers = jobsData?.providers ?? [];
+  const provider = providerChoice ?? jobsData?.defaultProvider ?? null;
+
+  const { data: healthData } = useSWR<{ checks: HealthCheck[] }>("/api/health", fetcher, {
+    revalidateOnFocus: false,
+  });
+  const health = healthData?.checks ?? null;
+  const [recheckingHealth, setRecheckingHealth] = useState(false);
+
+  // 백엔드 연동 진단은 비싸다(mcp list 헬스체크) — 포커스 재검증 없이 명시적으로만.
+  const { data: setupData, error: setupError } = useSWR<{ backends: BackendInfo[] }>(
+    "/api/setup",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const [recheckingSetup, setRecheckingSetup] = useState(false);
+  const backends: BackendInfo[] | null = recheckingSetup
+    ? null
+    : (setupData?.backends ?? (setupError ? [] : null));
 
   const parsed = useMemo(
     () => (figmaUrl.trim() ? parseFigmaUrl(figmaUrl) : undefined),
     [figmaUrl],
   );
 
-  const load = useCallback(async () => {
-    const res = await fetch("/api/jobs");
-    const data = await res.json();
-    setJobs(data.jobs);
-    setProviders(data.providers);
-    setProvider((p) => p || data.defaultProvider);
-  }, []);
-
-  const loadSetup = useCallback(async (force = false) => {
-    let prev: BackendInfo[] | null = null;
-    if (force) {
-      setBackends((b) => {
-        prev = b;
-        return null;
-      });
-    }
-    try {
-      const res = await fetch(`/api/setup${force ? "?force=1" : ""}`);
-      setBackends((await res.json()).backends);
-    } catch {
-      // 실패 시 영구 로더에 갇히지 않게 이전 상태(없으면 빈 목록)로 복귀 —
-      // 빈 목록이면 패널의 "다시 점검"으로 재시도할 수 있다.
-      setBackends(prev ?? []);
-    }
-  }, []);
-
-  useEffect(() => {
-    // load()는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-    void loadSetup();
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((d) => setHealth(d.checks))
-      .catch(() => {});
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [load, loadSetup]);
-
   async function recheckHealth() {
-    setHealth(null);
+    setRecheckingHealth(true);
     try {
-      const res = await fetch("/api/health?force=1");
-      setHealth((await res.json()).checks);
+      const fresh = await fetcher("/api/health?force=1");
+      await mutate("/api/health", fresh, { revalidate: false });
     } catch {
-      /* 표시 유지 */
+      /* 기존 표시 유지 */
+    } finally {
+      setRecheckingHealth(false);
     }
   }
+
+  const refreshSetup = useCallback(async (force = false) => {
+    if (!force) {
+      await mutate("/api/setup");
+      return;
+    }
+    setRecheckingSetup(true);
+    try {
+      const fresh = await fetcher("/api/setup?force=1");
+      await mutate("/api/setup", fresh, { revalidate: false });
+    } catch {
+      /* 기존 캐시 유지 — 빈 화면 대신 이전 상태를 보여준다 */
+    } finally {
+      setRecheckingSetup(false);
+    }
+  }, []);
 
   async function createAndGo(url: string, providerId: string) {
     setError("");
@@ -152,7 +160,7 @@ export default function Home() {
     const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
     if (res.ok) {
       notifications.show({ message: "작업을 삭제했습니다.", color: "gray" });
-      void load();
+      void mutate("/api/jobs");
     } else setError((await res.json()).error ?? "삭제 실패");
   }
 
@@ -166,7 +174,7 @@ export default function Home() {
     if (res.ok) {
       const { deleted } = await res.json();
       notifications.show({ message: `완료된 작업 ${deleted}건을 삭제했습니다.`, color: "gray" });
-      void load();
+      void mutate("/api/jobs");
     } else setError("일괄 삭제 실패");
   }
 
@@ -208,7 +216,7 @@ export default function Home() {
               </Text>
             ))}
             <Anchor component="button" size="xs" onClick={recheckHealth} data-testid="health-recheck">
-              다시 점검
+              {recheckingHealth ? "점검 중…" : "다시 점검"}
             </Anchor>
           </Stack>
         </Alert>
@@ -219,7 +227,7 @@ export default function Home() {
             ✓ 환경 점검 통과 — Claude CLI · figma-edm 스킬 · Chrome · Python
           </Text>
           <Anchor component="button" size="xs" c="dimmed" onClick={recheckHealth} data-testid="health-recheck">
-            다시 점검
+            {recheckingHealth ? "점검 중…" : "다시 점검"}
           </Anchor>
         </Group>
       )}
@@ -251,7 +259,7 @@ export default function Home() {
           <Select
             data-testid="provider"
             value={provider}
-            onChange={setProvider}
+            onChange={setProviderChoice}
             data={providers.map((p) => {
               const b = backends?.find((x) => x.id === p.id);
               return {
@@ -286,12 +294,12 @@ export default function Home() {
         )}
       </Paper>
 
-      <BackendSetup backends={backends} onRefresh={loadSetup} />
+      <BackendSetup backends={backends} onRefresh={(force) => void refreshSetup(force)} />
 
       <SettingsPanel
         onSaved={() => {
-          void load();
-          void loadSetup(true);
+          void mutate("/api/jobs");
+          void refreshSetup(true);
         }}
       />
 

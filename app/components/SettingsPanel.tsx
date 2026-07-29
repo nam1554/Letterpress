@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import useSWR, { mutate } from "swr";
 import {
   Accordion,
   Button,
@@ -12,6 +13,7 @@ import {
   Text,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { fetcher } from "../lib/fetcher";
 
 interface ProviderInfo {
   id: string;
@@ -50,21 +52,16 @@ function Row({
 
 /** 홈 화면의 접이식 설정 패널 — 환경변수 없이 모든 설정을 화면에서. */
 export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
-  const [view, setView] = useState<SettingsView | null>(null);
+  const { data } = useSWR<SettingsView>("/api/settings", fetcher);
+  // 서버 데이터 위에 수정분만 얹는다 — 저장 전까지 SWR 캐시를 오염시키지 않음.
+  const [edits, setEdits] = useState<Partial<SettingsView>>({});
   const [figmaToken, setFigmaToken] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then(setView)
-      .catch(() => {});
-  }, []);
-
-  if (!view) return null;
+  if (!data) return null;
+  const view = { ...data, ...edits };
 
   async function save() {
-    if (!view) return;
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -78,16 +75,17 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const saved = await res.json();
       if (!res.ok) {
-        notifications.show({ message: data.error ?? "저장 실패", color: "red" });
+        notifications.show({ message: saved.error ?? "저장 실패", color: "red" });
         return;
       }
-      setView(data);
+      await mutate("/api/settings", saved, { revalidate: false });
+      setEdits({});
       setFigmaToken("");
       notifications.show({
-        message: data.warning ? `저장했습니다 — ${data.warning}` : "설정을 저장했습니다.",
-        color: data.warning ? "yellow" : "teal",
+        message: saved.warning ? `저장했습니다 — ${saved.warning}` : "설정을 저장했습니다.",
+        color: saved.warning ? "yellow" : "teal",
       });
       onSaved?.();
     } finally {
@@ -102,7 +100,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
       body: JSON.stringify({ figmaToken: "" }),
     });
     if (res.ok) {
-      setView(await res.json());
+      await mutate("/api/settings", await res.json(), { revalidate: false });
       notifications.show({ message: "Figma 토큰을 삭제했습니다.", color: "gray" });
     }
   }
@@ -120,7 +118,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
                 <Select
                   data-testid="setting-provider"
                   value={view.defaultProvider}
-                  onChange={(v) => v && setView({ ...view, defaultProvider: v })}
+                  onChange={(v) => v && setEdits((e) => ({ ...e, defaultProvider: v }))}
                   data={view.providers.map((p) => ({ value: p.id, label: p.label }))}
                   allowDeselect={false}
                   w={260}
@@ -136,7 +134,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
                   min={1}
                   max={5}
                   value={view.maxConcurrentJobs}
-                  onChange={(v) => setView({ ...view, maxConcurrentJobs: Number(v) || 1 })}
+                  onChange={(v) => setEdits((e) => ({ ...e, maxConcurrentJobs: Number(v) || 1 }))}
                   w={100}
                 />
               }
@@ -150,14 +148,14 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
                   min={5}
                   max={180}
                   value={view.jobTimeoutMinutes}
-                  onChange={(v) => setView({ ...view, jobTimeoutMinutes: Number(v) || 45 })}
+                  onChange={(v) => setEdits((e) => ({ ...e, jobTimeoutMinutes: Number(v) || 45 }))}
                   w={100}
                 />
               }
             />
             <Row
               label="Figma 토큰 (선택)"
-              hint="Figma MCP를 못 쓰는 환경(무료 시트 등)용 REST API 폴백. figma.com → 설정 → Security → Personal access tokens에서 발급해 직접 붙여넣으세요. 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다."
+              hint="Figma MCP를 못 쓰는 환경(무료 시트 등)용 REST API 폴백. figma.com → 설정 → Security → Personal access tokens에서 발급해 직접 붙여넣으세요. 저장 시 즉시 검증되며, 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다."
               control={
                 <Group gap="xs" wrap="nowrap">
                   {view.figmaTokenSet && !figmaToken && (
