@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Anchor,
   Button,
@@ -45,17 +45,24 @@ export default function ArtifactList({
 }) {
   const [checkFor, setCheckFor] = useState<string | null>(null);
   const [checks, setChecks] = useState<EmailCheck[] | null>(null);
+  // 다른 파일로 전환한 뒤 도착한 이전 요청의 응답이 덮어쓰지 않도록 최신 대상 추적.
+  const latestCheck = useRef<string | null>(null);
 
   async function toggleCheck(rel: string) {
     if (checkFor === rel) {
       setCheckFor(null);
+      latestCheck.current = null;
       return;
     }
     setCheckFor(rel);
     setChecks(null);
+    latestCheck.current = rel;
     const res = await fetch(`/api/jobs/${jobId}/check?file=${encodeURIComponent(rel)}`);
-    if (res.ok) setChecks((await res.json()).checks);
-    else setChecks([{ name: "검사", level: "fail", detail: "검사 실패" }]);
+    const result: EmailCheck[] = res.ok
+      ? (await res.json()).checks
+      : [{ name: "검사", level: "fail", detail: "검사 실패" }];
+    if (latestCheck.current !== rel) return; // 그 사이 다른 파일로 전환됨
+    setChecks(result);
   }
 
   return (

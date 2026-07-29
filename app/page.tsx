@@ -78,12 +78,20 @@ export default function Home() {
   }, []);
 
   const loadSetup = useCallback(async (force = false) => {
-    if (force) setBackends(null);
+    let prev: BackendInfo[] | null = null;
+    if (force) {
+      setBackends((b) => {
+        prev = b;
+        return null;
+      });
+    }
     try {
       const res = await fetch(`/api/setup${force ? "?force=1" : ""}`);
       setBackends((await res.json()).backends);
     } catch {
-      /* 표시 유지 */
+      // 실패 시 영구 로더에 갇히지 않게 이전 상태(없으면 빈 목록)로 복귀 —
+      // 빈 목록이면 패널의 "다시 점검"으로 재시도할 수 있다.
+      setBackends(prev ?? []);
     }
   }, []);
 

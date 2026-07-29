@@ -179,7 +179,13 @@ export default function BackendSetup({
           <Group gap="xs" wrap="nowrap">
             <Text size="sm">🔌 백엔드 연동</Text>
             {backends === null && <Loader size={14} />}
+            {backends !== null && backends.length === 0 && (
+              <Badge size="sm" variant="light" color="gray">
+                상태 확인 실패
+              </Badge>
+            )}
             {backends !== null &&
+              backends.length > 0 &&
               (needsSetup.length === 0 ? (
                 <Badge size="sm" variant="light" color="green">
                   모두 준비됨
@@ -203,6 +209,11 @@ export default function BackendSetup({
             </Group>
           ) : (
             <Stack gap="sm">
+              {backends.length === 0 && (
+                <Text size="xs" c="dimmed">
+                  연동 상태를 불러오지 못했습니다 — 아래 &quot;다시 점검&quot;으로 재시도하세요.
+                </Text>
+              )}
               {backends.map((b) => {
                 const result = results[b.id];
                 return (

@@ -52,8 +52,13 @@ export default function JobPage() {
 
   useEffect(() => {
     // localStorage는 SSR에 없어 마운트 후 1회 동기화가 불가피하다.
+    // Notification 미지원 브라우저(iOS Safari 등)에서 ReferenceError 방지.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNotify(localStorage.getItem("mhm-notify") === "1" && Notification.permission === "granted");
+    setNotify(
+      "Notification" in window &&
+        localStorage.getItem("mhm-notify") === "1" &&
+        Notification.permission === "granted",
+    );
   }, []);
 
   const refresh = useCallback(async () => {
@@ -98,7 +103,8 @@ export default function JobPage() {
   useEffect(() => {
     if (!job || notifiedRef.current) return;
     const terminal = job.status === "succeeded" || job.status === "failed";
-    if (!terminal || !notify || Notification.permission !== "granted") return;
+    if (!terminal || !notify) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
     // 페이지 진입 시점에 이미 끝나 있던 작업엔 알리지 않는다.
     if (job.finishedAt && Date.now() - job.finishedAt > 10_000) return;
     notifiedRef.current = true;
@@ -123,6 +129,10 @@ export default function JobPage() {
     if (notify) {
       setNotify(false);
       localStorage.setItem("mhm-notify", "0");
+      return;
+    }
+    if (!("Notification" in window)) {
+      notifications.show({ message: "이 브라우저는 알림을 지원하지 않습니다.", color: "yellow" });
       return;
     }
     const permission = await Notification.requestPermission();
