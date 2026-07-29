@@ -396,6 +396,16 @@ export default function Home() {
               {confirmClear ? "정말 모두 삭제?" : "완료된 작업 모두 삭제"}
             </Anchor>
           )}
+          {/* 문제가 났을 때 폴더를 뒤지지 않고 그대로 전달할 수 있는 파일 한 개. */}
+          <Anchor
+            href="/api/diagnostics"
+            size="xs"
+            c="dimmed"
+            data-testid="diagnostics"
+            title="환경 점검·백엔드 진단·서버 오류 로그를 zip 하나로 내려받습니다 (토큰·API 키 제외)"
+          >
+            문제 신고용 파일
+          </Anchor>
         </Group>
       </Group>
 

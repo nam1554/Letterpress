@@ -110,6 +110,18 @@ no auth, single user, filesystem is the database.
   exported to the agent as `CHROME_BIN`; `compare.py` reads that env first.
   A hard-coded `/Applications/...` path meant pixel-verify could never run off
   macOS, and the gate then fails an otherwise correct build for "no verify.json".
+- **Diagnostics**: `instrumentation.ts` (Next's official `onRequestError` hook +
+  `unhandledRejection`/`uncaughtException`) appends server failures to
+  `data/logs/app.log` — before this they only reached the terminal window and
+  vanished with it. `GET /api/diagnostics[?job=<id>]` zips a support bundle
+  (summary.md, health/backends json, masked settings, logs, the job's
+  events/verify/artifact list) behind a "문제 신고용 파일" link on the home and
+  job pages, so a non-developer hands over one file instead of hunting through
+  `data/`. Secrets never ship: `bundle.ts` masks token-ish setting keys AND
+  string-replaces the actual values everywhere in the bundle, plus a
+  belt-and-braces regex for `figd_`/`sk-`/`AIza` shapes (tested in
+  `bundle.test.ts`). Zip entry names stay ASCII — Korean names come out mojibake
+  on Windows.
 - **Quality gate**: success is judged by the filesystem, not the agent's
   self-report. `lib/jobs/acceptance.ts` checks the deliverable contract
   (`output/*_figma.html` + `*_responsive.html`, verify evidence images in the

@@ -309,6 +309,16 @@ export default function JobPage() {
               </Button>
             </>
           )}
+          {/* 실패했을 때 폴더를 뒤지지 않고 그대로 전달할 수 있는 파일 한 개. */}
+          <Anchor
+            href={`/api/diagnostics?job=${job.id}`}
+            size="xs"
+            c="dimmed"
+            data-testid="diagnostics"
+            title="이 작업의 로그·환경 정보를 zip 하나로 내려받습니다 (토큰·API 키 제외)"
+          >
+            문제 신고용 파일
+          </Anchor>
         </Group>
       )}
 
