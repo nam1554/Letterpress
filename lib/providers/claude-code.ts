@@ -1,3 +1,4 @@
+import { getSettings } from "../settings";
 import { runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
@@ -56,6 +57,8 @@ export const claudeCodeProvider: AgentProvider = {
     let resultText = "";
     let sawSuccess = false;
 
+    // 설정된 모델(예: haiku)로 실험할 수 있게 한다 — 빈 값이면 CLI 기본.
+    const model = getSettings().claudeModel;
     const result = await runJsonlCli({
       bin: CLAUDE_BIN,
       args: [
@@ -66,6 +69,7 @@ export const claudeCodeProvider: AgentProvider = {
         "--verbose",
         "--permission-mode",
         "bypassPermissions",
+        ...(model ? ["--model", model] : []),
       ],
       cwd: task.workDir,
       env,

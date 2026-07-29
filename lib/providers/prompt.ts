@@ -28,6 +28,8 @@ export function buildEdmPrompt(
       ? `Use the "figma-edm" skill and follow its full pipeline`
       : `Read ${FIGMA_EDM_SKILL_DIR}/SKILL.md and ${FIGMA_EDM_SKILL_DIR}/references/workflow.md, then follow that pipeline exactly (the bundled scripts are in ${FIGMA_EDM_SKILL_DIR}/scripts/)`;
 
+  if (task.edit) return buildEditPrompt(task, skillIntro);
+
   return `You are converting a Figma eDM design into email HTML.
 
 Figma design URL: ${task.figmaUrl}
@@ -53,9 +55,49 @@ Requirements:
   roughly 600–800px wide), and log which frame you chose. If no frame looks
   like an email design, print a single line starting with "FATAL:" listing the
   frames, and exit.
+- Iteration budget: if the SAME band still fails verification after 2
+  build→verify attempts, stop hand-tuning it — replace that section with a
+  flat image of the section's node (screenshot / REST render at native width)
+  and re-verify. A flat section image is always acceptable; endless CSS
+  tweaking is not.
 ${figmaAccessClause()}
 - Print short progress lines as you complete each pipeline step.
 - Finish with a one-paragraph summary of what was produced and the verify result.${repairClause(task)}`;
+}
+
+/**
+ * 부분 수정 런 — 이미 빌드·검증된 eDM이 cwd에 있고, 지시된 변경만 적용한다.
+ * 의도적으로 원본 Figma와 달라지므로 verify는 실행하되 PASS를 강제하지 않는다
+ * (게이트도 edit 잡에서는 verify FAIL을 경고로 강등).
+ */
+function buildEditPrompt(task: AgentTask, skillIntro: string): string {
+  return `You are updating an ALREADY BUILT Figma eDM in the current working
+directory. It was produced earlier with the figma-edm pipeline — the build
+scripts, assets, fonts, verify evidence, and ./output/ deliverables are all
+present. Do NOT rebuild from scratch.
+
+Original Figma design URL: ${task.figmaUrl}
+
+Requested change — apply ONLY this, nothing else:
+${task.edit!.instruction}
+
+${skillIntro}, specifically its "Adapting when copy or design changes" flow.
+Set EDM_DIR to the current working directory.
+
+Requirements:
+- Copy text change: update the strings in the build script AND the font-subset
+  TEXT block, re-run the font subsetting, then rebuild.
+- Image change: if the instruction refers to the Figma design, re-fetch that
+  node's image; otherwise use the referenced asset. Keep exact geometry.
+- Re-run the verify step (compare.py) so verify.json and the comparison images
+  are refreshed. The change intentionally diverges from the original Figma
+  reference, so changed bands may not PASS — that is expected; report which
+  bands changed and why.
+- Refresh ALL deliverables in ./output/ (*_figma.html, *_responsive.html,
+  images/) so they contain the change.
+${figmaAccessClause()}
+- Print short progress lines as you work.
+- Finish with a one-paragraph summary of what changed and the verify result.${repairClause(task)}`;
 }
 
 /** 품질 게이트 미충족 후 보수 런에 붙는 부록 — 실패 항목만 고치게 한다. */

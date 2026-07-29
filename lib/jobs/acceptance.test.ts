@@ -93,6 +93,14 @@ describe("checkAcceptance", () => {
     expect(a.verify).toEqual({ result: "FAIL", overall: 88.2, heightDelta: 40 });
   });
 
+  it("downgrades verify FAIL to a warning when requireVerifyPass is false (edit jobs)", async () => {
+    const job = await fullJob(JSON.stringify({ result: "FAIL", overall: 88.2, height_delta: 40 }));
+    const a = await checkAcceptance(job.id, { requireVerifyPass: false });
+    expect(a.ok).toBe(true);
+    expect(a.warnings.join(" ")).toContain("의도한 수정");
+    expect(a.verify?.result).toBe("FAIL");
+  });
+
   it("only warns when images/ is empty", async () => {
     const job = await fullJob();
     await rm(path.join(outputDir(job.id), "images"), { recursive: true });

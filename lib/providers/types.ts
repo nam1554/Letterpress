@@ -21,6 +21,11 @@ export interface AgentTask {
    * buildEdmPrompt가 프롬프트에 부록으로 싣는다 (providers는 신경 쓸 필요 없음).
    */
   repair?: { failures: string[] };
+  /**
+   * 부분 수정 런 — 이미 빌드된 eDM이 workDir에 있고, 지시된 변경만 적용한다.
+   * buildEdmPrompt가 edit 전용 프롬프트로 분기한다.
+   */
+  edit?: { instruction: string };
 }
 
 export interface AgentResult {

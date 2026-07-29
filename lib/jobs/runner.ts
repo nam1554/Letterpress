@@ -1,12 +1,28 @@
 import { getProvider } from "../providers/registry";
 import { getSettings } from "../settings";
-import type { AgentEvent } from "../providers/types";
+import type { AgentEvent, AgentTask } from "../providers/types";
 import { checkAcceptance } from "./acceptance";
 import { liveControllers } from "./live";
 import { appendEvent, updateJob, workDir, type Job } from "./store";
 
-/** Fire-and-forget: runs the job's provider and records lifecycle events. */
-export function startJob(job: Job, promptOverride?: string): void {
+export interface StartOptions {
+  /** Dev/smoke-test escape hatch — eDM 프롬프트를 통째로 대체. */
+  promptOverride?: string;
+  /**
+   * 실패한 잡을 같은 workDir에서 이어서 실행 — 현재 게이트 미충족 항목을
+   * 첫 런의 보수 컨텍스트로 싣는다 (중간 산출물 재사용).
+   */
+  resume?: boolean;
+}
+
+/**
+ * Runs the job's provider and records lifecycle events. The running-status
+ * transition is persisted BEFORE resolving — an SSE connect right after the
+ * HTTP response must not see the old (terminal) state and close early. The
+ * provider run itself is fire-and-forget.
+ */
+export async function startJob(job: Job, opts: StartOptions = {}): Promise<void> {
+  const { promptOverride, resume } = opts;
   const controller = new AbortController();
   liveControllers.set(job.id, controller);
 
@@ -20,27 +36,42 @@ export function startJob(job: Job, promptOverride?: string): void {
 
   const emit = (e: AgentEvent) => appendEvent(job.id, e);
 
+  // resume은 실패 잡을 되살리므로 이전 종료 기록을 지운다.
+  await updateJob(
+    job.id,
+    resume
+      ? { status: "running", finishedAt: undefined, summary: undefined, verify: undefined }
+      : { status: "running" },
+  );
+
   void (async () => {
     try {
       const provider = getProvider(job.provider);
-      await updateJob(job.id, { status: "running" });
       emit({
         ts: Date.now(),
         type: "status",
-        text: `작업 시작 — provider: ${provider.label}`,
+        text: `${resume ? "이어서 실행" : "작업 시작"} — provider: ${provider.label}`,
       });
 
-      const task = {
+      // 부분 수정(edit) 잡은 의도적으로 원본 Figma와 달라지므로 verify PASS를
+      // 강제하지 않는다 (산출물 계약 + 검증 실행 여부는 그대로 요구).
+      const gateOpts = { requireVerifyPass: !job.editOf };
+      const task: AgentTask = {
         jobId: job.id,
         figmaUrl: job.figmaUrl,
         workDir: workDir(job.id),
         promptOverride,
+        edit: job.editOf && job.instruction ? { instruction: job.instruction } : undefined,
       };
+      if (resume) {
+        const before = await checkAcceptance(job.id, gateOpts);
+        if (!before.ok) task.repair = { failures: before.failures };
+      }
       let result = await provider.run(task, emit, controller.signal);
 
       // 품질 게이트: 성공은 에이전트 보고가 아니라 산출물 계약으로 판정한다.
       // promptOverride(스모크 테스트)는 eDM 산출물이 없는 게 정상이라 제외.
-      let acceptance = promptOverride ? null : await checkAcceptance(job.id);
+      let acceptance = promptOverride ? null : await checkAcceptance(job.id, gateOpts);
 
       // 미충족이면 같은 workDir에서 실패 항목만 명시해 1회 자동 보수.
       if (result.ok && acceptance && !acceptance.ok && !controller.signal.aborted) {
@@ -54,7 +85,7 @@ export function startJob(job: Job, promptOverride?: string): void {
           emit,
           controller.signal,
         );
-        acceptance = await checkAcceptance(job.id);
+        acceptance = await checkAcceptance(job.id, gateOpts);
       }
 
       for (const w of acceptance?.warnings ?? []) {

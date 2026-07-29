@@ -11,6 +11,7 @@ import {
   Group,
   Loader,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -31,6 +32,8 @@ interface Job {
   finishedAt?: number;
   summary?: string;
   verify?: VerifySummary;
+  editOf?: string;
+  instruction?: string;
 }
 
 const STATUS_BADGE: Record<string, { color: string; label: string }> = {
@@ -49,6 +52,8 @@ export default function JobPage() {
   const [verifyFiles, setVerifyFiles] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [editing, setEditing] = useState(false);
   const [notify, setNotify] = useState(false);
   const notifiedRef = useRef(false);
 
@@ -166,6 +171,37 @@ export default function JobPage() {
     router.push(`/jobs/${data.job.id}`);
   }
 
+  async function resume() {
+    const res = await fetch(`/api/jobs/${id}/resume`, { method: "POST" });
+    if (!res.ok) {
+      notifications.show({ message: (await res.json()).error ?? "이어서 실행 실패", color: "red" });
+      return;
+    }
+    // 종료 시 닫힌 SSE를 되살리는 가장 단순한 방법 — 새로고침으로 재구독.
+    window.location.reload();
+  }
+
+  async function requestEdit() {
+    const instruction = editText.trim();
+    if (!instruction) return;
+    setEditing(true);
+    try {
+      const res = await fetch(`/api/jobs/${id}/edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        notifications.show({ message: data.error ?? "수정 실행 실패", color: "red" });
+        return;
+      }
+      router.push(`/jobs/${data.job.id}`);
+    } finally {
+      setEditing(false);
+    }
+  }
+
   async function remove() {
     if (!confirmDelete) {
       setConfirmDelete(true);
@@ -201,6 +237,19 @@ export default function JobPage() {
       {job && (
         <Text size="xs" c="dimmed" ff="monospace" mt={4} truncate>
           {figmaLabel(job.figmaUrl)} · {job.provider} · 작업 {job.id}
+          {job.editOf && (
+            <>
+              {" · 원본 "}
+              <Anchor href={`/jobs/${job.editOf}`} size="xs" ff="monospace">
+                {job.editOf}
+              </Anchor>
+            </>
+          )}
+        </Text>
+      )}
+      {job?.instruction && (
+        <Text size="xs" c="dimmed" mt={2} lineClamp={2}>
+          수정 지시: {job.instruction}
         </Text>
       )}
 
@@ -233,6 +282,17 @@ export default function JobPage() {
           )}
           {!running && (
             <>
+              {job.status === "failed" && (
+                <Button
+                  data-testid="resume"
+                  variant="filled"
+                  size="compact-sm"
+                  onClick={resume}
+                  title="중간 산출물을 재사용해 미완료 항목만 이어서 진행합니다"
+                >
+                  이어서 실행
+                </Button>
+              )}
               <Button data-testid="rerun" variant="default" size="compact-sm" onClick={rerun}>
                 다시 실행
               </Button>
@@ -281,7 +341,36 @@ export default function JobPage() {
       {!running && <VerifyReport jobId={id} files={verifyFiles} verify={job?.verify} />}
 
       {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
-        <SendPrep jobId={id} jobTitle={job?.title} onCreated={() => void refresh()} />
+        <>
+          <Text size="xs" fw={600} c="dimmed" mt={28}>
+            부분 수정
+          </Text>
+          <Group mt={6} gap="xs" wrap="nowrap" align="flex-start">
+            <TextInput
+              data-testid="edit-instruction"
+              value={editText}
+              onChange={(e) => setEditText(e.currentTarget.value)}
+              placeholder='예: 헤드라인 "지금 시작하세요"를 "오늘 시작하세요"로 변경'
+              style={{ flex: 1 }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void requestEdit();
+              }}
+            />
+            <Button
+              data-testid="edit-run"
+              onClick={requestEdit}
+              loading={editing}
+              disabled={editText.trim().length < 4}
+            >
+              수정 실행
+            </Button>
+          </Group>
+          <Text size="xs" c="dimmed" mt={4}>
+            기존 빌드를 복사한 새 작업에서 지시한 변경만 적용하고 재검증합니다. 원본 작업은 그대로
+            남습니다.
+          </Text>
+          <SendPrep jobId={id} jobTitle={job?.title} onCreated={() => void refresh()} />
+        </>
       )}
 
       <ArtifactList jobId={id} artifacts={artifacts} running={running} />

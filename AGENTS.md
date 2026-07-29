@@ -49,6 +49,18 @@ no auth, single user, filesystem is the database.
   the same workDir with the failures listed in the prompt (`task.repair`),
   then re-checks. The verify summary is persisted on `job.json` (`job.verify`)
   and surfaced as a PASS/FAIL badge in `VerifyReport`.
+- **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
+  job in the SAME workDir (the current gate failures become the first run's
+  repair context — intermediate files are reused, e.g. after a timeout).
+  `POST /api/jobs/:id/edit {instruction}` copies the source job's `work/` into
+  a NEW job (`job.editOf`/`job.instruction`) and runs an edit-mode prompt that
+  applies only the requested copy/image change; edit jobs relax the gate's
+  verify-PASS requirement to a warning (intentional divergence from Figma).
+  `startJob` persists the running status BEFORE resolving — SSE connects right
+  after the HTTP response must not see a stale terminal state.
+- **Model tuning**: settings `claudeModel` → `claude --model` (e.g. "haiku").
+  The prompt bounds weak-model iteration: a band failing verify twice must be
+  replaced with a flat section image instead of endless CSS tweaking.
 - **UI**: Mantine v9 with a Claude-style theme (`app/theme.ts` — terracotta
   "clay" accent, cream/warm-dark backgrounds, serif headings; components never
   branch on theme). Job page split into

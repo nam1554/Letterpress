@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "../providers/types";
 import type { VerifySummary } from "./acceptance";
@@ -20,6 +20,10 @@ export interface Job {
   summary?: string;
   /** 픽셀 검증 요약 (workDir/verify.json) — 완료 시 러너가 기록. */
   verify?: VerifySummary;
+  /** 부분 수정 잡의 원본 잡 id — workDir는 원본의 복사본. */
+  editOf?: string;
+  /** 부분 수정 지시문 (editOf와 함께 설정됨). */
+  instruction?: string;
 }
 
 export interface Artifact {
@@ -84,6 +88,28 @@ export async function createJob(
     createdAt: Date.now(),
   };
   await mkdir(outputDir(job.id), { recursive: true });
+  await persist(job);
+  return job;
+}
+
+/**
+ * 부분 수정 잡 — 원본 잡의 work/ 전체(빌드 스크립트·에셋·검증 증거물 포함)를
+ * 새 잡으로 복사해, 에이전트가 처음부터가 아니라 기존 빌드 위에서 지시된
+ * 변경만 적용하게 한다. 원본 잡은 그대로 보존된다.
+ */
+export async function createEditJob(source: Job, instruction: string): Promise<Job> {
+  const job: Job = {
+    id: randomUUID().slice(0, 8),
+    figmaUrl: source.figmaUrl,
+    title: source.title ? `${source.title} · 수정` : "부분 수정",
+    provider: source.provider,
+    status: "queued",
+    createdAt: Date.now(),
+    editOf: source.id,
+    instruction,
+  };
+  await mkdir(jobDir(job.id), { recursive: true });
+  await cp(workDir(source.id), workDir(job.id), { recursive: true });
   await persist(job);
   return job;
 }

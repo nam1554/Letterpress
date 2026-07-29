@@ -11,6 +11,7 @@ import {
   Select,
   Stack,
   Text,
+  TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fetcher } from "../lib/fetcher";
@@ -25,6 +26,7 @@ interface SettingsView {
   jobTimeoutMinutes: number;
   figmaTokenSet: boolean;
   geminiApiKeySet: boolean;
+  claudeModel: string;
   providers: ProviderInfo[];
 }
 
@@ -68,6 +70,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
         defaultProvider: view.defaultProvider,
         maxConcurrentJobs: view.maxConcurrentJobs,
         jobTimeoutMinutes: view.jobTimeoutMinutes,
+        claudeModel: view.claudeModel,
       };
       if (figmaToken.trim()) body.figmaToken = figmaToken.trim();
       const res = await fetch("/api/settings", {
@@ -150,6 +153,22 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
                   value={view.jobTimeoutMinutes}
                   onChange={(v) => setEdits((e) => ({ ...e, jobTimeoutMinutes: Number(v) || 45 }))}
                   w={100}
+                />
+              }
+            />
+            <Row
+              label="Claude 모델 (선택)"
+              hint="claude CLI에 --model로 전달됩니다 (예: haiku, sonnet). 비우면 CLI 기본 모델. 저렴한 모델은 검증 반복이 늘어 실패율이 올라갈 수 있지만, 품질 게이트가 미달 결과를 걸러냅니다."
+              control={
+                <TextInput
+                  data-testid="setting-claude-model"
+                  value={view.claudeModel}
+                  onChange={(e) => {
+                    const claudeModel = e.currentTarget.value;
+                    setEdits((prev) => ({ ...prev, claudeModel }));
+                  }}
+                  placeholder="CLI 기본"
+                  w={180}
                 />
               }
             />

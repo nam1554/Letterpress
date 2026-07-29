@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   }
 
   const job = await createJob(canonicalFigmaUrl(ref), providerId, ref.title);
-  startJob(job);
+  await startJob(job);
   return NextResponse.json({ job }, { status: 201 });
 }
 

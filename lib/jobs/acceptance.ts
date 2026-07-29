@@ -43,7 +43,20 @@ export async function readVerifySummary(jobId: string): Promise<VerifySummary | 
 // 검증이 실제로 실행됐음을 증명하는 파일들 (compare.py 산출물 + 레퍼런스).
 const VERIFY_EVIDENCE = ["figma_full.png", "my_full.png", "side_by_side.png"];
 
-export async function checkAcceptance(jobId: string): Promise<Acceptance> {
+export interface AcceptanceOptions {
+  /**
+   * false면 verify FAIL을 실패가 아닌 경고로 강등한다 — 부분 수정(edit) 잡은
+   * 의도적으로 원본 Figma와 달라지므로 PASS를 강제할 수 없다. 검증을
+   * 실행했다는 사실(증거물 + verify.json 존재)은 여전히 요구한다.
+   */
+  requireVerifyPass?: boolean;
+}
+
+export async function checkAcceptance(
+  jobId: string,
+  opts: AcceptanceOptions = {},
+): Promise<Acceptance> {
+  const requireVerifyPass = opts.requireVerifyPass ?? true;
   const failures: string[] = [];
   const warnings: string[] = [];
   const base = workDir(jobId);
@@ -77,7 +90,15 @@ export async function checkAcceptance(jobId: string): Promise<Acceptance> {
     ]
       .filter(Boolean)
       .join(", ");
-    failures.push(`픽셀 검증 결과가 FAIL입니다${detail ? ` (${detail})` : ""} — PASS까지 빌드를 수정하세요.`);
+    if (requireVerifyPass) {
+      failures.push(
+        `픽셀 검증 결과가 FAIL입니다${detail ? ` (${detail})` : ""} — PASS까지 빌드를 수정하세요.`,
+      );
+    } else {
+      warnings.push(
+        `픽셀 검증이 원본 Figma와 다릅니다${detail ? ` (${detail})` : ""} — 의도한 수정이 반영된 결과라면 정상입니다.`,
+      );
+    }
   }
 
   const imagesDir = path.join(out, "images");

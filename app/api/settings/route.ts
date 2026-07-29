@@ -17,6 +17,7 @@ function masked() {
     figmaTokenSet: s.figmaToken.length > 0,
     geminiApiKeySet: s.geminiApiKey.length > 0,
     cdnTemplate: s.cdnTemplate,
+    claudeModel: s.claudeModel,
     providers: listProviders(),
   };
 }
@@ -42,6 +43,11 @@ const settingsBody = z.object({
   figmaToken: z.string().optional(),
   geminiApiKey: z.string().optional(),
   cdnTemplate: z.string().optional(),
+  claudeModel: z
+    .string()
+    .max(64, "모델 이름이 너무 깁니다.")
+    .regex(/^[\w.:-]*$/, "모델 이름에 쓸 수 없는 문자가 있습니다.")
+    .optional(),
 });
 
 export async function PUT(req: NextRequest) {
