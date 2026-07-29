@@ -109,7 +109,8 @@ no auth, single user, filesystem is the database.
 
 ## Verification habits
 
-- `pnpm vitest run` (unit), `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`.
+- `pnpm vitest run` (unit), `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+  Manual check: `pnpm dev` (user normally launches via `시작하기.command`).
 - `pnpm build` emits one Turbopack NFT warning (whole-project tracing, via
   `lib/verify.ts`). Known and deliberately not fixed — job paths are built from
   runtime ids so they can't be traced statically, and the trace list is only
