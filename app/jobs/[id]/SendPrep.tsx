@@ -94,6 +94,9 @@ export default function SendPrep({
           message: `hosted/ 에 ${data.created.length}개 생성 (이미지 ${replaced}건 치환)`,
           color: "teal",
         });
+        if (data.warning) {
+          notifications.show({ message: data.warning, color: "yellow", autoClose: 10_000 });
+        }
         onCreated();
       }
     } finally {

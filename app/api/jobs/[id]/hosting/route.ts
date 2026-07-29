@@ -66,14 +66,28 @@ export async function POST(
   await mkdir(hostedDir, { recursive: true });
 
   const created: Array<{ rel: string; replaced: number }> = [];
+  const allFiles = new Set<string>();
   for (const artifact of htmlArtifacts) {
     const html = await readFile(path.join(base, artifact.rel), "utf8");
-    const { html: hosted, replaced } = applyCdnTemplate(html, template, folder);
+    const { html: hosted, replaced, files } = applyCdnTemplate(html, template, folder);
     if (replaced === 0) continue; // 상대경로 이미지가 없는 파일(셀프컨테인 등)은 건너뜀
+    for (const f of files) allFiles.add(f);
     await writeFile(path.join(hostedDir, artifact.rel), hosted);
     created.push({ rel: `hosted/${artifact.rel}`, replaced });
   }
 
+  // '__'는 사용자 CDN(IIIF)에서 폴더 구분자 — 파일명에 섞여 있으면 의도치 않은
+  // 하위 폴더로 해석될 수 있어 경고한다 (템플릿이 '__' 규칙을 쓸 때만).
+  const doubleUnderscore = template.includes("__")
+    ? [...allFiles].filter((f) => f.includes("__"))
+    : [];
+
   saveSettings({ cdnTemplate: template });
-  return NextResponse.json({ created });
+  return NextResponse.json({
+    created,
+    warning:
+      doubleUnderscore.length > 0
+        ? `파일명에 '__'가 포함돼 CDN 폴더 구분자와 충돌할 수 있습니다: ${doubleUnderscore.join(", ")}`
+        : undefined,
+  });
 }
