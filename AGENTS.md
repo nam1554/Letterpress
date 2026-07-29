@@ -57,7 +57,11 @@ no auth, single user, filesystem is the database.
   nothing outside the mock provider.
 - **Settings** (`lib/settings.ts` → `data/settings.json`, edited via the ⚙️
   panel): default provider, concurrency cap, job timeout, Figma REST fallback
-  token. Precedence: settings.json > env > default. Keys/tokens are validated
+  token. The REST fallback is NOT a substitute for MCP on free Figma files:
+  limits follow the plan the FILE lives in, and a Starter-plan file caps at
+  6 requests/month (one conversion spends several), so it only works on
+  Professional+ files. That path also has no real-run record — the PASS 97%
+  numbers are all from the MCP path. Precedence: settings.json > env > default. Keys/tokens are validated
   against the real APIs at save time (`lib/setup.ts` validators).
 - **Backend setup** (`lib/setup.ts`, 🔌 panel on home): per-backend deep
   diagnosis — CLI install, auth, Figma access via `mcp list` parsing (pure

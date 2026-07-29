@@ -190,7 +190,7 @@ export default function SettingsPanel({ onSaved }: { onSaved?: () => void }) {
             />
             <Row
               label="Figma 토큰 (선택)"
-              hint="Figma MCP를 못 쓰는 환경(무료 시트 등)용 REST API 폴백. figma.com → 설정 → Security → Personal access tokens에서 발급해 직접 붙여넣으세요. 저장 시 즉시 검증되며, 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다."
+              hint="Figma MCP를 못 쓰는 환경용 REST API 폴백. figma.com → 설정 → Security → Personal access tokens에서 발급해 직접 붙여넣으세요. 저장 시 즉시 검증되며, 이 컴퓨터의 data/settings.json(0600)에만 저장됩니다. ⚠️ 한도는 디자인 파일이 속한 플랜을 따릅니다 — 무료(Starter) 플랜 파일은 월 6회 제한이라 사실상 쓸 수 없고, Professional 이상 파일에서만 실용적입니다."
               control={
                 <Group gap="xs" wrap="nowrap">
                   {view.figmaTokenSet && !figmaToken && (
