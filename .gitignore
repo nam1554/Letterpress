@@ -45,5 +45,3 @@ next-env.d.ts
 
 # 런처가 남기는 실행 기록 (비개발자 문의용)
 시작-기록.log
-
-data/logs
