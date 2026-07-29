@@ -7,8 +7,8 @@ Figma eDM 디자인 링크를 붙여넣으면 **AI 에이전트가 헤드리스�
 전용** 도구입니다. 서비스 배포용이 아닙니다. 백엔드는 Claude Code(기본) ·
 Gemini CLI · Codex CLI · Mock 중 선택할 수 있습니다.
 
-생성 파이프라인은 사용자 홈의 `figma-edm` 스킬(픽셀 검증 포함)을 그대로
-사용하며, 산출물은 실무 발송 패키지 형태(700px 테이블 레이아웃, `images/`
+생성 파이프라인은 이 저장소에 포함된 `figma-edm` 스킬(`skills/figma-edm`,
+픽셀 검증 포함)을 그대로 사용하며, 산출물은 실무 발송 패키지 형태(700px 테이블 레이아웃, `images/`
 상대경로, 반응형 변형, base64 자립형 프리뷰)입니다.
 
 ## 빠른 시작 (3줄 요약)
@@ -20,20 +20,31 @@ Gemini CLI · Codex CLI · Mock 중 선택할 수 있습니다.
 
 ## 팀원 온보딩 (처음 받은 사람용)
 
-이 도구는 각자의 머신에서 각자의 Claude 구독으로 실행됩니다. 필요한 것:
+이 도구는 각자의 머신에서 각자의 Claude 구독으로 실행됩니다.
 
-1. **Claude Code CLI** — 설치 후 `claude` 실행해 로그인
-   (변환 1회당 본인 구독의 토큰을 사용합니다. 통상 10~20분 소요)
-2. **figma-edm 스킬** — `~/.claude/skills/figma-edm` 에 있어야 합니다
-   (스킬 저장소를 클론 후 심링크: `ln -s <repo>/figma-edm ~/.claude/skills/figma-edm`)
-3. **Figma MCP 연결** — Claude Code에 claude.ai Figma 커넥터가 연결·로그인돼
-   있어야 합니다 (`claude` 대화에서 Figma 링크가 읽히는지 확인)
-4. **Google Chrome** — 픽셀 검증(compare.py)이 헤드리스 Chrome을 사용
-5. **Python 의존성** — `python3 -m pip install pillow numpy fonttools brotli`
-6. **Node 20+ / pnpm** — 앱 실행용
+**직접 하셔야 하는 것은 두 가지뿐입니다:**
 
-홈 화면 상단의 **환경 점검 배너**가 1·2·4·5를 자동 진단해 주고, **🔌 백엔드
-연동 패널**이 백엔드별로 설치 → 인증 → Figma 접근을 단계별로 점검해 줍니다.
+1. **Claude Code CLI 설치 + 로그인** — 설치 후 `claude`를 한 번 실행해
+   로그인하세요 (변환 1회당 본인 구독의 토큰을 사용합니다. 통상 10~20분).
+2. **Figma 연결** — Claude Code에 claude.ai Figma 커넥터가 연결·로그인돼
+   있어야 합니다 (`claude` 대화에서 Figma 링크가 읽히면 정상).
+
+**나머지는 `시작하기.command`가 처리합니다:**
+
+- Node.js가 없거나 버전이 낮으면 → 설치 방법을 화면에 안내하고 다운로드
+  페이지를 열어 줍니다 (Homebrew가 있으면 물어본 뒤 바로 설치)
+- pnpm(패키지 관리자) → 없으면 자동 설치
+- 앱 의존성 설치·빌드 → 첫 실행과 코드 변경 시 자동
+- 3000번 포트가 사용 중이면 → 빈 포트를 찾아 자동으로 그쪽에서 실행
+- Google Chrome / 파이썬 패키지(픽셀 검증용) → 빠졌으면 알려주고, 파이썬
+  패키지는 물어본 뒤 설치까지 해 줍니다
+
+> `figma-edm` 스킬은 이 저장소 안에 포함돼 있습니다(`skills/figma-edm`).
+> 예전처럼 `~/.claude/skills/`에 따로 두거나 심링크를 만들 필요가 없습니다.
+
+홈 화면 상단의 **환경 점검 배너**가 위 항목들을 다시 한 번 진단해 주고,
+**🔌 백엔드 연동 패널**이 백엔드별로 설치 → 인증 → Figma 접근을 단계별로
+점검해 줍니다.
 막힌 단계에는 해결 명령이 복사 버튼과 함께 표시되고, **"연동 테스트"** 버튼으로
 실제 CLI를 초소형 프롬프트로 실행해 몇 초 만에 "진짜 동작함"을 확인할 수
 있습니다 (10분짜리 실제 변환을 돌려볼 필요 없음).
@@ -134,7 +145,8 @@ Figma 토큰과 Gemini API 키는 **저장하는 순간 실제 API로 검증**�
 | `claude 실행 실패: spawn claude ENOENT` | CLI 미설치 또는 PATH 문제 — `which claude` 확인, 필요 시 `CLAUDE_BIN=/절대/경로` env 지정 |
 | Gemini 로그인 화면에서 `IneligibleTierError` | 구글이 무료 로그인 티어를 중단(2026-07) — 로그인 대신 API 키를 🔌 백엔드 연동 카드에 입력 |
 | Gemini 503 "model is overloaded" | 무료 키에서 pro 모델 용량 제한 — 기본값(`gemini-flash-latest`)을 그대로 쓰거나 시간대를 바꿔 재시도 |
-| 시작하기.command: "포트 3000 사용 중" | 이미 앱이 떠 있거나 다른 프로그램이 점유 — 기존 창을 닫거나 `PORT=3001 ./시작하기.command` |
+| 시작하기.command 창에 "3001번으로 시작합니다" | 정상입니다 — 3000번을 다른 프로그램이 써서 빈 포트로 자동 전환한 것 (브라우저도 그 주소로 열립니다) |
+| 시작하기.command가 설치/빌드에서 멈춤 | 폴더에 생기는 `시작-기록.log`를 관리자에게 보내주세요 (실패 원인이 그대로 담깁니다) |
 | 잡이 `failed: 서버가 재시작되어…` | dev 서버 재시작으로 중단된 잡 — "다시 실행" 버튼으로 재실행 |
 | 픽셀 검증에서 계속 FAIL 반복 | 대부분 스킬 `references/gotchas.md`에 있는 케이스 — 로그의 compare 출력 확인 |
 | 다운로드 zip에 파일이 없음 | 잡이 succeeded 인지 확인 — 실패한 잡은 output/ 이 비어 있을 수 있음 |
@@ -165,7 +177,7 @@ env)로 지정합니다 (`claude-code` | `gemini` | `codex` | `mock`).
 ## 테스트
 
 ```bash
-pnpm vitest run     # 유닛 테스트 40개 (URL/파서/잡 스토어/CDN 치환/연동 진단)
+pnpm vitest run     # 유닛 테스트 (URL/파서/잡 스토어/품질 게이트/CDN 치환/연동 진단)
 
 # 실제 CLI spawn 스모크 (각 백엔드, 토큰 소량 소모 — 옵트인)
 RUN_CLAUDE_SMOKE=1 pnpm vitest run lib/providers/claude-code.smoke.test.ts

@@ -74,7 +74,8 @@ async function checkPythonDeps(): Promise<HealthCheck> {
       name: "Python 의존성 (PIL·numpy·fonttools·brotli)",
       ok: false,
       detail: "import 실패",
-      hint: "python3 -m pip install pillow numpy fonttools brotli",
+      // 터미널이 낯선 사용자를 위해: 런처가 물어보고 대신 설치해 준다.
+      hint: "시작하기.command를 다시 실행하면 설치 여부를 물어봅니다. 직접 하려면: python3 -m pip install pillow numpy fonttools brotli",
     };
   }
 }
