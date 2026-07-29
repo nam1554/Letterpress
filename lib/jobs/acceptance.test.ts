@@ -530,6 +530,32 @@ describe("checkAcceptance", () => {
     expect(findScreenshotLikeImages(hero + emoji)).toEqual([]);
   });
 
+  it("passes a realistic responsive build with every risky idiom at once", async () => {
+    // 실전 관용구를 한 산출물에 모아 오탐을 막는 회귀 테스트 — 반응형 이중
+    // 아트(모바일 쪽 display:none), 이미지 여백 제거용 font-size:0 셀,
+    // `width:100%;max-width:300px` 2단 칼럼, height 속성 없는 전폭 이미지.
+    const job = await fullJob();
+    const out = outputDir(job.id);
+    await writeFile(path.join(workDir(job.id), "figma_full.png"), fakePng(700, 2207));
+    await writeFile(path.join(out, "images", "hero.png"), fakePng(1400, 770));
+    await writeFile(path.join(out, "images", "card.png"), fakePng(600, 1400));
+    const html = `<html><head><style>
+      .mobile{display:none}
+      @media only screen and (max-width:600px){.desktop{display:none}.mobile{display:block}}
+      .card{width:100%;max-width:300px}
+      </style></head><body><table>
+      <tr><td style="font-size:0;line-height:0"><img class="desktop" src="images/hero.png" width="700" style="height:auto"></td></tr>
+      <tr><td class="mobile"><img src="images/hero.png" width="100%" style="height:auto"></td></tr>
+      <tr><td><p>${"보이는본문텍스트".repeat(20)}</p></td></tr>
+      <tr><td><img class="card" src="images/card.png" style="height:auto"></td></tr>
+      </table></body></html>`;
+    await writeFile(path.join(out, "edm_figma.html"), html);
+    await writeFile(path.join(out, "edm_responsive.html"), html);
+    const a = await checkAcceptance(job.id);
+    expect(a.failures).toEqual([]);
+    expect(a.ok).toBe(true);
+  });
+
   it("only warns when images/ is empty", async () => {
     const job = await fullJob();
     await rm(path.join(outputDir(job.id), "images"), { recursive: true });
