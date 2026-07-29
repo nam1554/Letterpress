@@ -60,6 +60,13 @@ Requirements:
   flat image of the section's node (screenshot / REST render at native width)
   and re-verify. A flat section image is always acceptable; endless CSS
   tweaking is not.
+- Transparency: standalone illustrations/logos/icons must be fetched from the
+  ORIGINAL image source (asset export / raw image fills; REST:
+  GET /v1/files/:fileKey/images), NEVER via node screenshots — screenshots
+  flatten the canvas background into the asset and pixel-verify cannot detect
+  it. After downloading, alpha-check each non-flat asset (PIL: % of pixels
+  with alpha<255) and re-fetch from the source if an asset that is transparent
+  in Figma reports 0%.
 ${figmaAccessClause()}
 - Print short progress lines as you complete each pipeline step.
 - Finish with a one-paragraph summary of what was produced and the verify result.${repairClause(task)}`;
