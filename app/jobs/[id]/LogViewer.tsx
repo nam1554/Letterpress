@@ -11,12 +11,16 @@ export interface AgentEvent {
   seq?: number;
 }
 
-// 웜 터미널 서피스에 맞춘 로그 색 (클로드 스타일 테라코타 액센트).
+/**
+ * 웜 터미널 서피스에 맞춘 로그 색. 테마의 저채도 어스톤 팔레트에서 다크 서피스용
+ * shade(3~4)를 가져와, 화면 나머지와 같은 팔레트로 읽히게 한다. 예전 error 색
+ * (#f28b82)은 Mantine 기본 계열의 고채도 살몬이라 여기서만 튀었다.
+ */
 const LOG_COLOR: Record<string, string> = {
-  status: "#e0a382",
-  tool: "#8a867a",
-  error: "#f28b82",
-  done: "#a5c496",
+  status: "#D8A583", // clay.4
+  tool: "#948D7D", // warm gray.5
+  error: "#D08E7F", // oxblood.3
+  done: "#ADBE93", // sage.3
   log: "var(--terminal-ink)",
 };
 
@@ -56,12 +60,12 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
         stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       }}
       style={{
-        height: 288,
+        height: 320,
         overflowY: "auto",
-        marginTop: 8,
+        // Section이 flush로 렌더하고 모서리를 잘라내므로 여기서 radius·margin을
+        // 갖지 않는다 — 터미널이 카드 안쪽 폭을 그대로 채운다.
         background: "var(--terminal-bg)",
         color: "var(--terminal-ink)",
-        borderRadius: "var(--mantine-radius-md)",
         padding: "var(--mantine-spacing-md)",
       }}
     >

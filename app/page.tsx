@@ -6,13 +6,10 @@ import useSWR, { mutate } from "swr";
 import {
   Alert,
   Anchor,
-  Badge,
   Button,
   Checkbox,
   Container,
-  Divider,
   Group,
-  Paper,
   SegmentedControl,
   Select,
   Stack,
@@ -25,9 +22,14 @@ import { notifications } from "@mantine/notifications";
 import SettingsPanel from "./components/SettingsPanel";
 import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
 import DiagnosticsLink from "./components/DiagnosticsLink";
+import AppHeader from "./components/AppHeader";
+import Section from "./components/Section";
+import StatusDot from "./components/StatusDot";
+import { IconAlert, IconCheck } from "./components/icons";
 import { parseFigmaUrl } from "@/lib/figma";
 import { fetcher } from "./lib/fetcher";
 import { figmaLabel, formatBytes, relativeTime } from "./lib/format";
+import { PAGE_WIDTH, PROSE_WIDTH } from "./lib/dimensions";
 import { sendJson } from "./lib/request";
 
 interface Job {
@@ -58,12 +60,12 @@ interface JobsResponse {
   defaultProvider: string;
 }
 
-const STATUS_BADGE: Record<string, { color: string; label: string }> = {
-  queued: { color: "gray", label: "대기" },
-  running: { color: "blue", label: "실행 중" },
-  succeeded: { color: "green", label: "완료" },
-  failed: { color: "red", label: "실패" },
-};
+/**
+ * 히스토리 행 그리드. 이전엔 Group + flex라서 크기·시간 열이 줄마다 다른
+ * 위치에 놓여 눈에 거슬렸다 — 열 폭을 고정해 세로로 정렬한다.
+ * (선택 · 상태 · 제목 · 용량 · 시간 · 액션)
+ */
+const ROW_GRID = "20px 76px minmax(0,1fr) 68px 72px 96px";
 
 export default function Home() {
   const router = useRouter();
@@ -265,263 +267,331 @@ export default function Home() {
   }
 
   return (
-    <Container size={680} py={56}>
-      <Group align="baseline" gap="sm">
-        <Title order={1} size={28}>
-          Letterpress
-        </Title>
-        <Text c="dimmed" size="sm">
-          Figma → eDM HTML
-        </Text>
-      </Group>
-      <Text c="dimmed" size="sm" mt={6}>
-        Figma 디자인 링크를 붙여넣으면 에이전트가 픽셀 검증까지 마친 이메일
-        HTML을 만들어 드립니다. 완료 후 HTML + 이미지 폴더를 zip으로 받으세요.
-      </Text>
-
-      {requiredFails.length > 0 && (
-        <Alert
-          data-testid="health-banner"
-          color="yellow"
-          variant="light"
-          mt="lg"
-          title="환경 점검이 필요합니다 — 변환이 실패할 수 있어요"
-        >
-          <Stack gap={6}>
-            {requiredFails.map((c) => (
-              <Text key={c.name} size="sm">
-                <b>{c.name}</b>: {c.detail}
-                {c.hint && (
-                  <Text component="span" display="block" size="xs" c="dimmed">
-                    → {c.hint}
-                  </Text>
-                )}
+    <>
+      <AppHeader
+        right={
+          <>
+            {health && (
+              <Text
+                data-testid={requiredFails.length === 0 ? "health-ok" : undefined}
+                size="xs"
+                fw={500}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color:
+                    requiredFails.length === 0
+                      ? "var(--mantine-color-green-light-color)"
+                      : "var(--mantine-color-yellow-light-color)",
+                }}
+              >
+                {requiredFails.length === 0 ? <IconCheck size={13} /> : <IconAlert size={13} />}
+                {requiredFails.length === 0 ? "환경 정상" : `환경 점검 ${requiredFails.length}건`}
               </Text>
-            ))}
-            <Anchor component="button" size="xs" onClick={recheckHealth} data-testid="health-recheck">
-              {recheckingHealth ? "점검 중…" : "다시 점검"}
-            </Anchor>
-          </Stack>
-        </Alert>
-      )}
-      {health && requiredFails.length === 0 && (
-        <Group gap={8} mt="md">
-          <Text data-testid="health-ok" size="xs" c="green">
-            ✓ 환경 점검 통과 — Claude CLI · figma-edm 스킬 · Chrome · Python
-          </Text>
-          <Anchor component="button" size="xs" c="dimmed" onClick={recheckHealth} data-testid="health-recheck">
-            {recheckingHealth ? "점검 중…" : "다시 점검"}
-          </Anchor>
-        </Group>
-      )}
-
-      {/* 처음 받은 사람이 "이걸 어떻게 하라는거야"가 되지 않도록 —
-          아직 작업이 없고 환경도 안 갖춰졌을 때만 보인다. */}
-      {jobs.length === 0 && (requiredFails.length > 0 || notReady) && (
-        <Paper withBorder p="lg" mt="xl" data-testid="first-run">
-          <Text fw={600} size="sm">
-            처음이신가요? 순서는 이렇습니다
-          </Text>
-          <Stack gap={6} mt="sm">
-            <Text size="sm">
-              <b>1.</b> 터미널에서 Claude Code CLI를 설치하고 <code>claude</code>를 한 번
-              실행해 로그인합니다 — 명령은 아래 <b>🔌 백엔드 연동</b>에서 복사할 수 있어요.
-            </Text>
-            <Text size="sm">
-              <b>2.</b> <code>claude</code> 대화에서 Figma 링크가 읽히는지 확인합니다
-              (claude.ai Figma 커넥터 연결). 무료 Figma 시트라면 ⚙️ 설정에 Figma 토큰을
-              넣어도 됩니다.
-            </Text>
-            <Text size="sm">
-              <b>3.</b> 위 두 가지가 초록불이 되면 Figma 디자인 링크를 붙여넣고 실행하세요.
-              변환은 10~20분 걸립니다.
-            </Text>
-            <Text size="xs" c="dimmed">
-              지금 당장 흐름만 보고 싶다면 아래 <b>샘플로 체험해보기</b>를 누르세요 — 환경
-              없이도 결과물 다운로드까지 그대로 볼 수 있습니다. 어디서 막히든,
-              <b>작업 히스토리</b> 오른쪽의 <b>문제 신고용 파일 내려받기</b>를 눌러 받은 파일을
-              담당자에게 보내주시면 됩니다 — 무엇이 문제인지 직접 알아낼 필요 없습니다.
-            </Text>
-          </Stack>
-        </Paper>
-      )}
-
-      <Paper withBorder p="lg" mt="xl" component="form" onSubmit={submit}>
-        <TextInput
-          data-testid="figma-url"
-          label="Figma 디자인 URL"
-          placeholder="https://www.figma.com/design/…?node-id=2343-115"
-          required
-          value={figmaUrl}
-          onChange={(e) => setFigmaUrl(e.currentTarget.value)}
-          error={
-            parsed === null
-              ? "Figma 디자인 URL 형식이 아닙니다 (figma.com/design/… 링크를 붙여넣으세요)"
-              : undefined
-          }
-          styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
-        />
-        {parsed && (
-          <Text data-testid="url-parsed" size="xs" c="green" mt={6}>
-            ✓ {parsed.title || parsed.fileKey}
-            {parsed.nodeId
-              ? ` · 노드 ${parsed.nodeId.replace(/:/g, "-")}`
-              : " · 노드 미지정 (URL에 node-id 권장)"}
-          </Text>
-        )}
-        <Group mt="md" gap="sm">
-          <Select
-            data-testid="provider"
-            value={provider}
-            onChange={setProviderChoice}
-            data={providers.map((p) => {
-              const b = backends?.find((x) => x.id === p.id);
-              return {
-                value: p.id,
-                label: b && !b.ready ? `${p.label} · 설정 필요` : p.label,
-              };
-            })}
-            allowDeselect={false}
-            w={280}
-          />
-          <Button
-            data-testid="submit"
-            type="submit"
-            loading={submitting}
-            disabled={parsed === null}
-            color={notReady ? "yellow" : undefined}
-          >
-            {notReady ? (confirmUnready ? "실패해도 실행" : "준비 안 됨 — 그래도 실행?") : "HTML 만들기"}
-          </Button>
-        </Group>
-        {notReady && (
-          <Alert color="yellow" variant="light" mt="sm" p="xs" data-testid="provider-warning">
-            <Text size="xs">
-              선택한 백엔드가 아직 준비되지 않았습니다 — 아래 <b>🔌 백엔드 연동</b>에서 남은
-              단계를 확인하세요. 지금 실행하면 대부분 실패합니다. 환경 없이 흐름만 보고
-              싶다면 아래 <b>샘플로 체험해보기</b>를 쓰세요.
-            </Text>
-          </Alert>
-        )}
-        {error && (
-          <Text c="red" size="sm" mt="sm">
-            {error}
-          </Text>
-        )}
-      </Paper>
-
-      <BackendSetup backends={backends} onRefresh={(force) => void refreshSetup(force)} />
-
-      <SettingsPanel
-        onSaved={() => {
-          void mutate("/api/jobs");
-          void refreshSetup(true);
-        }}
-      />
-
-      <Group justify="space-between" align="baseline" mt={48} mb="sm">
-        <Title order={2} size="h4">
-          작업 히스토리
-        </Title>
-        <Group gap="sm">
-          {jobs.length > 0 && (
-            <Text size="xs" c="dimmed" data-testid="disk-total">
-              {jobs.length}건 · 총 {formatBytes(totalBytes)}
-            </Text>
-          )}
-          {jobs.some((j) => j.status === "succeeded" || j.status === "failed") && (
+            )}
             <Anchor
               component="button"
+              type="button"
               size="xs"
-              c="red"
-              onClick={clearHistory}
-              data-testid="clear-history"
+              c="dimmed"
+              onClick={recheckHealth}
+              data-testid="health-recheck"
             >
-              {confirmClear ? "정말 모두 삭제?" : "완료된 작업 모두 삭제"}
+              {recheckingHealth ? "점검 중…" : "다시 점검"}
             </Anchor>
-          )}
-          {/* 문제가 났을 때 폴더를 뒤지지 않고 그대로 전달할 수 있는 파일 한 개. */}
-          <DiagnosticsLink />
-        </Group>
-      </Group>
+          </>
+        }
+      />
 
-      {jobs.length > 0 && (
-        <Group gap="sm" mb="sm" wrap="wrap">
-          <SegmentedControl
-            data-testid="status-filter"
-            size="xs"
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v as StatusFilter)}
-            data={[
-              { value: "all", label: "전체" },
-              { value: "running", label: "실행 중" },
-              { value: "succeeded", label: "완료" },
-              { value: "failed", label: "실패" },
-            ]}
-          />
-          <TextInput
-            data-testid="job-search"
-            size="xs"
-            w={200}
-            placeholder="id · URL · 백엔드 · 요약 검색"
-            value={query}
-            onChange={(e) => setQuery(e.currentTarget.value)}
-          />
-          {jobs.some((j) => j.status === "failed") && (
-            <Anchor component="button" size="xs" onClick={selectFailed} data-testid="select-failed">
-              실패한 잡 선택
-            </Anchor>
-          )}
-          {selectedIds.length > 0 && (
-            <Button
-              data-testid="delete-selected"
-              color="red"
-              variant="light"
-              size="compact-xs"
-              onClick={deleteSelected}
-            >
-              {deleteArmed
-                ? `정말 ${selectedIds.length}건 삭제?`
-                : `선택 삭제 (${selectedIds.length})`}
-            </Button>
-          )}
-        </Group>
-      )}
+      <Container size={PAGE_WIDTH} pt={40} pb={72}>
+        <Title order={1} style={{ letterSpacing: "-0.015em" }}>
+          Figma 디자인을 이메일 HTML로
+        </Title>
+        <Text c="dimmed" size="sm" mt={8} maw={PROSE_WIDTH}>
+          링크를 붙여넣으면 에이전트가 픽셀 검증까지 마친 이메일 HTML을 만들어
+          드립니다. 완료 후 HTML + 이미지 폴더를 zip으로 받으세요.
+        </Text>
 
-      <Paper withBorder>
-        {jobs.length === 0 && (
-          <Group p="lg" gap="sm">
-            <Text size="sm" c="dimmed">
-              아직 작업이 없습니다.
-            </Text>
-            <Button
-              data-testid="try-mock"
-              variant="light"
-              size="xs"
-              loading={submitting}
-              onClick={() =>
-                createAndGo(
-                  "https://www.figma.com/design/EXAMPLEfileKey12345678/?node-id=2343-115",
-                  "mock",
-                )
+        {requiredFails.length > 0 && (
+          <Alert
+            data-testid="health-banner"
+            color="yellow"
+            variant="light"
+            mt="lg"
+            icon={<IconAlert size={18} />}
+            title="환경 점검이 필요합니다 — 변환이 실패할 수 있어요"
+          >
+            <Stack gap={6}>
+              {requiredFails.map((c) => (
+                <Text key={c.name} size="sm">
+                  <b>{c.name}</b>: {c.detail}
+                  {c.hint && (
+                    <Text component="span" display="block" size="xs" c="dimmed">
+                      → {c.hint}
+                    </Text>
+                  )}
+                </Text>
+              ))}
+            </Stack>
+          </Alert>
+        )}
+
+        {/* 처음 받은 사람이 "이걸 어떻게 하라는거야"가 되지 않도록 —
+            아직 작업이 없고 환경도 안 갖춰졌을 때만 보인다. */}
+        {jobs.length === 0 && (requiredFails.length > 0 || notReady) && (
+          <Section title="처음이신가요? 순서는 이렇습니다" testId="first-run">
+            <Stack gap={10} maw={PROSE_WIDTH}>
+              <Text size="sm">
+                <b>1.</b> 터미널에서 Claude Code CLI를 설치하고 <code>claude</code>를 한 번
+                실행해 로그인합니다 — 명령은 아래 <b>백엔드 연동</b>에서 복사할 수 있어요.
+              </Text>
+              <Text size="sm">
+                <b>2.</b> <code>claude</code> 대화에서 Figma 링크가 읽히는지 확인합니다
+                (claude.ai Figma 커넥터 연결). 무료 Figma 시트라면 <b>설정</b>에 Figma 토큰을
+                넣어도 됩니다.
+              </Text>
+              <Text size="sm">
+                <b>3.</b> 위 두 가지가 초록불이 되면 Figma 디자인 링크를 붙여넣고 실행하세요.
+                변환은 10~20분 걸립니다.
+              </Text>
+              <Text size="xs" c="dimmed">
+                지금 당장 흐름만 보고 싶다면 아래 <b>샘플로 체험해보기</b>를 누르세요 — 환경
+                없이도 결과물 다운로드까지 그대로 볼 수 있습니다. 어디서 막히든,{" "}
+                <b>문제 신고용 파일 내려받기</b>를 눌러 받은 파일을 담당자에게 보내주시면
+                됩니다 — 무엇이 문제인지 직접 알아낼 필요 없습니다.
+              </Text>
+            </Stack>
+          </Section>
+        )}
+
+        <Section title="새 변환" mt="xl">
+          <form onSubmit={submit}>
+            <TextInput
+              data-testid="figma-url"
+              label="Figma 디자인 URL"
+              placeholder="https://www.figma.com/design/…?node-id=2343-115"
+              required
+              value={figmaUrl}
+              onChange={(e) => setFigmaUrl(e.currentTarget.value)}
+              error={
+                parsed === null
+                  ? "Figma 디자인 URL 형식이 아닙니다 (figma.com/design/… 링크를 붙여넣으세요)"
+                  : undefined
               }
+              styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
+            />
+            {parsed && (
+              <Text
+                data-testid="url-parsed"
+                size="xs"
+                mt={6}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: "var(--mantine-color-green-light-color)",
+                }}
+              >
+                <IconCheck size={13} />
+                {parsed.title || parsed.fileKey}
+                {parsed.nodeId
+                  ? ` · 노드 ${parsed.nodeId.replace(/:/g, "-")}`
+                  : " · 노드 미지정 (URL에 node-id 권장)"}
+              </Text>
+            )}
+            <Group mt="md" gap="sm">
+              <Select
+                data-testid="provider"
+                value={provider}
+                onChange={setProviderChoice}
+                data={providers.map((p) => {
+                  const b = backends?.find((x) => x.id === p.id);
+                  return {
+                    value: p.id,
+                    label: b && !b.ready ? `${p.label} · 설정 필요` : p.label,
+                  };
+                })}
+                allowDeselect={false}
+                w={280}
+              />
+              <Button
+                data-testid="submit"
+                type="submit"
+                loading={submitting}
+                disabled={parsed === null}
+                color={notReady ? "yellow" : undefined}
+              >
+                {notReady
+                  ? confirmUnready
+                    ? "실패해도 실행"
+                    : "준비 안 됨 — 그래도 실행?"
+                  : "HTML 만들기"}
+              </Button>
+            </Group>
+            {notReady && (
+              <Alert
+                color="yellow"
+                variant="light"
+                mt="md"
+                p="sm"
+                data-testid="provider-warning"
+                icon={<IconAlert size={16} />}
+              >
+                <Text size="xs">
+                  선택한 백엔드가 아직 준비되지 않았습니다 — 아래 <b>백엔드 연동</b>에서 남은
+                  단계를 확인하세요. 지금 실행하면 대부분 실패합니다. 환경 없이 흐름만 보고
+                  싶다면 아래 <b>샘플로 체험해보기</b>를 쓰세요.
+                </Text>
+              </Alert>
+            )}
+            {error && (
+              <Text c="red" size="sm" mt="sm">
+                {error}
+              </Text>
+            )}
+          </form>
+        </Section>
+
+        <BackendSetup backends={backends} onRefresh={(force) => void refreshSetup(force)} />
+
+        <SettingsPanel
+          onSaved={() => {
+            void mutate("/api/jobs");
+            void refreshSetup(true);
+          }}
+        />
+
+        <Section
+          title="작업 히스토리"
+          mt="xl"
+          flush
+          right={
+            <>
+              {jobs.length > 0 && (
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  data-testid="disk-total"
+                  style={{ fontVariantNumeric: "tabular-nums" }}
+                >
+                  {jobs.length}건 · {formatBytes(totalBytes)}
+                </Text>
+              )}
+              {jobs.some((j) => j.status === "succeeded" || j.status === "failed") && (
+                <Anchor
+                  component="button"
+                  type="button"
+                  size="xs"
+                  c="dimmed"
+                  onClick={clearHistory}
+                  data-testid="clear-history"
+                >
+                  {confirmClear ? "정말 모두 삭제?" : "완료된 작업 삭제"}
+                </Anchor>
+              )}
+              <DiagnosticsLink />
+            </>
+          }
+        >
+          {jobs.length > 0 && (
+            <Group
+              gap="sm"
+              wrap="wrap"
+              px="lg"
+              py="sm"
+              style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
             >
-              샘플로 체험해보기 (토큰 소모 없음)
-            </Button>
-          </Group>
-        )}
-        {jobs.length > 0 && visibleJobs.length === 0 && (
-          <Text p="lg" size="sm" c="dimmed">
-            조건에 맞는 작업이 없습니다.
-          </Text>
-        )}
-        {visibleJobs.map((job, i) => {
-          const badge = STATUS_BADGE[job.status] ?? { color: "gray", label: job.status };
-          const deletable = job.status !== "running" && job.status !== "queued";
-          return (
-            <div key={job.id}>
-              {i > 0 && <Divider />}
-              <Group px="lg" py="sm" gap="sm" wrap="nowrap">
+              <SegmentedControl
+                data-testid="status-filter"
+                size="xs"
+                value={statusFilter}
+                onChange={(v) => setStatusFilter(v as StatusFilter)}
+                data={[
+                  { value: "all", label: "전체" },
+                  { value: "running", label: "실행 중" },
+                  { value: "succeeded", label: "완료" },
+                  { value: "failed", label: "실패" },
+                ]}
+              />
+              <TextInput
+                data-testid="job-search"
+                size="xs"
+                w={220}
+                placeholder="id · URL · 백엔드 · 요약 검색"
+                value={query}
+                onChange={(e) => setQuery(e.currentTarget.value)}
+              />
+              <div style={{ flex: 1 }} />
+              {jobs.some((j) => j.status === "failed") && (
+                <Anchor
+                  component="button"
+                  type="button"
+                  size="xs"
+                  onClick={selectFailed}
+                  data-testid="select-failed"
+                >
+                  실패한 잡 선택
+                </Anchor>
+              )}
+              {selectedIds.length > 0 && (
+                <Button
+                  data-testid="delete-selected"
+                  color="red"
+                  variant="light"
+                  size="compact-xs"
+                  onClick={deleteSelected}
+                >
+                  {deleteArmed
+                    ? `정말 ${selectedIds.length}건 삭제?`
+                    : `선택 삭제 (${selectedIds.length})`}
+                </Button>
+              )}
+            </Group>
+          )}
+
+          {jobs.length === 0 && (
+            <Group p="lg" gap="md">
+              <Text size="sm" c="dimmed">
+                아직 작업이 없습니다.
+              </Text>
+              <Button
+                data-testid="try-mock"
+                variant="light"
+                size="xs"
+                loading={submitting}
+                onClick={() =>
+                  createAndGo(
+                    "https://www.figma.com/design/EXAMPLEfileKey12345678/?node-id=2343-115",
+                    "mock",
+                  )
+                }
+              >
+                샘플로 체험해보기 (토큰 소모 없음)
+              </Button>
+            </Group>
+          )}
+          {jobs.length > 0 && visibleJobs.length === 0 && (
+            <Text p="lg" size="sm" c="dimmed">
+              조건에 맞는 작업이 없습니다.
+            </Text>
+          )}
+
+          {visibleJobs.map((job, i) => {
+            const deletable = job.status !== "running" && job.status !== "queued";
+            return (
+              <div
+                key={job.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: ROW_GRID,
+                  alignItems: "center",
+                  gap: "var(--mantine-spacing-sm)",
+                  padding: "10px var(--mantine-spacing-lg)",
+                  borderTop:
+                    i > 0 ? "1px solid var(--mantine-color-default-border)" : undefined,
+                }}
+              >
                 <Checkbox
                   size="xs"
                   aria-label="선택"
@@ -529,14 +599,12 @@ export default function Home() {
                   checked={selected.has(job.id)}
                   onChange={() => toggleSelected(job.id)}
                 />
-                <Badge color={badge.color} variant="light" size="sm" miw={64}>
-                  {badge.label}
-                </Badge>
+                <StatusDot status={job.status} />
                 <Anchor
                   href={`/jobs/${job.id}`}
                   underline="never"
                   c="inherit"
-                  style={{ flex: 1, minWidth: 0 }}
+                  style={{ minWidth: 0 }}
                 >
                   <Text size="sm" fw={500} truncate>
                     {job.title || figmaLabel(job.figmaUrl)}
@@ -546,31 +614,47 @@ export default function Home() {
                     {job.provider}
                   </Text>
                 </Anchor>
-                {job.diskBytes !== undefined && (
-                  <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {formatBytes(job.diskBytes)}
-                  </Text>
-                )}
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  ta="right"
+                  style={{ fontVariantNumeric: "tabular-nums" }}
+                >
+                  {job.diskBytes !== undefined ? formatBytes(job.diskBytes) : ""}
+                </Text>
                 <Tooltip label={new Date(job.createdAt).toLocaleString("ko-KR")}>
-                  <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    ta="right"
+                    style={{ fontVariantNumeric: "tabular-nums" }}
+                  >
                     {relativeTime(job.createdAt)}
                   </Text>
                 </Tooltip>
-                {job.status === "succeeded" && (
-                  <Anchor href={`/api/jobs/${job.id}/download`} size="xs" fw={500}>
-                    zip
-                  </Anchor>
-                )}
-                {job.status !== "running" && job.status !== "queued" && (
-                  <Anchor component="button" size="xs" c="red" onClick={() => removeJob(job.id)}>
-                    {confirmId === job.id ? "정말 삭제?" : "삭제"}
-                  </Anchor>
-                )}
-              </Group>
-            </div>
-          );
-        })}
-      </Paper>
-    </Container>
+                <Group gap="md" justify="flex-end" wrap="nowrap">
+                  {job.status === "succeeded" && (
+                    <Anchor href={`/api/jobs/${job.id}/download`} size="xs" fw={500}>
+                      zip
+                    </Anchor>
+                  )}
+                  {deletable && (
+                    <Anchor
+                      component="button"
+                      type="button"
+                      size="xs"
+                      c="dimmed"
+                      onClick={() => removeJob(job.id)}
+                    >
+                      {confirmId === job.id ? "정말?" : "삭제"}
+                    </Anchor>
+                  )}
+                </Group>
+              </div>
+            );
+          })}
+        </Section>
+      </Container>
+    </>
   );
 }

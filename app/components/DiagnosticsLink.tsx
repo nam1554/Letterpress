@@ -18,7 +18,7 @@ export default function DiagnosticsLink({ jobId }: { jobId?: string }) {
       multiline
       w={320}
       withArrow
-      // 위로 열면 바로 위의 ⚙️ 설정·🔌 백엔드 연동 패널을 덮는다.
+      // 위로 열면 바로 위의 설정·백엔드 연동 섹션을 덮는다.
       position="bottom-end"
       openDelay={100}
       events={{ hover: true, focus: true, touch: true }}

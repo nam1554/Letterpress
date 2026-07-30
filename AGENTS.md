@@ -249,6 +249,41 @@ no auth, single user, filesystem is the database.
   branch on theme). Job page split into
   `LogViewer` (virtualized via @tanstack/react-virtual) / `ArtifactList` /
   `SendPrep` / `VerifyReport`; job summaries render as markdown via Streamdown.
+  Shared shell: `app/components/Section.tsx` (the ONE section container — card +
+  17px serif title + right slot, `flush` for edge-to-edge lists, `collapsible`
+  in place of Accordion), `AppHeader.tsx`, `StatusDot.tsx` (the ONE status
+  treatment, backed by `app/lib/status.ts`), `icons.tsx` (inline SVG; no icon
+  library — emoji as iconography is banned, it renders differently per OS and
+  can't be aligned). Page width lives in `app/lib/dimensions.ts`.
+  A 2026-07-30 pass fixed four measured defects — the design doc
+  (`docs/superpowers/specs/2026-07-30-ui-refresh-design.md`) has the contrast
+  numbers. The traps behind them, each of which cost real debugging:
+  - **`--mantine-color-body` is the CARD color, not the page color.** Mantine
+    v7+ `Paper` reads its background from it. Overriding it to the cream page
+    color made every card identical to the page in BOTH schemes — the
+    documented "cream + ivory card" layering never existed. Page background is
+    painted on `body` in `globals.css`; that variable stays the card color.
+  - **Mantine's `gray` is blue-gray** (`#868e96` / `#ced4da`). Not overriding it
+    left every `c="dimmed"`, border, Divider and placeholder cool on a warm
+    cream page — the single biggest source of "the style feels off". `theme.ts`
+    now overrides `gray` (warm) AND `green`/`red`/`blue`/`yellow` (low-chroma
+    earth tones) so `color="green"` call sites need no edits. Failure red is
+    deliberately deeper than the clay accent so "실패" never reads as a CTA.
+  - **`Badge.extend({...})` does not exist at runtime in v9.** It's a
+    type-inference helper (`identity`) and blows up under Turbopack ESM with
+    `Badge.extend is not a function`. Types allow it, so `pnpm typecheck`
+    passes and the page 500s on first render. Use plain objects in
+    `theme.components`.
+  - **`Collapse` takes `expanded`, not `in`** (renamed in v9, and required).
+  - **Never name a file in `app/` after a reserved route convention** —
+    `app/lib/layout.ts` was treated as a route Layout and failed typecheck
+    (`Property 'default' is missing`). Also applies to `page`, `route`,
+    `loading`, `error`, `not-found`, `template`, `default`.
+  - **Korean needs `word-break: keep-all`** (set on `body`); the default breaks
+    mid-word ("이미지" → "이" / "미지"). And `ch` units are sized off the "0"
+    glyph, so they under-measure Korean badly — `PROSE_WIDTH` is px.
+  - `variant="default"` ignores `color`, so destructive buttons must use
+    `variant="light" color="red"` to look destructive at all.
 - **API validation**: route bodies are parsed with zod through
   `lib/api-body.ts` `readBody(req, schema)` — returns a ready 400 response on
   failure. Domain rules (provider existence, CDN template shape) stay in the

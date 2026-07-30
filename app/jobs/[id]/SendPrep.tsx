@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react";
 import useSWR, { mutate } from "swr";
-import { Button, Code, Group, Paper, Text, TextInput, Title } from "@mantine/core";
+import { Button, Code, Group, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fetcher } from "../../lib/fetcher";
 import { sendJson } from "../../lib/request";
+import Section from "../../components/Section";
+import { PROSE_WIDTH } from "../../lib/dimensions";
 
 interface HostingResult {
   created: Array<{ rel: string; replaced: number }>;
@@ -104,17 +106,14 @@ export default function SendPrep({
   }
 
   return (
-    <Paper withBorder p="lg" mt={36}>
-      <Title order={2} size="h6">
-        발송 준비 — CDN 교체본
-      </Title>
-      <Text size="xs" c="dimmed" mt={4}>
+    <Section title="발송 준비">
+      <Text size="xs" c="dimmed" maw={PROSE_WIDTH}>
         images/ 폴더를 CDN에 올린 뒤, 아래 URL 템플릿으로 <Code>src</Code>를 일괄
         치환한 발송용 HTML을 만듭니다. 플레이스홀더: <Code>{"{folder}"}</Code>
         (캠페인 폴더) · <Code>{"{file}"}</Code>(hero.jpg) · <Code>{"{name}"}</Code>
         (hero) · <Code>{"{ext}"}</Code>(jpg)
       </Text>
-      <Group mt="sm" gap="sm" wrap="nowrap" align="flex-start">
+      <Group mt="md" gap="sm" wrap="nowrap" align="flex-start">
         <TextInput
           data-testid="cdn-template"
           label="URL 템플릿 (설정에 저장돼 재사용)"
@@ -147,7 +146,7 @@ export default function SendPrep({
           예시 (hero.png): {example}
         </Text>
       )}
-      <Group mt="sm">
+      <Group mt="md">
         <Button
           data-testid="cdn-create"
           onClick={create}
@@ -157,6 +156,6 @@ export default function SendPrep({
           교체본 생성
         </Button>
       </Group>
-    </Paper>
+    </Section>
   );
 }

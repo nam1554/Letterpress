@@ -124,7 +124,7 @@ function figmaAccessStep(
       ...base,
       ok: false,
       detail: "figma MCP 미등록",
-      hint: "아래 명령으로 등록하거나, ⚙️ 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
+      hint: "아래 명령으로 등록하거나, 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
       command: registerCommand,
     };
   }
@@ -195,7 +195,7 @@ async function geminiSetup(): Promise<BackendSetup> {
     figmaAccessStep(
       mcp,
       "gemini mcp add --transport http figma https://mcp.figma.com/mcp",
-      "터미널에서 `gemini` 실행 후 /mcp 로 figma 재인증 — 또는 ⚙️ 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
+      "터미널에서 `gemini` 실행 후 /mcp 로 figma 재인증 — 또는 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
     ),
   ];
   return finish("gemini", steps);
@@ -234,7 +234,7 @@ async function codexSetup(): Promise<BackendSetup> {
     figmaAccessStep(
       mcp,
       "codex mcp add figma --url https://mcp.figma.com/mcp",
-      "`codex mcp add figma --url https://mcp.figma.com/mcp` 재등록(브라우저 OAuth) — 또는 ⚙️ 설정에 Figma 토큰 입력.",
+      "`codex mcp add figma --url https://mcp.figma.com/mcp` 재등록(브라우저 OAuth) — 또는 설정에 Figma 토큰 입력.",
     ),
   ];
   return finish("codex", steps);

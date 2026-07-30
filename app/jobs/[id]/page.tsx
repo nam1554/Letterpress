@@ -2,23 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-  Alert,
-  Anchor,
-  Badge,
-  Button,
-  Container,
-  Group,
-  Loader,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { Anchor, Button, Container, Group, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { Streamdown } from "streamdown";
 import { figmaLabel, formatElapsed } from "../../lib/format";
+import { PAGE_WIDTH, PROSE_WIDTH } from "../../lib/dimensions";
+import { isActive } from "../../lib/status";
 import { requestJson, sendJson } from "../../lib/request";
+import AppHeader from "../../components/AppHeader";
 import DiagnosticsLink from "../../components/DiagnosticsLink";
+import Section from "../../components/Section";
+import StatusDot from "../../components/StatusDot";
+import { IconBell, IconBellOff, IconDownload } from "../../components/icons";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
@@ -43,13 +38,6 @@ interface JobDetail {
   artifacts: Artifact[];
   verifyFiles?: string[];
 }
-
-const STATUS_BADGE: Record<string, { color: string; label: string }> = {
-  queued: { color: "gray", label: "대기" },
-  running: { color: "blue", label: "실행 중" },
-  succeeded: { color: "green", label: "완료" },
-  failed: { color: "red", label: "실패" },
-};
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
@@ -129,8 +117,8 @@ export default function JobPage() {
     });
   }, [job, notify]);
 
-  const running = !!job && (job.status === "queued" || job.status === "running");
-  // 실행 중 헤더에 보여줄 현재 단계 = 마지막 status 이벤트.
+  const running = isActive(job?.status);
+  // 실행 중 로그 헤더에 보여줄 현재 단계 = 마지막 status 이벤트.
   const currentStep = running
     ? events.filter((e) => e.type === "status").at(-1)?.text
     : undefined;
@@ -219,166 +207,187 @@ export default function JobPage() {
     router.push("/");
   }
 
-  const badge = job ? (STATUS_BADGE[job.status] ?? { color: "gray", label: job.status }) : null;
-
   return (
-    <Container size={680} py={56}>
-      <Anchor href="/" size="sm">
-        ← 홈으로
-      </Anchor>
+    <>
+      <AppHeader
+        breadcrumb={
+          <Text size="sm" c="dimmed" ff="monospace" truncate>
+            {id}
+          </Text>
+        }
+        right={job ? <StatusDot status={job.status} size="lg" testId="job-status" /> : undefined}
+      />
 
-      <Group mt="md" gap="sm" wrap="nowrap" align="center">
-        <Title order={1} size={22} style={{ flex: 1, minWidth: 0 }} lineClamp={1}>
+      <Container size={PAGE_WIDTH} pt={32} pb={72}>
+        <Anchor href="/" size="xs" c="dimmed">
+          ← 홈으로
+        </Anchor>
+
+        <Title order={1} mt={10} style={{ letterSpacing: "-0.015em" }} lineClamp={2}>
           {job?.title || (job ? figmaLabel(job.figmaUrl) : `작업 ${id}`)}
         </Title>
-        {badge && (
-          <Badge data-testid="job-status" color={badge.color} variant="light" size="lg">
-            {badge.label}
-          </Badge>
+
+        {job && (
+          <Text size="xs" c="dimmed" ff="monospace" mt={6} truncate>
+            {figmaLabel(job.figmaUrl)} · {job.provider} · {job.id}
+            {job.editOf && (
+              <>
+                {" · 원본 "}
+                <Anchor href={`/jobs/${job.editOf}`} size="xs" ff="monospace">
+                  {job.editOf}
+                </Anchor>
+              </>
+            )}
+          </Text>
         )}
-      </Group>
-      {job && (
-        <Text size="xs" c="dimmed" ff="monospace" mt={4} truncate>
-          {figmaLabel(job.figmaUrl)} · {job.provider} · 작업 {job.id}
-          {job.editOf && (
-            <>
-              {" · 원본 "}
-              <Anchor href={`/jobs/${job.editOf}`} size="xs" ff="monospace">
-                {job.editOf}
-              </Anchor>
-            </>
-          )}
-        </Text>
-      )}
-      {job?.instruction && (
-        <Text size="xs" c="dimmed" mt={2} lineClamp={2}>
-          수정 지시: {job.instruction}
-        </Text>
-      )}
-
-      {job && (
-        <Group mt="md" gap="xs">
-          <Text
-            data-testid="elapsed"
-            size="sm"
-            c="dimmed"
-            style={{ fontVariantNumeric: "tabular-nums" }}
-          >
-            소요 시간 {formatElapsed((job.finishedAt ?? now) - job.createdAt)}
+        {job?.instruction && (
+          <Text size="xs" c="dimmed" mt={4} maw={PROSE_WIDTH} lineClamp={2}>
+            수정 지시: {job.instruction}
           </Text>
-          <div style={{ flex: 1 }} />
-          {running && (
-            <>
-              <Button variant="default" size="compact-sm" onClick={toggleNotify}>
-                {notify ? "🔔 완료 시 알림 켜짐" : "🔕 완료 시 알림"}
-              </Button>
-              <Button
-                data-testid="cancel"
-                variant="outline"
-                color="red"
-                size="compact-sm"
-                onClick={cancel}
-              >
-                취소
-              </Button>
-            </>
-          )}
-          {!running && (
-            <>
-              {job.status === "failed" && (
-                <Button
-                  data-testid="resume"
-                  variant="filled"
-                  size="compact-sm"
-                  onClick={resume}
-                  title="중간 산출물을 재사용해 미완료 항목만 이어서 진행합니다"
-                >
-                  이어서 실행
-                </Button>
-              )}
-              <Button data-testid="rerun" variant="default" size="compact-sm" onClick={rerun}>
-                다시 실행
-              </Button>
-              <Button
-                data-testid="delete"
-                variant="outline"
-                color="red"
-                size="compact-sm"
-                onClick={remove}
-              >
-                {confirmDelete ? "정말 삭제할까요?" : "삭제"}
-              </Button>
-            </>
-          )}
-          {/* 실패했을 때 폴더를 뒤지지 않고 그대로 전달할 수 있는 파일 한 개. */}
-          <DiagnosticsLink jobId={job.id} />
-        </Group>
-      )}
+        )}
 
-      {running && currentStep && (
-        <Alert data-testid="current-step" mt="md" color="blue" variant="light" p="sm">
-          <Group gap="xs">
-            <Loader size="xs" color="blue" />
-            <Text size="sm">{currentStep}</Text>
-          </Group>
-        </Alert>
-      )}
-
-      <Text size="xs" fw={600} c="dimmed" mt={28}>
-        진행 로그
-      </Text>
-      <LogViewer events={events} />
-
-      {job?.summary && (
-        <Alert
-          mt="md"
-          p="sm"
-          variant="light"
-          color={job.status === "failed" ? "red" : job.status === "succeeded" ? "green" : "gray"}
-        >
-          {/* 에이전트 요약은 마크다운(표·볼드 포함) — Streamdown으로 렌더 */}
-          <div style={{ fontSize: 13, lineHeight: 1.65, overflowX: "auto" }}>
-            <Streamdown>{job.summary}</Streamdown>
-          </div>
-        </Alert>
-      )}
-
-      {!running && <VerifyReport jobId={id} files={verifyFiles} verify={job?.verify} />}
-
-      {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
-        <>
-          <Text size="xs" fw={600} c="dimmed" mt={28}>
-            부분 수정
-          </Text>
-          <Group mt={6} gap="xs" wrap="nowrap" align="flex-start">
-            <TextInput
-              data-testid="edit-instruction"
-              value={editText}
-              onChange={(e) => setEditText(e.currentTarget.value)}
-              placeholder='예: 헤드라인 "지금 시작하세요"를 "오늘 시작하세요"로 변경'
-              style={{ flex: 1 }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void requestEdit();
-              }}
-            />
-            <Button
-              data-testid="edit-run"
-              onClick={requestEdit}
-              loading={editing}
-              disabled={editText.trim().length < 4}
+        {job && (
+          <Group mt="lg" gap="sm" wrap="wrap">
+            <Text
+              data-testid="elapsed"
+              size="sm"
+              c="dimmed"
+              style={{ fontVariantNumeric: "tabular-nums" }}
             >
-              수정 실행
-            </Button>
+              소요 시간 {formatElapsed((job.finishedAt ?? now) - job.createdAt)}
+            </Text>
+            <div style={{ flex: 1 }} />
+            {running && (
+              <>
+                <Button
+                  variant="default"
+                  size="compact-sm"
+                  onClick={toggleNotify}
+                  leftSection={notify ? <IconBell size={14} /> : <IconBellOff size={14} />}
+                >
+                  {notify ? "완료 시 알림 켜짐" : "완료 시 알림"}
+                </Button>
+                {/* variant="default"는 color를 무시한다 — 파괴적 동작이 무해한
+                    버튼과 똑같이 보이면 안 되므로 light로 톤만 실어 준다. */}
+                <Button
+                  data-testid="cancel"
+                  variant="light"
+                  color="red"
+                  size="compact-sm"
+                  onClick={cancel}
+                >
+                  취소
+                </Button>
+              </>
+            )}
+            {!running && (
+              <>
+                {job.status === "failed" && (
+                  <Button
+                    data-testid="resume"
+                    size="compact-sm"
+                    onClick={resume}
+                    title="중간 산출물을 재사용해 미완료 항목만 이어서 진행합니다"
+                  >
+                    이어서 실행
+                  </Button>
+                )}
+                <Button data-testid="rerun" variant="default" size="compact-sm" onClick={rerun}>
+                  다시 실행
+                </Button>
+                <Button
+                  data-testid="delete"
+                  variant="light"
+                  color="red"
+                  size="compact-sm"
+                  onClick={remove}
+                >
+                  {confirmDelete ? "정말 삭제할까요?" : "삭제"}
+                </Button>
+              </>
+            )}
+            <DiagnosticsLink jobId={job.id} />
           </Group>
-          <Text size="xs" c="dimmed" mt={4}>
-            기존 빌드를 복사한 새 작업에서 지시한 변경만 적용하고 재검증합니다. 원본 작업은 그대로
-            남습니다.
-          </Text>
-          <SendPrep jobId={id} jobTitle={job?.title} onCreated={() => void refresh()} />
-        </>
-      )}
+        )}
 
-      <ArtifactList jobId={id} artifacts={artifacts} running={running} />
-    </Container>
+        <Section
+          title="진행 로그"
+          mt="xl"
+          flush
+          right={
+            currentStep ? (
+              <Text data-testid="current-step" size="xs" c="dimmed" truncate maw={340}>
+                {currentStep}
+              </Text>
+            ) : undefined
+          }
+        >
+          <LogViewer events={events} />
+        </Section>
+
+        {job?.summary && (
+          <Section title="결과 요약">
+            {/* 에이전트 요약은 마크다운(표·볼드 포함) — Streamdown으로 렌더 */}
+            <div style={{ fontSize: 13, lineHeight: 1.7, overflowX: "auto" }}>
+              <Streamdown>{job.summary}</Streamdown>
+            </div>
+          </Section>
+        )}
+
+        {!running && <VerifyReport jobId={id} files={verifyFiles} verify={job?.verify} />}
+
+        {job?.status === "succeeded" && artifacts.some((a) => a.rel.endsWith(".html")) && (
+          <>
+            <Section
+              title="부분 수정"
+              subtitle="기존 빌드를 복사한 새 작업에서 지시한 변경만 적용하고 재검증합니다. 원본 작업은 그대로 남습니다."
+            >
+              <Group gap="sm" wrap="nowrap" align="flex-start">
+                <TextInput
+                  data-testid="edit-instruction"
+                  value={editText}
+                  onChange={(e) => setEditText(e.currentTarget.value)}
+                  placeholder='예: 헤드라인 "지금 시작하세요"를 "오늘 시작하세요"로 변경'
+                  style={{ flex: 1 }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void requestEdit();
+                  }}
+                />
+                <Button
+                  data-testid="edit-run"
+                  onClick={requestEdit}
+                  loading={editing}
+                  disabled={editText.trim().length < 4}
+                >
+                  수정 실행
+                </Button>
+              </Group>
+            </Section>
+
+            <SendPrep jobId={id} jobTitle={job?.title} onCreated={() => void refresh()} />
+          </>
+        )}
+
+        <Section
+          title={`산출물 (${artifacts.length})`}
+          flush
+          right={
+            artifacts.length > 0 ? (
+              <Button
+                data-testid="download-zip"
+                component="a"
+                href={`/api/jobs/${id}/download`}
+                size="compact-sm"
+                leftSection={<IconDownload size={14} />}
+              >
+                전체 zip
+              </Button>
+            ) : undefined
+          }
+        >
+          <ArtifactList jobId={id} artifacts={artifacts} running={running} />
+        </Section>
+      </Container>
+    </>
   );
 }

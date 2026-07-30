@@ -1,21 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
-  Anchor,
-  Button,
-  Collapse,
-  Divider,
-  Group,
-  Loader,
-  Paper,
-  Stack,
-  Text,
-  ThemeIcon,
-  Title,
-} from "@mantine/core";
+import { Anchor, Collapse, Group, Loader, Stack, Text } from "@mantine/core";
 import { formatSize } from "../../lib/format";
 import { requestJson } from "../../lib/request";
+import { IconAlert, IconCheck, IconX } from "../../components/icons";
 
 export interface Artifact {
   rel: string;
@@ -28,13 +17,34 @@ interface EmailCheck {
   detail: string;
 }
 
-const LEVEL: Record<EmailCheck["level"], { color: string; icon: string }> = {
-  ok: { color: "green", icon: "✓" },
-  warn: { color: "yellow", icon: "△" },
-  fail: { color: "red", icon: "✗" },
-};
+/** 검사 결과 아이콘 — 이모지 대신 인라인 SVG, 색은 테마 상태색을 따른다. */
+function CheckIcon({ level }: { level: EmailCheck["level"] }) {
+  const color =
+    level === "ok"
+      ? "var(--mantine-color-green-light-color)"
+      : level === "warn"
+        ? "var(--mantine-color-yellow-light-color)"
+        : "var(--mantine-color-red-light-color)";
+  return (
+    <Text component="span" style={{ display: "flex", color, marginTop: 2 }}>
+      {level === "ok" ? (
+        <IconCheck size={13} />
+      ) : level === "warn" ? (
+        <IconAlert size={13} />
+      ) : (
+        <IconX size={13} />
+      )}
+    </Text>
+  );
+}
 
-/** 산출물 목록 + zip 다운로드 + 파일별 발송 전 검사. */
+/**
+ * 산출물 목록 + 파일별 발송 전 검사.
+ *
+ * 제목과 "전체 zip" 버튼은 감싸는 `Section`이 담당한다 — 예전엔 이 컴포넌트가
+ * 자기 헤딩(`Title order={2}`)을 들고 있어서 같은 화면의 다른 섹션들과 헤더
+ * 모양이 어긋났다.
+ */
 export default function ArtifactList({
   jobId,
   artifacts,
@@ -68,38 +78,43 @@ export default function ArtifactList({
     setChecks(result);
   }
 
+  if (artifacts.length === 0) {
+    return (
+      <Text size="sm" c="dimmed" p="lg">
+        {running ? "작업이 끝나면 여기에 파일이 나타납니다." : "산출물이 없습니다."}
+      </Text>
+    );
+  }
+
   return (
     <>
-      <Group justify="space-between" mt={36} mb="sm">
-        <Title order={2} size="h4">
-          산출물 ({artifacts.length})
-        </Title>
-        {artifacts.length > 0 && (
-          <Button data-testid="download-zip" component="a" href={`/api/jobs/${jobId}/download`}>
-            전체 zip 다운로드
-          </Button>
-        )}
-      </Group>
-      <Paper withBorder>
-        {artifacts.length === 0 && (
-          <Text size="sm" c="dimmed" p="lg">
-            {running ? "작업이 끝나면 여기에 파일이 나타납니다." : "산출물이 없습니다."}
-          </Text>
-        )}
-        {artifacts.map((a, i) => (
-          <div key={a.rel}>
-            {i > 0 && <Divider />}
-            <Group px="lg" py={10} gap="sm" wrap="nowrap">
-              <Text size="sm" ff="monospace" truncate style={{ flex: 1, minWidth: 0 }}>
-                {a.rel}
-              </Text>
-              <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {formatSize(a.size)}
-              </Text>
+      {artifacts.map((a, i) => (
+        <div
+          key={a.rel}
+          style={{
+            borderTop: i > 0 ? "1px solid var(--mantine-color-default-border)" : undefined,
+          }}
+        >
+          <Group px="lg" py={10} gap="md" wrap="nowrap">
+            <Text size="sm" ff="monospace" truncate style={{ flex: 1, minWidth: 0 }}>
+              {a.rel}
+            </Text>
+            <Text
+              size="xs"
+              c="dimmed"
+              w={64}
+              ta="right"
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {formatSize(a.size)}
+            </Text>
+            {/* 액션 열 폭을 고정해 행마다 링크가 다른 위치에 놓이지 않게 한다. */}
+            <Group gap="md" w={168} justify="flex-end" wrap="nowrap">
               {a.rel.endsWith(".html") && (
                 <>
                   <Anchor
                     component="button"
+                    type="button"
                     size="xs"
                     fw={500}
                     data-testid={`check-${a.rel}`}
@@ -125,35 +140,33 @@ export default function ArtifactList({
                 다운로드
               </Anchor>
             </Group>
-            <Collapse expanded={checkFor === a.rel}>
-              <Stack gap={6} px="lg" pb="md" pt={4} data-testid="check-results">
-                {checkFor === a.rel && !checks && (
-                  <Group gap="xs">
-                    <Loader size="xs" />
-                    <Text size="xs" c="dimmed">
-                      검사 중…
+          </Group>
+          <Collapse expanded={checkFor === a.rel}>
+            <Stack gap={8} px="lg" pb="md" pt={2} data-testid="check-results">
+              {checkFor === a.rel && !checks && (
+                <Group gap="xs">
+                  <Loader size="xs" />
+                  <Text size="xs" c="dimmed">
+                    검사 중…
+                  </Text>
+                </Group>
+              )}
+              {checkFor === a.rel &&
+                checks?.map((c) => (
+                  <Group key={c.name} gap="xs" wrap="nowrap" align="flex-start">
+                    <CheckIcon level={c.level} />
+                    <Text size="xs">
+                      <b>{c.name}</b>{" "}
+                      <Text component="span" c="dimmed">
+                        {c.detail}
+                      </Text>
                     </Text>
                   </Group>
-                )}
-                {checkFor === a.rel &&
-                  checks?.map((c) => (
-                    <Group key={c.name} gap="xs" wrap="nowrap" align="flex-start">
-                      <ThemeIcon size="xs" variant="light" color={LEVEL[c.level].color} radius="xl">
-                        <Text size="xs">{LEVEL[c.level].icon}</Text>
-                      </ThemeIcon>
-                      <Text size="xs">
-                        <b>{c.name}</b>{" "}
-                        <Text component="span" c="dimmed">
-                          {c.detail}
-                        </Text>
-                      </Text>
-                    </Group>
-                  ))}
-              </Stack>
-            </Collapse>
-          </div>
-        ))}
-      </Paper>
+                ))}
+            </Stack>
+          </Collapse>
+        </div>
+      ))}
     </>
   );
 }

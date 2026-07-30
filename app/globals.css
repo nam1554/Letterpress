@@ -2,23 +2,68 @@
 /* Streamdown(요약 마크다운 렌더러)의 Tailwind 클래스가 빌드에 포함되도록 등록 */
 @source "../node_modules/streamdown/dist/*.js";
 
-/* Mantine이 컴포넌트 스타일을 담당한다. 여기에는 (1) 클로드 스타일 배경 보정,
-   (2) Mantine으로 표현하지 않는 커스텀 서피스(진행 로그 터미널)의 토큰만 남긴다. */
+/* Mantine이 컴포넌트 스타일을 담당한다. 여기에는 (1) 페이지/카드 레이어링,
+   (2) 스킴별 앵커 색, (3) Mantine으로 표현하지 않는 커스텀 서피스(진행 로그
+   터미널)의 토큰만 남긴다. */
 
-/* 라이트: 바디는 오트/크림, 카드(Paper)는 theme.white(#FAF9F5)로 한 단계 밝게 —
-   클로드 특유의 "크림 위 아이보리 카드" 레이어링. */
+/* ─── 페이지 ↔ 카드 레이어링 ────────────────────────────────────────────────
+   Mantine v7+ `Paper`는 배경을 `--mantine-color-body`에서 가져온다. 즉 이
+   변수는 "페이지 색"이 아니라 **카드 색**이다. 예전 코드가 이걸 페이지 색
+   (크림 #f0eee6)으로 덮어서, 카드가 페이지와 똑같은 색으로 끌려 내려가
+   레이어링이 아예 없었다(라이트/다크 both — 실측으로 확인). 카드는 윤곽선으로만
+   보였다.
+
+   그래서: `--mantine-color-body`는 카드 색으로 두고, 페이지 배경은 `body`에
+   직접 칠한다. 부수 효과로 input·menu·popover도 카드 색을 따라가 일관된다. */
+
 :root:root[data-mantine-color-scheme="light"] {
   /* :root 중복은 의도: Mantine이 변수를 인라인 <style>로 우리보다 늦게 주입해
      동일 특이성이면 지므로, 특이성을 한 단계 올려 확실히 이긴다. */
-  --mantine-color-body: #f0eee6;
+  --mantine-color-body: #faf9f5; /* 카드 — 아이보리 */
+  --page-bg: #f0eee6; /* 페이지 — 오트/크림 (카드 대비 1.10) */
+  /* clay.6(#C96442)은 아이보리 위 3.70으로 링크 텍스트에 부족하다 → clay.8 */
+  --mantine-color-anchor: #a64828; /* 5.57 */
 }
 
-/* 진행 로그 터미널 — 웜 다크 서피스 (양 테마 공통 상시 다크) */
+:root:root[data-mantine-color-scheme="dark"] {
+  --mantine-color-body: #262622; /* 카드 = dark.7 */
+  --page-bg: #1e1d19; /* 페이지 = dark.8 (카드 대비 1.11) */
+  --mantine-color-anchor: #ce8a64; /* clay.5 — 다크 카드 위 5.38 */
+}
+
+body {
+  background-color: var(--page-bg);
+  /* 한글은 기본값(word-break:normal)에서 어절 중간이 잘린다 — "이미지"가
+     "이"/"미지"로 쪼개져 줄바꿈됐다. keep-all은 어절을 통째로 유지하고 공백에서만
+     끊는다. 긴 URL처럼 끊을 곳이 없는 문자열은 overflow-wrap이 받아준다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* ─── 진행 로그 터미널 — 웜 다크 서피스 (양 테마 공통 상시 다크) ─────────── */
 :root {
   --terminal-bg: #21201c;
   --terminal-ink: #d9d6c9;
+  --terminal-line: #3a3831; /* 타이틀 바 hairline */
 }
 
 [data-mantine-color-scheme="dark"] {
   --terminal-bg: #1a1916;
+  --terminal-line: #322f29;
+}
+
+/* 키보드 포커스는 항상 보이게 둔다 (품질 하한). */
+:focus-visible {
+  outline: 2px solid var(--mantine-color-clay-6);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

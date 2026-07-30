@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -15,10 +14,11 @@ import {
   PasswordInput,
   Stack,
   Text,
-  ThemeIcon,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { sendJson } from "../lib/request";
+import Section from "./Section";
+import { IconCheck, IconPlug, IconQuestion, IconX } from "./icons";
 
 export interface SetupStep {
   name: string;
@@ -46,18 +46,28 @@ const SHORT_NAME: Record<string, string> = {
   codex: "Codex",
 };
 
+/**
+ * 진단 단계 상태 아이콘. 예전엔 ThemeIcon 원형 배지 + 이모지 글리프였다 —
+ * 목록 왼쪽에 색 동그라미가 줄줄이 서서 실제 텍스트보다 시선을 끌었다.
+ * 아이콘만 남기고 색으로 상태를 전달한다.
+ */
 function StepIcon({ ok }: { ok: boolean | null }) {
+  const color =
+    ok === true
+      ? "var(--mantine-color-green-light-color)"
+      : ok === false
+        ? "var(--mantine-color-red-light-color)"
+        : "var(--mantine-color-dimmed)";
   return (
-    <ThemeIcon
-      size="xs"
-      radius="xl"
-      variant="light"
-      color={ok === true ? "green" : ok === false ? "red" : "gray"}
-    >
-      <Text size="9px" fw={700} lh={1}>
-        {ok === true ? "✓" : ok === false ? "✕" : "?"}
-      </Text>
-    </ThemeIcon>
+    <Text component="span" style={{ display: "flex", color, marginTop: 2 }}>
+      {ok === true ? (
+        <IconCheck size={13} label="통과" />
+      ) : ok === false ? (
+        <IconX size={13} label="실패" />
+      ) : (
+        <IconQuestion size={13} label="확인 안 됨" />
+      )}
+    </Text>
   );
 }
 
@@ -166,130 +176,137 @@ export default function BackendSetup({
   }
 
   return (
-    <Accordion variant="contained" mt="md" chevronPosition="right">
-      <Accordion.Item value="backends">
-        <Accordion.Control data-testid="backend-setup-toggle">
-          <Group gap="xs" wrap="nowrap">
-            <Text size="sm">🔌 백엔드 연동</Text>
-            {backends === null && <Loader size={14} />}
-            {backends !== null && backends.length === 0 && (
-              <Badge size="sm" variant="light" color="gray">
-                상태 확인 실패
-              </Badge>
-            )}
-            {backends !== null &&
-              backends.length > 0 &&
-              (needsSetup.length === 0 ? (
-                <Badge size="sm" variant="light" color="green">
-                  모두 준비됨
-                </Badge>
-              ) : (
-                needsSetup.map((b) => (
-                  <Badge key={b.id} size="sm" variant="light" color="yellow">
-                    {SHORT_NAME[b.id] ?? b.id} 설정 필요
-                  </Badge>
-                ))
-              ))}
-          </Group>
-        </Accordion.Control>
-        <Accordion.Panel>
-          {backends === null ? (
-            <Group gap="xs" p="sm">
-              <Loader size="xs" />
-              <Text size="xs" c="dimmed">
-                CLI 설치·인증·Figma 연결을 점검하는 중입니다 (최대 1분)…
-              </Text>
-            </Group>
-          ) : (
-            <Stack gap="sm">
-              {backends.length === 0 && (
-                <Text size="xs" c="dimmed">
-                  연동 상태를 불러오지 못했습니다 — 아래 &quot;다시 점검&quot;으로 재시도하세요.
-                </Text>
-              )}
-              {backends.map((b) => {
-                const result = results[b.id];
-                return (
-                  <Paper key={b.id} withBorder p="md" radius="md" data-testid={`backend-${b.id}`}>
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap="xs" wrap="nowrap">
-                        <Text size="sm" fw={600}>
-                          {b.label}
-                        </Text>
-                        <Badge size="sm" variant="light" color={b.ready ? "green" : "yellow"}>
-                          {b.ready ? "사용 가능" : "설정 필요"}
-                        </Badge>
-                      </Group>
-                      {b.id !== "mock" && (
-                        <Button
-                          data-testid={`test-${b.id}`}
-                          size="compact-xs"
-                          variant="light"
-                          loading={testing === b.id}
-                          disabled={testing !== null && testing !== b.id}
-                          onClick={() => runTest(b.id)}
-                        >
-                          연동 테스트
-                        </Button>
-                      )}
-                    </Group>
-                    <Stack gap={8} mt="sm">
-                      {b.steps.map((s) => (
-                        <Group key={s.name} gap="xs" align="flex-start" wrap="nowrap">
-                          <StepIcon ok={s.ok} />
-                          <div style={{ minWidth: 0 }}>
-                            <Text size="xs">
-                              <Text component="span" fw={600}>
-                                {s.name}
-                              </Text>{" "}
-                              — {s.detail}
-                            </Text>
-                            {s.ok === false && s.hint && (
-                              <Text size="xs" c="dimmed">
-                                {s.hint}
-                              </Text>
-                            )}
-                            {s.ok === false && s.command && <CommandChip command={s.command} />}
-                          </div>
-                        </Group>
-                      ))}
-                    </Stack>
-                    {b.id === "gemini" && (
-                      <GeminiKeyInput
-                        keySet={b.steps.some((s) => s.name === "API 키" && s.ok === true)}
-                        onSaved={() => onRefresh(true)}
-                      />
-                    )}
-                    {result && (
-                      <Alert
-                        mt="sm"
-                        p="xs"
-                        variant="light"
-                        color={result.ok ? "green" : "red"}
-                        data-testid={`test-result-${b.id}`}
-                      >
-                        <Text size="xs">
-                          {result.ok
-                            ? `실제 CLI 왕복 확인 완료 (${Math.round(result.ms / 1000)}초) — 이 백엔드로 변환을 실행할 수 있습니다.`
-                            : `테스트 실패: ${result.summary}`}
-                        </Text>
-                      </Alert>
-                    )}
-                  </Paper>
-                );
-              })}
-              <Group justify="space-between">
-                <Text size="xs" c="dimmed">
-                  연동 테스트는 초소형 프롬프트를 실제로 실행합니다 (토큰 소량 소모, 최대 2분).
-                </Text>
-                <Anchor component="button" size="xs" onClick={() => onRefresh(true)} data-testid="setup-recheck">
-                  다시 점검
-                </Anchor>
-              </Group>
-            </Stack>
+    <Section
+      title="백엔드 연동"
+      icon={<IconPlug size={15} />}
+      collapsible
+      controlTestId="backend-setup-toggle"
+      right={
+        <>
+          {backends === null && <Loader size={14} />}
+          {backends !== null && backends.length === 0 && (
+            <Badge size="sm" variant="light" color="gray">
+              상태 확인 실패
+            </Badge>
           )}
-        </Accordion.Panel>
-      </Accordion.Item>
-    </Accordion>
+          {backends !== null &&
+            backends.length > 0 &&
+            (needsSetup.length === 0 ? (
+              <Badge size="sm" variant="light" color="green">
+                모두 준비됨
+              </Badge>
+            ) : (
+              needsSetup.map((b) => (
+                <Badge key={b.id} size="sm" variant="light" color="yellow">
+                  {SHORT_NAME[b.id] ?? b.id} 설정 필요
+                </Badge>
+              ))
+            ))}
+        </>
+      }
+    >
+      {backends === null ? (
+        <Group gap="xs" p="sm">
+          <Loader size="xs" />
+          <Text size="xs" c="dimmed">
+            CLI 설치·인증·Figma 연결을 점검하는 중입니다 (최대 1분)…
+          </Text>
+        </Group>
+      ) : (
+        <Stack gap="sm">
+          {backends.length === 0 && (
+            <Text size="xs" c="dimmed">
+              연동 상태를 불러오지 못했습니다 — 아래 &quot;다시 점검&quot;으로 재시도하세요.
+            </Text>
+          )}
+          {backends.map((b) => {
+            const result = results[b.id];
+            return (
+              <Paper key={b.id} withBorder p="md" radius="md" data-testid={`backend-${b.id}`}>
+                <Group justify="space-between" wrap="nowrap">
+                  <Group gap="xs" wrap="nowrap">
+                    <Text size="sm" fw={600}>
+                      {b.label}
+                    </Text>
+                    <Badge size="sm" variant="light" color={b.ready ? "green" : "yellow"}>
+                      {b.ready ? "사용 가능" : "설정 필요"}
+                    </Badge>
+                  </Group>
+                  {b.id !== "mock" && (
+                    <Button
+                      data-testid={`test-${b.id}`}
+                      size="compact-xs"
+                      variant="light"
+                      loading={testing === b.id}
+                      disabled={testing !== null && testing !== b.id}
+                      onClick={() => runTest(b.id)}
+                    >
+                      연동 테스트
+                    </Button>
+                  )}
+                </Group>
+                <Stack gap={8} mt="sm">
+                  {b.steps.map((s) => (
+                    <Group key={s.name} gap="xs" align="flex-start" wrap="nowrap">
+                      <StepIcon ok={s.ok} />
+                      <div style={{ minWidth: 0 }}>
+                        <Text size="xs">
+                          <Text component="span" fw={600}>
+                            {s.name}
+                          </Text>{" "}
+                          — {s.detail}
+                        </Text>
+                        {s.ok === false && s.hint && (
+                          <Text size="xs" c="dimmed">
+                            {s.hint}
+                          </Text>
+                        )}
+                        {s.ok === false && s.command && <CommandChip command={s.command} />}
+                      </div>
+                    </Group>
+                  ))}
+                </Stack>
+                {b.id === "gemini" && (
+                  <GeminiKeyInput
+                    keySet={b.steps.some((s) => s.name === "API 키" && s.ok === true)}
+                    onSaved={() => onRefresh(true)}
+                  />
+                )}
+                {result && (
+                  <Alert
+                    mt="sm"
+                    p="xs"
+                    variant="light"
+                    color={result.ok ? "green" : "red"}
+                    data-testid={`test-result-${b.id}`}
+                  >
+                    <Text size="xs">
+                      {result.ok
+                        ? `실제 CLI 왕복 확인 완료 (${Math.round(result.ms / 1000)}초) — 이 백엔드로 변환을 실행할 수 있습니다.`
+                        : `테스트 실패: ${result.summary}`}
+                    </Text>
+                  </Alert>
+                )}
+              </Paper>
+            );
+          })}
+      <Group justify="space-between" gap="md" wrap="nowrap" align="baseline">
+        <Text size="xs" c="dimmed">
+          연동 테스트는 초소형 프롬프트를 실제로 실행합니다 (토큰 소량 소모, 최대 2분).
+        </Text>
+        <Anchor
+          component="button"
+          type="button"
+          size="xs"
+          onClick={() => onRefresh(true)}
+              data-testid="setup-recheck"
+              style={{ flexShrink: 0 }}
+            >
+              다시 점검
+            </Anchor>
+          </Group>
+        </Stack>
+      )}
+    </Section>
   );
 }
