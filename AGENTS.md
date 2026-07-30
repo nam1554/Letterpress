@@ -344,6 +344,18 @@ no auth, single user, filesystem is the database.
   pointed at a scratch dir so the run never touches real job data. chrome-devtools
   MCP refuses to attach when a browser already owns its profile — the
   claude-in-chrome MCP works as a fallback.
+- **Anything rAF-driven cannot be verified by script in a backgrounded tab.**
+  Chrome pauses `requestAnimationFrame` when `document.visibilityState ===
+  "hidden"`, which is the normal state of an MCP-driven tab. Mantine's `Collapse`
+  advances its open/close state machine inside rAF (`useCollapse` →
+  `useDidUpdate` → `requestAnimationFrame`), so a scripted `.click()` flips
+  `aria-expanded` while the body stays `display: none !important` (React 19
+  `Activity`, which `keepMounted` uses). That looks exactly like a broken
+  component and cost a full false-positive investigation on 2026-07-30.
+  Before concluding a rAF/animation/transition bug from scripted measurement,
+  check `document.visibilityState` and whether rAF actually fires; verify with a
+  real `computer` click plus a screenshot (which forces frames), not
+  `javascript_tool` alone.
 
 Reference output the generated eDMs should resemble:
 `(로컬 참고 산출물 — 저장소에 없음)`

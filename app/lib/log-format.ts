@@ -36,11 +36,21 @@ export type LogSegment = Emphasis &
       }
   );
 
-/** 잡 작업 디렉터리 접두사. id는 8-hex(jobDir 규약)라 레포 위치를 몰라도 잡힌다. */
-const JOB_WORK_PREFIX = /^.*?\/data\/jobs\/[0-9a-f]{8}\/(?:work\/)?/;
+/**
+ * 잡 작업 디렉터리 접두사. id는 8-hex(jobDir 규약)라 레포 위치를 몰라도 잡힌다.
+ * 구분자는 `[\\/]` 둘 다 받는다 — Windows에서 로그의 경로는 역슬래시로 찍힌다.
+ */
+const JOB_WORK_PREFIX = /^.*?[\\/]data[\\/]jobs[\\/][0-9a-f]{8}[\\/](?:work[\\/])?/;
 
-/** 절대 유닉스 경로. 한글·닫는 괄호·쉼표를 물지 않도록 문자 클래스를 좁혔다. */
-const ABS_PATH = /\/(?:[A-Za-z0-9._\-@+]+\/)*[A-Za-z0-9._\-@+]+/g;
+/** 경로 구분자 (POSIX·Windows 공용). */
+const SEP = /[\\/]/;
+
+/**
+ * 절대 경로. 한글·닫는 괄호·쉼표를 물지 않도록 문자 클래스를 좁혔다.
+ * `C:\…` 드라이브 문자도 받는다 — 그러지 않으면 Windows에서는 경로가 아예 인식되지
+ * 않아, 로그 이벤트의 30%를 차지하는 절대경로 축약이 통째로 동작하지 않는다.
+ */
+const ABS_PATH = /(?:[A-Za-z]:[\\/]|\/)(?:[A-Za-z0-9._\-@+]+[\\/])*[A-Za-z0-9._\-@+]+/g;
 
 /**
  * 마크다운 토큰.
@@ -52,10 +62,12 @@ const ABS_PATH = /\/(?:[A-Za-z0-9._\-@+]+\/)*[A-Za-z0-9._\-@+]+/g;
  */
 const TOKENS = new RegExp(
   [
-    /\[([^\]\n]+)\]\(<([^>\n]+)>\)/, // [라벨](<경로>) — 에이전트가 쓰는 형태
-    /\[([^\]\n]+)\]\(([^)\s]+)\)/, //  [라벨](경로)
-    /`([^`\n]+)`/, //                  `코드`
-    /\*\*([^*\n]+)\*\*/, //            **강조**
+    // 인라인 토큰은 줄을 넘지 않는다. `\r`도 막는다 — Windows 로그는 CRLF라
+    // `\n`만 막으면 코드 스팬 안에 CR이 들어가 화면에서 줄이 어긋난다.
+    /\[([^\]\r\n]+)\]\(<([^>\r\n]+)>\)/, // [라벨](<경로>) — 에이전트가 쓰는 형태
+    /\[([^\]\r\n]+)\]\(([^)\s]+)\)/, //    [라벨](경로)
+    /`([^`\r\n]+)`/, //                    `코드`
+    /\*\*([^*\r\n]+)\*\*/, //              **강조**
     // 맨 URL. 로그의 URL은 대부분 셸 명령 안에서 홑따옴표로 감싸여 있어
     // (`curl -o x 'https://…'`) 따옴표를 제외하지 않으면 닫는 따옴표까지 문다.
     /(https?:\/\/[^\s)>\]",';]+)/,
@@ -70,13 +82,18 @@ const TOKENS = new RegExp(
  */
 export function shortenPath(raw: string): string {
   // 1) 잡 작업 디렉터리 안이면 그 아래 상대경로만 남긴다 — 가장 흔한 경우.
+  //    표시용이므로 구분자는 `/`로 통일한다 (원본은 세그먼트의 `full`에 남는다).
   const inJob = raw.replace(JOB_WORK_PREFIX, "");
-  if (inJob !== raw) return inJob || raw;
+  if (inJob !== raw) return inJob.split(SEP).join("/") || raw;
 
   // 2) 그 밖의 긴 절대경로는 뒤 두 조각만. 짧은 것(`/mcp`, `/api/mcp`)은 건드리지
   //    않는다 — 줄여도 얻는 게 없고 뜻만 흐려진다.
-  const parts = raw.split("/").filter(Boolean);
-  if (raw.startsWith("/") && parts.length > 4) return `…/${parts.slice(-2).join("/")}`;
+  //    주의: 서로 다른 경로가 같은 꼬리를 가지면 표시가 같아질 수 있다
+  //    (`/a/b/c/d/images/hero.png`와 `/x/y/z/w/images/hero.png` → 둘 다
+  //    `…/images/hero.png`). 원본이 `full`에 남아 호버로 구분되므로 감수한다.
+  const isAbsolute = raw.startsWith("/") || /^[A-Za-z]:[\\/]/.test(raw);
+  const parts = raw.split(SEP).filter(Boolean);
+  if (isAbsolute && parts.length > 4) return `…/${parts.slice(-2).join("/")}`;
   return raw;
 }
 

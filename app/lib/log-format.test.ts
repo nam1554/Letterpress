@@ -35,6 +35,22 @@ describe("shortenPath", () => {
     expect(shortenPath("output/x.html")).toBe("output/x.html");
   });
 
+  it("Windows 경로도 줄인다 — 역슬래시라 예전엔 아예 인식되지 않았다", () => {
+    const win = String.raw`C:\Users\example\proj\mhm\data\jobs\00ae9d9a\work\output\x.html`;
+    // 표시용이므로 구분자는 `/`로 통일한다 (원본은 세그먼트의 full에 남는다).
+    expect(shortenPath(win)).toBe("output/x.html");
+  });
+
+  it("Windows 잡 밖 경로도 뒤 두 조각만 남긴다", () => {
+    expect(shortenPath(String.raw`C:\Users\example\proj\mhm\skills\figma-edm\compare.py`)).toBe(
+      "…/figma-edm/compare.py",
+    );
+  });
+
+  it("Windows 짧은 경로는 그대로 둔다", () => {
+    expect(shortenPath(String.raw`C:\Temp`)).toBe(String.raw`C:\Temp`);
+  });
+
   it("8-hex가 아닌 잡 id 모양은 잡 규칙에 걸리지 않는다", () => {
     // jobDir()가 8-hex를 강제하므로 그 밖의 것은 일반 절대경로로만 취급한다.
     expect(shortenPath("/x/data/jobs/NOTHEX/work/output/a.html")).toBe("…/output/a.html");
@@ -157,6 +173,13 @@ describe("formatLogLine — 견고성", () => {
     expect(formatLogLine("작업 시작 — provider: Claude Code (local CLI)")).toEqual([
       { kind: "text", text: "작업 시작 — provider: Claude Code (local CLI)" },
     ]);
+  });
+
+  it("CR은 인라인 토큰을 넘지 않는다 (CRLF 로그)", () => {
+    // `\r`을 막지 않으면 코드 스팬이 CR을 삼켜 화면에서 줄이 어긋난다.
+    const segs = formatLogLine("a `b\rc` d");
+    expect(visible(segs)).toBe("a `b\rc` d");
+    expect(segs.some((s) => s.kind === "code")).toBe(false);
   });
 
   it("깨진 마크다운에도 던지지 않고 글자를 잃지 않는다", () => {

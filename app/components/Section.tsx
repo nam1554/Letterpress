@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Collapse, Group, Paper, Text, Title, UnstyledButton } from "@mantine/core";
 
 /**
@@ -45,6 +45,9 @@ export default function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const expanded = !collapsible || open;
+  // aria-expanded만 있으면 "무엇이" 펼쳐지는지 보조기술이 알 수 없다 —
+  // 토글과 본문을 aria-controls로 묶는다.
+  const bodyId = `${useId()}-body`;
 
   const heading = (
     <Group gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
@@ -87,6 +90,7 @@ export default function Section({
           data-testid={controlTestId}
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
+          aria-controls={bodyId}
           style={{ display: "flex", alignItems: "center", minWidth: 0, gap: 8 }}
         >
           {heading}
@@ -110,7 +114,11 @@ export default function Section({
     <Paper withBorder mt={mt} data-testid={testId} style={{ overflow: "hidden" }}>
       {header}
       <Collapse expanded={expanded}>
-        <div style={flush ? undefined : { padding: "var(--mantine-spacing-lg)" }}>
+        <div
+          id={collapsible ? bodyId : undefined}
+          role={collapsible ? "region" : undefined}
+          style={flush ? undefined : { padding: "var(--mantine-spacing-lg)" }}
+        >
           {children}
         </div>
       </Collapse>
