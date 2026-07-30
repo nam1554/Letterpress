@@ -78,7 +78,13 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
       // 강제하지 않는다 (산출물 계약 + 검증 실행 여부는 그대로 요구).
       // freshSince: edit은 원본 workDir을 복사해 오고 resume은 같은 workDir을
       // 재사용하므로, 이전 실행의 verify.json을 이번 증거로 인정하지 않는다.
-      const gateOpts = { requireVerifyPass: !job.editOf, freshSince: startedAt };
+      // signal: 게이트는 산출물을 헤드리스 Chrome으로 렌더한다 — 취소·시간
+      // 초과 뒤에도 브라우저를 새로 띄우면 종료 상태가 그만큼 늦게 찍힌다.
+      const gateOpts = {
+        requireVerifyPass: !job.editOf,
+        freshSince: startedAt,
+        signal: controller.signal,
+      };
       const task: AgentTask = {
         jobId: job.id,
         figmaUrl: job.figmaUrl,

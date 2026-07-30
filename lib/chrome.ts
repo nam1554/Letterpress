@@ -11,20 +11,26 @@ import { Launcher } from "chrome-launcher";
  */
 
 // chrome-launcher의 탐색은 표준 위치를 벗어나면 `lsregister` 덤프까지 훑어
-// 2초 넘게 블로킹한다(실측 2.4초). 이 함수는 헬스체크(60초 캐시)와 잡 시작마다
-// 불리므로, 단일 스레드 서버에서 그때마다 멈추면 SSE 로그 스트림까지 함께
-// 멎는다 → 프로세스 수명 동안 한 번만 찾는다.
-let cached: { value: string | null } | null = null;
+// 2초 넘게 블로킹한다(실측 2.4초). 이 함수는 헬스체크(60초 캐시)와 잡 시작,
+// 게이트 측정마다 불리므로, 단일 스레드 서버에서 그때마다 멈추면 SSE 로그
+// 스트림까지 함께 멎는다 → 결과를 캐시한다.
+//
+// **못 찾은 결과도 캐시한다.** macOS에서 느린 경로는 오히려 "못 찾을 때"다:
+// chrome-launcher의 darwinFast()는 표준 경로가 있을 때만 즉시 반환하고, 없으면
+// darwin()으로 내려가 `lsregister -dump | grep`을 execSync로 돌린다
+// (node_modules/chrome-launcher/dist/chrome-finder.js). 즉 미설치 머신에서
+// 캐시를 안 하면 헬스 폴링마다 서버가 몇 초씩 얼어붙는다.
+// 대신 짧은 TTL을 둬서 사용자가 Chrome을 설치하고 기다리면 저절로 풀리고,
+// "다시 점검"(runHealthChecks(force))은 즉시 resetChromeCache()로 지운다.
+const MISS_TTL_MS = 60_000;
+let cached: { value: string | null; at: number } | null = null;
 
 /** 실행 가능한 Chrome 경로. 없으면 null. */
 export function findChrome(): string | null {
-  if (cached) return cached.value;
+  const now = Date.now();
+  if (cached && (cached.value !== null || now - cached.at < MISS_TTL_MS)) return cached.value;
   const value = resolveChrome();
-  // 못 찾은 결과는 캐시하지 않는다 — 사용자가 안내대로 Chrome을 설치하고
-  // "다시 점검"을 눌러도 서버를 재시작하기 전까지 계속 빨간불이면,
-  // 안내 자체가 거짓말이 된다. (탐색이 느린 경우는 "찾았을 때"뿐이다.)
-  if (value === null) return null;
-  cached = { value };
+  cached = { value, at: now };
   return value;
 }
 

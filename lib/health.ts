@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { findChrome } from "./chrome";
+import { findChrome, resetChromeCache } from "./chrome";
 import { findPython } from "./python";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -102,6 +102,9 @@ export async function runHealthChecks(force = false): Promise<HealthCheck[]> {
   const cached = g.__mhmHealth;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.checks;
 
+  // "다시 점검"은 Chrome 탐색 결과(미설치 캐시 포함)도 버린다 — 안내대로 설치한
+  // 사용자가 눌렀는데 캐시 TTL 때문에 계속 빨간불이면 안내가 거짓말이 된다.
+  if (force) resetChromeCache();
   const checks = [
     ...(await Promise.all([checkClaudeCli(), checkPythonDeps()])),
     checkFigmaEdmSkill(),

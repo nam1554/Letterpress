@@ -72,8 +72,9 @@ async function visibleChars(cases: Record<string, string>): Promise<Record<strin
   const measured = await measureHtmlFiles(files);
   const out: Record<string, number> = {};
   names.forEach((name, i) => {
-    expect(measured[i], `${name}: 렌더 실패`).not.toBeNull();
-    out[name] = measured[i]!.textChars;
+    const m = measured[i];
+    expect(m.ok, `${name}: 렌더 실패`).toBe(true);
+    out[name] = m.ok ? m.textChars : -1;
   });
   return out;
 }
@@ -175,6 +176,12 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       transparent: `<p style="color:transparent">${copy}</p><p>보이는것만</p>`,
       fontZero: `<p style="font-size:0">${copy}</p><p>보이는것만</p>`,
       offscreen: `<div style="position:absolute;left:-9999px">${copy}</div><p>보이는것만</p>`,
+      // 6라운드: 왼쪽만 검사하던 판정의 거울상 — 오른쪽으로 밀어도 안 보인다.
+      offscreenRight: `<div style="position:absolute;left:9999px">${copy}</div><p>보이는것만</p>`,
+      // 6라운드: 삭제된 휴리스틱이 명시적으로 막던 관용구들이 되살아났었다.
+      textIndent: `<div style="text-indent:-9999px">${copy}</div><p>보이는것만</p>`,
+      clipPath: `<div style="clip-path:inset(50%)">${copy}</div><p>보이는것만</p>`,
+      scaleZero: `<div style="transform:scale(0)">${copy}</div><p>보이는것만</p>`,
       opacityZero: `<div style="opacity:0">${copy}</div><p>보이는것만</p>`,
       // 실측 재현 3탄: 숨김을 <style> 클래스로 옮기고 color:transparent를 썼다.
       classHidden: `<style>.c{position:absolute;left:0;top:0;color:transparent;width:1px;overflow:hidden}</style><table><tr><td class="c">${copy}</td></tr></table><p>보이는것만</p>`,
@@ -182,6 +189,12 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       normalStyles: `<p style="opacity:0.9;font-size:14px;background-color:transparent">정상텍스트다섯</p>`,
       blackText: `<p style="color:#000">검은글자다섯</p>`,
       spacerCell: `<table><tr><td style="font-size:0;line-height:0"><span style="font-size:16px">여백셀안의본문</span></td></tr></table>`,
+      // 6라운드 오탐: 높이 0 래퍼는 overflow가 visible이면 넘친 글자가 그려진다.
+      zeroHeightWrapper: `<div style="height:0">${copy}</div>`,
+      // 6라운드 오탐: visibility는 자손이 되돌릴 수 있다 (opacity와 다르다).
+      visibleChild: `<div style="visibility:hidden"><p style="visibility:visible">${copy}</p></div>`,
+      // 6라운드 오탐: 자리만 잡는 래퍼(플로트 행·오버레이)도 상자가 0이 된다.
+      floatRow: `<div><div style="float:left;width:700px">${copy}</div></div>`,
     });
     for (const key of [
       "srOnly",
@@ -189,6 +202,10 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       "transparent",
       "fontZero",
       "offscreen",
+      "offscreenRight",
+      "textIndent",
+      "clipPath",
+      "scaleZero",
       "opacityZero",
       "classHidden",
     ]) {
@@ -197,6 +214,9 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
     expect(chars.normalStyles).toBe(7);
     expect(chars.blackText).toBe(6);
     expect(chars.spacerCell).toBe(7);
+    for (const key of ["zeroHeightWrapper", "visibleChild", "floatRow"]) {
+      expect(chars[key], `${key}: 보이는 텍스트를 숨김으로 오인했다`).toBe(400);
+    }
   }, 60_000);
 
   it("캐스케이드·미디어쿼리·상속을 브라우저가 판정한다", async () => {
@@ -211,6 +231,10 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       mobileOnly: `<style>@media (max-width:600px){.c{display:none}}</style><div class="c">${copy}</div>`,
       // 라이트+모바일 조건이 함께 있어도 폭 조건이 지배한다.
       lightMobile: `<style>@media (prefers-color-scheme: light) and (max-width:600px){.c{display:none}}</style><div class="c">${copy}</div>`,
+      // 6라운드: 색 구성을 고정하지 않으면 OS 테마에 따라 판정이 갈렸다.
+      // 다크 전용 숨김은 적용되지 않고(오탐 방지), 라이트 전용 숨김은 적용된다.
+      darkOnly: `<style>@media (prefers-color-scheme: dark){.c{display:none}}</style><div class="c">${copy}</div>`,
+      lightOnly: `<style>@media (prefers-color-scheme: light){.c{display:none}}</style><div class="c">${copy}</div>`,
       // 감싸기만 한 숨김은 그대로 숨김이다 (우회 차단).
       wrappedAll: `<style>@media all{.c{color:transparent}}</style><div class="c">${copy}</div><p>보이는것만</p>`,
       pixelRatioHack: `<style>@media screen and (-webkit-min-device-pixel-ratio:0){.c{display:none}}</style><div class="c">${copy}</div><p>보이는것만</p>`,
@@ -224,6 +248,8 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
     expect(chars.unscoped).toBe(400);
     expect(chars.mobileOnly).toBe(400);
     expect(chars.lightMobile).toBe(400);
+    expect(chars.darkOnly, "다크 전용 숨김이 라이트 렌더에 적용됐다").toBe(400);
+    expect(chars.lightOnly, "라이트로 고정되지 않았다").toBe(0);
     expect(chars.wrappedAll).toBe(5);
     expect(chars.pixelRatioHack).toBe(5);
     expect(chars.overridden).toBe(400);
@@ -354,6 +380,64 @@ describe("게이트 통합 — 실전 산출물 형태", () => {
     expect(a.ok).toBe(true);
   }, 30_000);
 
+  it("loading=lazy로 미룬 통짜 캡처도 거부한다 (6라운드 우회)", async () => {
+    // load 이벤트를 기다리는 구현은 lazy 이미지를 0으로 재서 이미지 검사
+    // 3개가 통째로 꺼졌다 — 최적화처럼 보이는 속성 하나로 게이트가 열렸다.
+    const job = await jobWith(
+      `<html><body><p>${BODY_COPY}</p>` +
+        `<img src="images/whole.png" loading="lazy" width="700" style="height:auto"></body></html>`,
+      { "whole.png": [1400, 4414] },
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("스크린샷");
+  }, 30_000);
+
+  it("원격 URL 전폭 이미지는 거부한다 (크기를 검증할 수 없음)", async () => {
+    // 요청을 끊으므로 깨진 이미지가 정사각형 상자로 측정된다 → 세로비 2 검사를
+    // 통과했다(실측 재현). 크기를 못 믿는다는 사실 자체를 실패로 다룬다.
+    const job = await jobWith(
+      `<html><body><p>${BODY_COPY}</p>` +
+        `<img src="https://cdn.example.com/whole.png" width="700" style="height:auto"></body></html>`,
+      {},
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("불러올 수 없습니다");
+  }, 30_000);
+
+  it("hosted/ CDN 치환본이 있어도 최상단 산출물을 잰다", async () => {
+    // hosting 라우트는 output/hosted/에 **같은 파일명으로** 치환본을 쓴다.
+    // 그쪽을 재면 원격 이미지 검사에 걸려 정상 빌드가 실패하므로, readdir 순서에
+    // 기대지 않고 최상단을 먼저 고른다는 불변식을 못 박는다.
+    const job = await jobWith(
+      `<html><body><p>${BODY_COPY}</p><img src="images/hero.png" width="700" style="height:auto"></body></html>`,
+      { "hero.png": [1400, 770] },
+    );
+    const hosted = path.join(outputDir(job.id), "hosted");
+    await mkdir(hosted, { recursive: true });
+    for (const name of ["edm_figma.html", "edm_responsive.html"]) {
+      await writeFile(
+        path.join(hosted, name),
+        `<html><body><p>${BODY_COPY}</p><img src="https://cdn.example.com/hero.png" width="700" style="height:auto"></body></html>`,
+      );
+    }
+    const a = await checkAcceptance(job.id);
+    expect(a.failures).toEqual([]);
+    expect(a.ok).toBe(true);
+  }, 30_000);
+
+  it("원격 추적 픽셀은 정상 빌드를 실패시키지 않는다", async () => {
+    const job = await jobWith(
+      `<html><body><p>${BODY_COPY}</p><img src="images/hero.png" width="700" style="height:auto">` +
+        `<img src="https://track.example.com/o.gif" width="1" height="1"></body></html>`,
+      { "hero.png": [1400, 770] },
+    );
+    const a = await checkAcceptance(job.id);
+    expect(a.failures).toEqual([]);
+    expect(a.ok).toBe(true);
+  }, 30_000);
+
   it("셀프컨테인(base64) 산출물의 이미지도 잰다", async () => {
     const png = realPng(700, 2207).toString("base64");
     const job = await jobWith(
@@ -363,6 +447,59 @@ describe("게이트 통합 — 실전 산출물 형태", () => {
     );
     const a = await checkAcceptance(job.id);
     expect(a.failures.join(" ")).toContain("스크린샷");
+  }, 30_000);
+});
+
+describe("측정 실패의 의미 — 환경 문제와 산출물 불량을 구분한다", () => {
+  /** DOMContentLoaded를 막는 산출물 (렌더 자체가 안 되는 상태). */
+  const BLOCKING_HTML =
+    `<html><body><script>const t=Date.now();while(Date.now()-t<4000){}</script>` +
+    `<p>${BODY_COPY}</p></body></html>`;
+
+  /** 탐색 제한 시간을 줄여 실패 경로를 빠르게 확인한다. */
+  async function withShortTimeout<T>(fn: () => Promise<T>): Promise<T> {
+    process.env.MHM_MEASURE_NAV_TIMEOUT_MS = "1200";
+    try {
+      return await fn();
+    } finally {
+      delete process.env.MHM_MEASURE_NAV_TIMEOUT_MS;
+    }
+  }
+
+  it("렌더되지 않는 산출물은 경고가 아니라 실패다", async () => {
+    // 경고로 강등하면 load를 막는 스크립트 한 줄로 반-우회 검사 3개가 전부
+    // 꺼지고, compare.py는 자기 브라우저로 통짜 캡처를 PASS로 남긴다.
+    const job = await fullJob();
+    await writeFile(path.join(outputDir(job.id), "edm_figma.html"), BLOCKING_HTML);
+    const a = await withShortTimeout(() => checkAcceptance(job.id));
+    expect(a.ok).toBe(false);
+    expect(a.failures.join(" ")).toContain("브라우저에서 열지 못했습니다");
+  }, 60_000);
+
+  it("멈춘 파일이 다음 파일의 측정을 망가뜨리지 않는다", async () => {
+    // 탭을 공유하면 앞 문서가 붙잡은 메인 스레드 때문에 뒤 파일도 전부
+    // "측정 불가"가 되고, 실패가 엉뚱한 파일에 기록된다.
+    const blocking = path.join(dir, "blocking.html");
+    const good = path.join(dir, "after-blocking.html");
+    await writeFile(blocking, BLOCKING_HTML);
+    await writeFile(good, `<html><body><p>${BODY_COPY}</p></body></html>`);
+    const [first, second] = await withShortTimeout(() => measureHtmlFiles([blocking, good]));
+    expect(first.ok).toBe(false);
+    expect(first.ok === false && first.reason).toBe("render-failed");
+    expect(second.ok, "앞 파일의 실패가 전이됐다").toBe(true);
+    expect(second.ok && second.textChars).toBeGreaterThan(100);
+  }, 60_000);
+
+  it("이미 중단된 잡은 브라우저를 띄우지 않고 경고만 남긴다", async () => {
+    const job = await fullJob();
+    const controller = new AbortController();
+    controller.abort();
+    const t0 = performance.now();
+    const a = await checkAcceptance(job.id, { signal: controller.signal });
+    // 브라우저를 띄웠다면 초 단위가 걸린다.
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(a.failures.join(" ")).not.toContain("라이브 텍스트");
+    expect(a.warnings.join(" ")).toContain("중단");
   }, 30_000);
 });
 

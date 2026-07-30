@@ -114,6 +114,14 @@ no auth, single user, filesystem is the database.
   exported to the agent as `CHROME_BIN`; `compare.py` reads that env first.
   A hard-coded `/Applications/...` path meant pixel-verify could never run off
   macOS, and the gate then fails an otherwise correct build for "no verify.json".
+  The **not-found** result is cached too, with a 60s TTL: on macOS the miss IS
+  the slow path (chrome-launcher's `darwinFast()` returns early only on a hit,
+  then falls through to a synchronous `lsregister -dump`, ~2.4s), and
+  `findChrome()` runs on every health poll, job start and gate measurement, so
+  leaving it uncached froze the single-threaded server on Chrome-less machines.
+  `runHealthChecks(force)` ("다시 점검") clears it immediately so the install
+  guidance stays honest. `lib/chrome-not-found.test.ts` mocks chrome-launcher to
+  cover that path — the real-discovery tests can't.
 - **Diagnostics**: `instrumentation.ts` (Next's official `onRequestError` hook +
   `unhandledRejection`/`uncaughtException`) appends server failures to
   `data/logs/app.log` — before this they only reached the terminal window and
@@ -161,20 +169,57 @@ no auth, single user, filesystem is the database.
   checks off) — `getComputedStyle` and `getBoundingClientRect` already know the
   answers. `lib/jobs/html-visibility.ts` and its ~350 lines of heuristics are
   gone; do not reintroduce markup-based visibility or size guessing.
-  - Text counts only if the browser renders it: a text node with client rects,
-    non-zero computed font-size, non-transparent color (alpha is the FOURTH rgba
-    channel — reading the third makes black text "transparent"), and no
-    ancestor with visibility:hidden / opacity:0 / a ≤1px overflow-hidden box /
-    an off-screen rect.
+  - Text counts only if the browser renders it, judged on **the text's own
+    client rects** — not an ancestor's box. Round 6 measured both failure
+    directions of the ancestor-box test: a zero-height wrapper (overflow
+    visible) discounted plainly painted copy, while `text-indent:-9999px`,
+    `left:9999px` (the mirror of the covered `-9999px`), `clip-path:inset(50%)`
+    and `transform:scale(0)` all counted as visible. Rects also settle
+    display:none and `<style>`/`<script>` text for free.
+  - CSS visibility is `Element.checkVisibility()`, never a hand-rolled ancestor
+    walk: `visibility:hidden` on a wrapper is undone by `visibility:visible` on
+    a child (unlike opacity), and walking ancestors zeroed honest builds that
+    use that idiom. Clipping still needs manual work — the sr-only idioms
+    (a ≤1px overflow-hidden box, legacy `clip: rect(0,0,0,0)`, `clip-path`
+    inset ≥50% / `circle(0)`) are intersected against the text rect.
+  - Non-zero computed font-size and non-transparent color still apply (alpha is
+    the FOURTH rgba channel — reading the third makes black text "transparent").
   - Image size is `getBoundingClientRect()`, so retina 2x exports, `%` widths,
-    `max-width` clamps, nested tables and `height:auto` all come out right.
-  - Chrome missing or render failure = "판정 불가": the two image checks and the
-    text check are skipped with a WARNING, never a failure (the verify-evidence
-    check independently fails a job that had no Chrome).
+    `max-width` clamps, nested tables and `height:auto` all come out right —
+    but only for images that actually decoded, so the render must not stop at
+    the `load` event: `loading="lazy"` images do not block it and measured
+    700×0, which silently switched all three image checks off. The renderer
+    forces `loading=eager`, awaits every image plus `document.fonts.ready`
+    (10s budget), and navigates with `domcontentloaded`.
+  - Remote requests are aborted (offline-safe, fast), so a remote `src` cannot
+    be measured — Chrome sizes the broken image as a ~square box, which is how
+    a whole-email capture served from https:// passed the aspect checks.
+    Images carry `loaded`; an unloaded image ≥400px wide is a FAILURE, and only
+    loaded images feed the size checks. Honest deliverables reference
+    `images/` relative paths (CDN swaps live in `output/hosted/`, which the
+    gate must never measure — it picks the top-level file explicitly rather
+    than trusting readdir order). A 1×1 remote tracking pixel is too small to
+    trip the rule.
+  - The color scheme is pinned to light (`emulateMediaFeatures`). Headless
+    Chrome inherits the OS theme, so a dark-mode `display:none` swap really did
+    hide honest copy — the same job passed on a light Mac and failed on a dark
+    one (this machine reports dark).
+  - One tab PER FILE. Sharing a tab let a document that pins the renderer's
+    main thread time out every later file, attributing the failure to the wrong
+    one.
+  - "판정 불가" is only Chrome missing / launch failure / job cancelled — those
+    skip the three checks with a WARNING. A **render failure is a FAILURE**: a
+    single script that blocks loading otherwise switched all three anti-gaming
+    checks off while compare.py, driving its own browser, still wrote a PASS.
+  - `checkAcceptance` takes the job's `AbortSignal` and passes it down. The gate
+    now launches browsers, and without it a cancelled job kept showing "실행 중"
+    until two 30s measurements finished.
   - Regression tests run the real browser (`lib/jobs/acceptance.test.ts`,
-    ~50s). `lib/jobs/png-fixture.ts` makes valid PNGs — a header-only fake
+    ~60s). `lib/jobs/png-fixture.ts` makes valid PNGs — a header-only fake
     renders as a broken image and measures 0. Every historical evasion and
-    false positive from rounds 1-5 is covered there.
+    false positive from rounds 1-6 is covered there;
+    `MHM_MEASURE_NAV_TIMEOUT_MS` shortens the navigation budget so the
+    render-failure paths are testable in seconds.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
