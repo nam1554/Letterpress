@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Text } from "@mantine/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { formatLogLine, type LogSegment } from "../../lib/log-format";
 
 export interface AgentEvent {
   ts: number;
@@ -24,6 +25,43 @@ const LOG_COLOR: Record<string, string> = {
   log: "var(--terminal-ink)",
 };
 
+/** 세그먼트별 강조색. 줄 색(LOG_COLOR)을 덮어써 종류를 구분한다. */
+const CODE_INK = "#E2BEA4"; // clay.2 — 백틱이었던 것
+const MUTED_INK = "#8F8B7E"; // 경로·URL — 줄의 본문보다 한 단계 물러난다
+
+/**
+ * 세그먼트 하나를 그린다. 경로·링크는 `title`에 원본 전체 경로를 달아 두므로
+ * 줄여 보여도 정보가 사라지지 않는다 (마우스를 올리면 전체가 보인다).
+ */
+function Seg({ seg }: { seg: LogSegment }) {
+  const weight = seg.strong ? 600 : undefined;
+
+  if (seg.kind === "code") {
+    return (
+      <span style={{ color: CODE_INK, fontWeight: weight }}>{seg.text}</span>
+    );
+  }
+  if (seg.kind === "path") {
+    return (
+      <span title={seg.full} style={{ color: MUTED_INK, fontWeight: weight }}>
+        {seg.text}
+      </span>
+    );
+  }
+  if (seg.kind === "url") {
+    return <span style={{ color: MUTED_INK, fontWeight: weight }}>{seg.text}</span>;
+  }
+  if (seg.kind === "link") {
+    return (
+      <span title={seg.full} style={{ fontWeight: weight }}>
+        {seg.text}
+        <span style={{ color: MUTED_INK }}> ({seg.target})</span>
+      </span>
+    );
+  }
+  return <span style={{ fontWeight: weight }}>{seg.text}</span>;
+}
+
 /**
  * 상시 다크 터미널 서피스의 진행 로그 뷰어.
  * 긴 변환 로그(수백~수천 이벤트)에서도 보이는 줄만 렌더하도록
@@ -34,6 +72,11 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
   // 사용자가 위로 스크롤해 읽는 중엔 자동 스크롤로 끌어내리지 않는다 —
   // 바닥 근처(40px)에 있을 때만 새 이벤트를 따라간다.
   const stickToBottom = useRef(true);
+
+  // 마크다운·경로 파싱은 렌더가 아니라 여기서 한 번만. events는 append마다 새 배열이라
+  // 전체를 다시 파싱하지만, 실측한 가장 긴 로그가 89줄(8개 잡 356줄 전체가 11ms)이라
+  // 비용이 사실상 없다. 여기서 미리 만들어 두면 스크롤 프레임마다 재파싱하지 않는다.
+  const parsed = useMemo(() => events.map((e) => formatLogLine(e.text)), [events]);
 
   // TanStack Virtual은 내부적으로 가변 인스턴스를 쓰는 설계라 React Compiler
   // 최적화 대상에서 제외해도 무방하다 (공식 권장 사용 패턴 그대로).
@@ -107,7 +150,7 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
                 >
                   {new Date(e.ts).toLocaleTimeString("ko-KR", { hour12: false })}
                 </Text>
-                {e.text}
+                {parsed[row.index]?.map((seg, i) => <Seg key={i} seg={seg} />)}
               </Text>
             </div>
           );

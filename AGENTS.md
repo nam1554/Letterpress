@@ -284,6 +284,27 @@ no auth, single user, filesystem is the database.
     glyph, so they under-measure Korean badly — `PROSE_WIDTH` is px.
   - `variant="default"` ignores `color`, so destructive buttons must use
     `variant="light" color="red"` to look destructive at all.
+- **Log rendering**: `app/lib/log-format.ts` turns one log line into display
+  segments (text / code / path / url / link, each optionally `strong`).
+  **Display-only — `events.ndjson` is never rewritten**, so archived jobs improve
+  retroactively and the agent prompt (load-bearing for the quality gate) stays
+  untouched. Measured over the 8 archived jobs / 356 events: absolute paths in
+  105 events (30%), backticks 191×, `**bold**` 46×, markdown links only 12× —
+  so **paths are the dominant noise, not links**. After: 0 absolute paths and 0
+  markdown symbols rendered, 14.8% fewer characters. Shortened paths keep the
+  original in `title`, so nothing is silently dropped. Gotchas covered by tests:
+  - Regex alternation is **position-first, not order-first**. Real logs contain
+    ``**`verify.json` = PASS**`` (code nested in bold); `strong` won at the
+    earlier `**` and left the backticks visible. `tokenize` re-parses emphasis
+    content, which is safe because `**…**` can't nest (`[^*\n]+`).
+  - URLs must be tokenized so path-shortening doesn't mangle their insides, and
+    the URL pattern must exclude `'` — logs wrap URLs in shell quotes
+    (`curl -o x 'https://…'`), so it otherwise ate the closing quote.
+  - `**kwargs` inside a code span must stay literal (Python source gets logged).
+  - When a link label equals its shortened target, emit a plain path — otherwise
+    it reads `verify.json (verify.json)`.
+  - Path matching uses `data/jobs/<8hex>/` rather than a repo-root prefix, so it
+    works regardless of where the repo lives; short paths (`/mcp`) are left alone.
 - **API validation**: route bodies are parsed with zod through
   `lib/api-body.ts` `readBody(req, schema)` — returns a ready 400 response on
   failure. Domain rules (provider existence, CDN template shape) stay in the
