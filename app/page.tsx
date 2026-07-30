@@ -24,6 +24,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import SettingsPanel from "./components/SettingsPanel";
 import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
+import DiagnosticsLink from "./components/DiagnosticsLink";
 import { parseFigmaUrl } from "@/lib/figma";
 import { fetcher } from "./lib/fetcher";
 import { figmaLabel, formatBytes, relativeTime } from "./lib/format";
@@ -337,8 +338,9 @@ export default function Home() {
             </Text>
             <Text size="xs" c="dimmed">
               지금 당장 흐름만 보고 싶다면 아래 <b>샘플로 체험해보기</b>를 누르세요 — 환경
-              없이도 결과물 다운로드까지 그대로 볼 수 있습니다. 막히면 <b>문제 신고용 파일</b>을
-              받아 담당자에게 보내주세요.
+              없이도 결과물 다운로드까지 그대로 볼 수 있습니다. 어디서 막히든,
+              <b>작업 히스토리</b> 오른쪽의 <b>문제 신고용 파일 내려받기</b>를 눌러 받은 파일을
+              담당자에게 보내주시면 됩니다 — 무엇이 문제인지 직접 알아낼 필요 없습니다.
             </Text>
           </Stack>
         </Paper>
@@ -439,15 +441,7 @@ export default function Home() {
             </Anchor>
           )}
           {/* 문제가 났을 때 폴더를 뒤지지 않고 그대로 전달할 수 있는 파일 한 개. */}
-          <Anchor
-            href="/api/diagnostics"
-            size="xs"
-            c="dimmed"
-            data-testid="diagnostics"
-            title="환경 점검·백엔드 진단·서버 오류 로그를 zip 하나로 내려받습니다 (토큰·API 키 제외)"
-          >
-            문제 신고용 파일
-          </Anchor>
+          <DiagnosticsLink />
         </Group>
       </Group>
 

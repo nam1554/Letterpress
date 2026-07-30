@@ -18,6 +18,7 @@ import { notifications } from "@mantine/notifications";
 import { Streamdown } from "streamdown";
 import { figmaLabel, formatElapsed } from "../../lib/format";
 import { requestJson, sendJson } from "../../lib/request";
+import DiagnosticsLink from "../../components/DiagnosticsLink";
 import ArtifactList, { type Artifact } from "./ArtifactList";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
@@ -310,15 +311,7 @@ export default function JobPage() {
             </>
           )}
           {/* 실패했을 때 폴더를 뒤지지 않고 그대로 전달할 수 있는 파일 한 개. */}
-          <Anchor
-            href={`/api/diagnostics?job=${job.id}`}
-            size="xs"
-            c="dimmed"
-            data-testid="diagnostics"
-            title="이 작업의 로그·환경 정보를 zip 하나로 내려받습니다 (토큰·API 키 제외)"
-          >
-            문제 신고용 파일
-          </Anchor>
+          <DiagnosticsLink jobId={job.id} />
         </Group>
       )}
 

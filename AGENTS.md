@@ -130,7 +130,9 @@ no auth, single user, filesystem is the database.
   `data/logs/app.log` — before this they only reached the terminal window and
   vanished with it. `GET /api/diagnostics[?job=<id>]` zips a support bundle
   (summary.md, health/backends json, masked settings, logs, the job's
-  events/verify/artifact list) behind a "문제 신고용 파일" link on the home and
+  events/verify/artifact list) behind a "문제 신고용 파일 내려받기" link (`app/components/DiagnosticsLink.tsx`,
+  shared so the non-developer wording lives in one place; a Mantine Tooltip, not
+  the native `title`, whose 1s+ delay is fixed by the browser) on the home and
   job pages, so a non-developer hands over one file instead of hunting through
   `data/`. Secrets never ship: `bundle.ts` masks token-ish setting keys AND
   string-replaces the actual values everywhere in the bundle, plus a
