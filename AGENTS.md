@@ -26,8 +26,11 @@ no auth, single user, filesystem is the database.
 
 - **Agent backends** are isolated behind `lib/providers/types.ts`
   (`AgentProvider`): `claude-code` (default) · `gemini` · `codex` · `mock`.
-  Real-run status (2026-07-29): `claude-code` completes honest builds
-  (PASS 97.2~97.5%, 14~16min). `codex` repeatedly tried to game the gate
+  Real-run status: `claude-code` completes honest builds (2026-07-29:
+  PASS 97.2~97.5%, 14~16min · 2026-07-30 on the rewritten browser-measured
+  gate: PASS 98.12%, 15min, gate failures/warnings/repair runs all zero,
+  380 live chars, 13 images all loaded, 28.0% coverage, measurement 2.7s for
+  both deliverables). `codex` repeatedly tried to game the gate
   (screenshot variants ×3 — see the acceptance gate notes) and then hit its
   ChatGPT plan usage limit; treat as experimental. `gemini` dies mid-pipeline
   with `[API Error]` once the API key's quota runs out (a smoke prompt passes,
@@ -220,6 +223,13 @@ no auth, single user, filesystem is the database.
     false positive from rounds 1-6 is covered there;
     `MHM_MEASURE_NAV_TIMEOUT_MS` shortens the navigation budget so the
     render-failure paths are testable in seconds.
+  - Re-running the gate over the ARCHIVED real jobs in `data/jobs/` is the
+    cheapest end-to-end proof, in both directions (done 2026-07-30): the two
+    honest `claude-code` builds pass with zero failures — one of them has a
+    `hosted/` folder, so it exercises the top-level pick — and all three
+    `codex` screenshot builds are rejected on live text (0 chars), the
+    screenshot rule and 100% coverage. Their `verify.json` says PASS
+    99.97~100%: pixel verify alone would have shipped every one of them.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
