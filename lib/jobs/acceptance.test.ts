@@ -181,6 +181,14 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       // 6라운드: 삭제된 휴리스틱이 명시적으로 막던 관용구들이 되살아났었다.
       textIndent: `<div style="text-indent:-9999px">${copy}</div><p>보이는것만</p>`,
       clipPath: `<div style="clip-path:inset(50%)">${copy}</div><p>보이는것만</p>`,
+      // 자릿수를 세는 정규식이 놓쳤던 값들 — 소수점·축별 접힘·소수 반지름.
+      clipPathDecimal: `<div style="clip-path:inset(50.5%)">${copy}</div><p>보이는것만</p>`,
+      clipPathAxis: `<div style="clip-path:inset(0% 60%)">${copy}</div><p>보이는것만</p>`,
+      clipPathCircle: `<div style="clip-path:circle(0.2%)">${copy}</div><p>보이는것만</p>`,
+      // 픽셀 실측: clip-path의 참조 상자가 0면적이면 값이 무해해도(inset(0 round 8px))
+      // 넘친 내용까지 전부 클립된다 — 같은 래퍼에서 clip-path만 빼면 그려진다
+      // (zeroHeightWrapper). 즉 이 조합은 오탐이 아니라 실제 숨김이다.
+      zeroHeightClipped: `<div style="height:0;overflow:visible;clip-path:inset(0 round 8px)">${copy}</div><p>보이는것만</p>`,
       scaleZero: `<div style="transform:scale(0)">${copy}</div><p>보이는것만</p>`,
       opacityZero: `<div style="opacity:0">${copy}</div><p>보이는것만</p>`,
       // 실측 재현 3탄: 숨김을 <style> 클래스로 옮기고 color:transparent를 썼다.
@@ -195,6 +203,9 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       visibleChild: `<div style="visibility:hidden"><p style="visibility:visible">${copy}</p></div>`,
       // 6라운드 오탐: 자리만 잡는 래퍼(플로트 행·오버레이)도 상자가 0이 된다.
       floatRow: `<div><div style="float:left;width:700px">${copy}</div></div>`,
+      // 접히지 않는 clip-path는 숨김이 아니다 — 둥근 모서리·부분 크롭은 정상 스타일.
+      clipPathRounded: `<div style="clip-path:inset(0 round 8px)">${copy}</div>`,
+      clipPathPartial: `<div style="clip-path:inset(10%)">${copy}</div>`,
     });
     for (const key of [
       "srOnly",
@@ -205,6 +216,10 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
       "offscreenRight",
       "textIndent",
       "clipPath",
+      "clipPathDecimal",
+      "clipPathAxis",
+      "clipPathCircle",
+      "zeroHeightClipped",
       "scaleZero",
       "opacityZero",
       "classHidden",
@@ -214,7 +229,13 @@ describe("보이는 텍스트 — 실제 렌더 기준", () => {
     expect(chars.normalStyles).toBe(7);
     expect(chars.blackText).toBe(6);
     expect(chars.spacerCell).toBe(7);
-    for (const key of ["zeroHeightWrapper", "visibleChild", "floatRow"]) {
+    for (const key of [
+      "zeroHeightWrapper",
+      "visibleChild",
+      "floatRow",
+      "clipPathRounded",
+      "clipPathPartial",
+    ]) {
       expect(chars[key], `${key}: 보이는 텍스트를 숨김으로 오인했다`).toBe(400);
     }
   }, 60_000);

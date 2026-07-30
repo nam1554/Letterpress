@@ -24,6 +24,17 @@ export interface JsonlCliResult {
   stderrTail: string;
 }
 
+/**
+ * CLI가 왜 끝났는지를 사람이 읽을 한 줄로. 프로바이더들이 파싱한 텍스트가
+ * 하나도 없을 때 쓰는 최후의 요약이라 세 프로바이더가 같은 문구를 써야 한다
+ * (문구·동작을 고칠 때 한 곳만 빠지면 그 백엔드만 다른 말을 하게 된다).
+ */
+export function exitReason(result: JsonlCliResult): string {
+  return result.signal
+    ? `프로세스가 ${result.signal} 신호로 종료되었습니다.`
+    : `종료 코드 ${result.code}`;
+}
+
 export async function runJsonlCli(opts: {
   bin: string;
   args: string[];

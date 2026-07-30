@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { getSettings } from "../settings";
-import { runJsonlCli } from "./jsonl-cli";
+import { exitReason, runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
@@ -170,7 +170,7 @@ export const geminiProvider: AgentProvider = {
       ok,
       summary: ok
         ? finalResponse || "완료"
-        : errorText || finalResponse || result.stderrTail || (result.signal ? `프로세스가 ${result.signal} 신호로 종료되었습니다.` : `종료 코드 ${result.code}`),
+        : errorText || finalResponse || result.stderrTail || exitReason(result),
     };
   },
 };

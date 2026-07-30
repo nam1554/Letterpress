@@ -22,15 +22,29 @@ import { Launcher } from "chrome-launcher";
 // 캐시를 안 하면 헬스 폴링마다 서버가 몇 초씩 얼어붙는다.
 // 대신 짧은 TTL을 둬서 사용자가 Chrome을 설치하고 기다리면 저절로 풀리고,
 // "다시 점검"(runHealthChecks(force))은 즉시 resetChromeCache()로 지운다.
+//
+// **찾은 경로는 재사용 전에 매번 존재를 확인한다** (stat 한 번, 캐시된 탐색이
+// 하려던 일에 비해 사실상 무료다). 찾은 결과를 무기한 신뢰하면, 프로세스가
+// 오래 떠 있는 동안 Chrome이 지워지거나 옮겨졌을 때 죽은 경로를 계속 돌려주고,
+// measure.ts의 launch가 ENOENT로 실패해 게이트가 이것을 "판정 불가"(경고)로
+// 격하한다 → 반-우회 검사 3개가 조용히 꺼진 채로 잡이 계속 통과한다.
+// CHROME_BIN/CHROME_PATH가 바뀐 경우도 같은 이유로 캐시를 무효화한다.
 const MISS_TTL_MS = 60_000;
-let cached: { value: string | null; at: number } | null = null;
+let cached: { value: string | null; at: number; override: string | undefined } | null = null;
 
 /** 실행 가능한 Chrome 경로. 없으면 null. */
 export function findChrome(): string | null {
   const now = Date.now();
-  if (cached && (cached.value !== null || now - cached.at < MISS_TTL_MS)) return cached.value;
-  const value = resolveChrome();
-  cached = { value, at: now };
+  const override = readOverride();
+  if (cached && cached.override === override) {
+    if (cached.value !== null) {
+      if (existsSync(cached.value)) return cached.value;
+    } else if (now - cached.at < MISS_TTL_MS) {
+      return null;
+    }
+  }
+  const value = resolveChrome(override);
+  cached = { value, at: now, override };
   return value;
 }
 
@@ -39,11 +53,17 @@ export function resetChromeCache(): void {
   cached = null;
 }
 
-function resolveChrome(): string | null {
-  // chrome-launcher는 CHROME_PATH를 우선 본다. 우리 문서·런처는 CHROME_BIN을
-  // 쓰므로 둘 다 받아주되, 실재하는지 확인한다 — 옛 경로가 남아 있으면
-  // 환경 점검은 초록불인데 검증만 조용히 실패하는 최악의 조합이 된다.
-  const override = (process.env.CHROME_BIN ?? process.env.CHROME_PATH)?.trim();
+/**
+ * chrome-launcher는 CHROME_PATH를 우선 본다. 우리 문서·런처는 CHROME_BIN을
+ * 쓰므로 둘 다 받아준다. 캐시 키로도 쓰므로 읽기는 한 곳에서만 한다.
+ */
+function readOverride(): string | undefined {
+  return (process.env.CHROME_BIN ?? process.env.CHROME_PATH)?.trim() || undefined;
+}
+
+function resolveChrome(override: string | undefined): string | null {
+  // 지정된 경로도 실재하는지 확인한다 — 옛 경로가 남아 있으면 환경 점검은
+  // 초록불인데 검증만 조용히 실패하는 최악의 조합이 된다.
   if (override && existsSync(override)) return override;
   try {
     return Launcher.getFirstInstallation() ?? null;

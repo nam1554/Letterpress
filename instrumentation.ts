@@ -15,7 +15,16 @@ export async function register() {
 }
 
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") {
+    // Edge 번들에는 fs가 없어 파일로 남길 수 없다. 그래도 조용히 삼키지는
+    // 않는다 — 여기서 그냥 return하면 edge 런타임으로 선언된 라우트의 오류만
+    // 아무 흔적 없이 사라진다(계측을 붙이기 전 상태로 되돌아간다).
+    console.error(
+      `[request-error] ${context.routeType} ${request.method} ${request.path}`,
+      err instanceof Error ? (err.stack ?? err.message) : String(err),
+    );
+    return;
+  }
   const { logRequestError } = await import("./lib/diagnostics/instrument-node");
   logRequestError(err, request, context);
 };

@@ -160,13 +160,18 @@ export async function checkAcceptance(
   // 보고 계산할 수 없다(표 자동 레이아웃·캐스케이드·미디어쿼리).
   // 두 산출물을 한 번의 브라우저 기동으로 처리한다 — 파일마다 새로 띄우면
   // 잡·테스트가 동시에 돌 때 머신이 Chrome 여러 개로 막힌다.
-  const canvas = await fileImageSize(path.join(base, "figma_full.png"));
-  const measurements = deliverables.length
-    ? await measureHtmlFiles(
-        deliverables.map((f) => path.join(out, f)),
-        { signal: opts.signal },
-      )
-    : [];
+  // 캔버스 크기(PNG 헤더 읽기)는 측정 결과에 들어가지 않고 그 반대도 아니므로
+  // 함께 출발시킨다 — 안 그러면 헤드리스 Chrome 기동 앞에 파일 읽기 지연이
+  // 매 게이트 실행마다 그대로 더해진다.
+  const [canvas, measurements] = await Promise.all([
+    fileImageSize(path.join(base, "figma_full.png")),
+    deliverables.length
+      ? measureHtmlFiles(
+          deliverables.map((f) => path.join(out, f)),
+          { signal: opts.signal },
+        )
+      : [],
+  ]);
 
   for (const [index, file] of deliverables.entries()) {
     const measured = measurements[index];

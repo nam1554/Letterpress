@@ -90,8 +90,38 @@ function collect(): Measured {
       visibilityProperty: true,
     });
 
+  /** 계산된 길이 하나를 px로. 퍼센트는 기준 길이에 대해 푼다. */
+  const lengthPx = (raw: string, basis: number): number => {
+    const value = Number.parseFloat(raw);
+    if (!Number.isFinite(value)) return Number.NaN;
+    return raw.endsWith("%") ? (value / 100) * basis : value;
+  };
+
+  /**
+   * `inset()`이 상자를 완전히 접었는지 — 값을 **숫자로 풀어** 남는 폭·높이를
+   * 잰다. 자릿수를 세는 정규식(`[5-9]\d%`)은 `inset(50.5%)`처럼 소수점이 붙은
+   * 유효한 sr-only 값을 놓쳐, 숨긴 텍스트가 라이브 텍스트 최소치를 채우는 데
+   * 쓰일 수 있었다. 축마다 따로 보므로 `inset(0% 60%)`(가로만 접힘)도 잡힌다.
+   */
+  const insetCollapsed = (cp: string, el: Element): boolean => {
+    const matched = /^inset\(([^)]*)\)/.exec(cp);
+    if (!matched) return false;
+    const parts = matched[1].trim().split(/\s+/).filter(Boolean);
+    const round = parts.indexOf("round"); // inset(0 round 8px) — 반지름은 무시
+    const vals = round === -1 ? parts : parts.slice(0, round);
+    if (vals.length === 0 || vals.length > 4) return false;
+    // CSS 축약: 1개=전부, 2개=(상하)(좌우), 3개=(상)(좌우)(하), 4개=상우하좌
+    const [top, right = top, bottom = top, left = right] = vals;
+    const rect = el.getBoundingClientRect();
+    const height = rect.height - lengthPx(top, rect.height) - lengthPx(bottom, rect.height);
+    const width = rect.width - lengthPx(left, rect.width) - lengthPx(right, rect.width);
+    // 값을 못 읽으면 NaN이라 비교가 false → "안 잘렸다"로 남는다. 여기서 과감하게
+    // 판정하면 이미지가 측정 목록에서 빠져 스크린샷 검사가 오히려 꺼진다.
+    return width <= 1 || height <= 1;
+  };
+
   /** sr-only 관용구(clip / clip-path)로 완전히 잘라냈는지. */
-  const clippedAway = (style: CSSStyleDeclaration): boolean => {
+  const clippedAway = (el: Element, style: CSSStyleDeclaration): boolean => {
     // 레거시 clip은 배치된 요소에만 먹는다. rect(top,right,bottom,left).
     if (style.position !== "static" && style.clip.startsWith("rect(")) {
       const n = style.clip
@@ -103,8 +133,18 @@ function collect(): Measured {
       }
     }
     const cp = style.clipPath;
-    // inset(50%)·inset(100%)·circle(0) — 현대 sr-only 관용구.
-    return cp !== "none" && /inset\(\s*(?:[5-9]\d|100)%|circle\(\s*0(?:px|%)?\s*[,)]/.test(cp);
+    if (cp === "none") return false;
+    if (insetCollapsed(cp, el)) return true;
+    // circle(0)·circle(0.4%) — 반지름이 0 근방이면 아무것도 남지 않는다.
+    // 퍼센트의 정확한 기준은 참조 상자의 대각선이지만, "0 근방"을 가리는
+    // 목적에는 짧은 변으로 근사해도 결론이 바뀌지 않는다.
+    const circle = /^circle\(\s*([^\s)]+)/.exec(cp);
+    if (circle) {
+      const rect = el.getBoundingClientRect();
+      const radius = lengthPx(circle[1], Math.min(rect.width, rect.height));
+      if (Number.isFinite(radius) && radius <= 0.5) return true;
+    }
+    return false;
   };
 
   /** 잘라내는 조상들과 교차시킨 실제 표시 사각형. 다 잘렸으면 null. */
@@ -112,7 +152,7 @@ function collect(): Measured {
     const box: Box = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
     for (let node: Element | null = el; node; node = node.parentElement) {
       const style = window.getComputedStyle(node);
-      if (clippedAway(style)) return null;
+      if (clippedAway(node, style)) return null;
       const clipX = style.overflowX !== "visible";
       const clipY = style.overflowY !== "visible";
       if (!clipX && !clipY) continue;

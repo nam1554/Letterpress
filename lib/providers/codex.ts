@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { runJsonlCli } from "./jsonl-cli";
+import { exitReason, runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
@@ -125,7 +125,7 @@ export const codexProvider: AgentProvider = {
       ok,
       summary: ok
         ? lastMessage || "완료"
-        : errorText || lastMessage || result.stderrTail || (result.signal ? `프로세스가 ${result.signal} 신호로 종료되었습니다.` : `종료 코드 ${result.code}`),
+        : errorText || lastMessage || result.stderrTail || exitReason(result),
     };
   },
 };

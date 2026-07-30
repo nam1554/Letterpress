@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { findChrome, resetChromeCache } from "./chrome";
 
@@ -22,6 +25,28 @@ describe("findChrome", () => {
     process.env.CHROME_BIN = process.execPath; // 존재하는 실행 파일이면 무엇이든
     resetChromeCache();
     expect(findChrome()).toBe(process.execPath);
+  });
+
+  it("캐시된 경로가 사라지면 다시 탐색한다", async () => {
+    // 서버는 몇 시간씩 떠 있다. 찾은 경로를 무기한 믿으면 그 사이 Chrome이
+    // 지워졌을 때 죽은 경로를 계속 돌려주고, 게이트는 launch 실패를 "판정 불가"
+    // 경고로 격하해 반-우회 검사 3개를 조용히 끈다.
+    const stale = path.join(await mkdtemp(path.join(tmpdir(), "chrome-")), "Google Chrome");
+    await writeFile(stale, "#!/bin/sh\n", { mode: 0o755 });
+    process.env.CHROME_BIN = stale;
+    resetChromeCache();
+    expect(findChrome()).toBe(stale);
+
+    await rm(stale);
+    expect(findChrome()).not.toBe(stale);
+  });
+
+  it("CHROME_BIN이 바뀌면 캐시를 무시한다", () => {
+    process.env.CHROME_BIN = process.execPath;
+    resetChromeCache();
+    expect(findChrome()).toBe(process.execPath);
+    process.env.CHROME_BIN = "/nonexistent/Google Chrome";
+    expect(findChrome()).not.toBe(process.execPath);
   });
 
   it("한 번 찾은 뒤에는 다시 탐색하지 않는다 (이벤트 루프 블로킹 방지)", () => {

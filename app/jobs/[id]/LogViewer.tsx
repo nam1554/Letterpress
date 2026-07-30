@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Text } from "@mantine/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { formatLogLine, type LogSegment } from "../../lib/log-format";
@@ -63,6 +63,24 @@ function Seg({ seg }: { seg: LogSegment }) {
 }
 
 /**
+ * 줄 파싱 결과는 **이벤트 객체별로** 캐시한다. SSE append마다 events는 새 배열이
+ * 되므로 배열 단위 useMemo는 줄 하나가 도착할 때마다 전체를 다시 파싱했다 —
+ * 잡 수명 동안의 총비용이 이벤트 수에 대해 제곱으로 늘어난다(수천 이벤트 잡).
+ * 이벤트 객체 자체는 재사용되니 WeakMap이면 줄당 정확히 한 번만 파싱하고,
+ * 배열이 버려질 때 함께 수거된다.
+ */
+const parsedLines = new WeakMap<AgentEvent, LogSegment[]>();
+
+function segmentsOf(event: AgentEvent): LogSegment[] {
+  let segments = parsedLines.get(event);
+  if (!segments) {
+    segments = formatLogLine(event.text);
+    parsedLines.set(event, segments);
+  }
+  return segments;
+}
+
+/**
  * 상시 다크 터미널 서피스의 진행 로그 뷰어.
  * 긴 변환 로그(수백~수천 이벤트)에서도 보이는 줄만 렌더하도록
  * @tanstack/react-virtual 로 가상화 (자동 스크롤 유지).
@@ -72,11 +90,6 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
   // 사용자가 위로 스크롤해 읽는 중엔 자동 스크롤로 끌어내리지 않는다 —
   // 바닥 근처(40px)에 있을 때만 새 이벤트를 따라간다.
   const stickToBottom = useRef(true);
-
-  // 마크다운·경로 파싱은 렌더가 아니라 여기서 한 번만. events는 append마다 새 배열이라
-  // 전체를 다시 파싱하지만, 실측한 가장 긴 로그가 89줄(8개 잡 356줄 전체가 11ms)이라
-  // 비용이 사실상 없다. 여기서 미리 만들어 두면 스크롤 프레임마다 재파싱하지 않는다.
-  const parsed = useMemo(() => events.map((e) => formatLogLine(e.text)), [events]);
 
   // TanStack Virtual은 내부적으로 가변 인스턴스를 쓰는 설계라 React Compiler
   // 최적화 대상에서 제외해도 무방하다 (공식 권장 사용 패턴 그대로).
@@ -150,7 +163,7 @@ export default function LogViewer({ events }: { events: AgentEvent[] }) {
                 >
                   {new Date(e.ts).toLocaleTimeString("ko-KR", { hour12: false })}
                 </Text>
-                {parsed[row.index]?.map((seg, i) => <Seg key={i} seg={seg} />)}
+                {segmentsOf(e).map((seg, i) => <Seg key={i} seg={seg} />)}
               </Text>
             </div>
           );

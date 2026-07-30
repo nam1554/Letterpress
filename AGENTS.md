@@ -125,6 +125,12 @@ no auth, single user, filesystem is the database.
   `runHealthChecks(force)` ("다시 점검") clears it immediately so the install
   guidance stays honest. `lib/chrome-not-found.test.ts` mocks chrome-launcher to
   cover that path — the real-discovery tests can't.
+  A **hit** is never trusted blindly: the cached path is `existsSync`-checked on
+  every call (one stat, free next to the discovery it replaces) and the
+  `CHROME_BIN`/`CHROME_PATH` override is part of the cache key. The server lives
+  for hours; a path that dies mid-session used to be returned forever, and
+  `measure.ts`'s launch then fails with ENOENT — which the gate downgrades to
+  "판정 불가" (WARNING), silently switching all three anti-gaming checks off.
 - **Diagnostics**: `instrumentation.ts` (Next's official `onRequestError` hook +
   `unhandledRejection`/`uncaughtException`) appends server failures to
   `data/logs/app.log` — before this they only reached the terminal window and
@@ -186,7 +192,15 @@ no auth, single user, filesystem is the database.
     a child (unlike opacity), and walking ancestors zeroed honest builds that
     use that idiom. Clipping still needs manual work — the sr-only idioms
     (a ≤1px overflow-hidden box, legacy `clip: rect(0,0,0,0)`, `clip-path`
-    inset ≥50% / `circle(0)`) are intersected against the text rect.
+    inset / `circle()`) are intersected against the text rect.
+    `clip-path` values are **resolved numerically** (percent against the
+    element's border box, CSS 1-4 value shorthand, `round <radius>` ignored),
+    never matched by counting digits: the old `/inset\(\s*(?:[5-9]\d|100)%/`
+    missed `inset(50.5%)` and any axis-only collapse like `inset(0% 60%)`.
+    Zero-area reference box + ANY `clip-path` really is hidden — pixel-measured
+    in Chrome, text and a 600×300 image both paint 0 dark pixels, while the same
+    wrapper without `clip-path` paints normally. Don't "fix" that as a false
+    positive (a review round claimed it; the screenshot said otherwise).
   - Non-zero computed font-size and non-transparent color still apply (alpha is
     the FOURTH rgba channel — reading the third makes black text "transparent").
   - Image size is `getBoundingClientRect()`, so retina 2x exports, `%` widths,
