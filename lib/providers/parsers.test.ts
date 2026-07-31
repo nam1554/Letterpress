@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createAgyLineMapper, printTimeoutArg, stripAgySystemNoise } from "./antigravity";
 import { claudeEventsFromLine } from "./claude-code";
 import { codexEventsFromLine } from "./codex";
-import { createGeminiLineMapper } from "./gemini";
 import type { AgentEvent } from "./types";
 
 describe("claude stream-json parser", () => {
@@ -81,49 +84,227 @@ describe("codex exec --json parser", () => {
   });
 });
 
-describe("gemini tolerant line mapper", () => {
-  function collect() {
+describe("antigravity(agy) stream-json mapper", () => {
+  const collect = () => {
     const events: AgentEvent[] = [];
-    const mapper = createGeminiLineMapper((e) => events.push(e));
-    return { events, mapper };
-  }
+    return { events, mapper: createAgyLineMapper((e) => events.push(e)) };
+  };
 
-  it("buffers assistant chunks and skips user echo", () => {
+  it("init을 세션 시작 상태로 바꾼다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "message", role: "user", content: "프롬프트 에코" });
-    mapper.handle({ type: "message", role: "assistant", content: "첫 ", delta: true });
-    mapper.handle({ type: "message", role: "assistant", content: "줄\n둘째 " });
+    mapper.handle({ event: "init", conversation_id: "c1", init: { cwd: "/tmp/x" } });
+    expect(events).toEqual([expect.objectContaining({ type: "status" })]);
+    expect(events[0].text).toContain("Antigravity");
+  });
+
+  it("agent_response의 text_delta를 완성된 줄 단위로만 흘린다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "첫 줄\n둘째 " },
+    });
     expect(events.map((e) => e.text)).toEqual(["첫 줄"]);
-    const { finalResponse } = mapper.finish();
-    expect(events.map((e) => e.text)).toEqual(["첫 줄", "둘째"]);
-    // result.response가 없으면 마지막 assistant 텍스트가 최종 응답
-    expect(finalResponse).toBe("줄\n둘째");
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "줄\n" },
+    });
+    expect(events.map((e) => e.text)).toEqual(["첫 줄", "둘째 줄"]);
   });
 
-  it("maps real v0.53 schema: init / result success / result error", () => {
+  it("툴은 DONE 시점에만 한 줄 남긴다 (ACTIVE는 무시)", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "init" });
-    mapper.handle({ type: "message", role: "assistant", content: "OK" });
-    mapper.handle({ type: "result", status: "success" });
-    const { finalResponse, errorText } = mapper.finish();
-    expect(events.some((e) => e.type === "status")).toBe(true);
-    expect(finalResponse).toBe("OK");
-    expect(errorText).toBe("");
-
-    const second = collect();
-    second.mapper.handle({ type: "result", status: "error", error: { message: "quota" } });
-    expect(second.mapper.finish().errorText).toBe("quota");
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toHaveLength(0);
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "DONE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toEqual([expect.objectContaining({ type: "tool", text: "run_command" })]);
   });
 
-  it("captures final response and error", () => {
+  it("result 성공에서 최종 응답을 얻는다", () => {
+    const { mapper } = collect();
+    mapper.handle({ event: "result", result: { status: "SUCCESS", response: "eDM 빌드 완료" } });
+    expect(mapper.finish()).toEqual({ finalResponse: "eDM 빌드 완료", errorText: "" });
+  });
+
+  // 실측: 프롬프트가 FATAL을 찍어도 status는 SUCCESS다. 파서는 응답을 그대로
+  // 넘기고, 성공 판정은 provider가 FATAL 접두어로 한다.
+  it("FATAL 응답도 status가 SUCCESS면 에러로 만들지 않는다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "tool_call", tool_name: "run_shell", status: "ok" });
-    mapper.handle({ type: "result", response: "다 됐습니다" });
-    mapper.handle({ type: "error", error: { message: "rate limit" } });
-    const { finalResponse, errorText } = mapper.finish();
-    expect(finalResponse).toBe("다 됐습니다");
-    expect(errorText).toBe("rate limit");
-    expect(events.some((e) => e.type === "tool" && e.text.includes("run_shell"))).toBe(true);
-    expect(events.some((e) => e.type === "error")).toBe(true);
+    mapper.handle({
+      event: "result",
+      result: { status: "SUCCESS", response: "FATAL: Figma access is not available\n" },
+    });
+    expect(events.filter((e) => e.type === "error")).toHaveLength(0);
+    expect(mapper.finish().finalResponse).toContain("FATAL:");
+  });
+
+  it("status가 SUCCESS가 아니면 에러로 남긴다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "result", result: { status: "ERROR", response: "quota exhausted" } });
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(mapper.finish().errorText).toContain("quota exhausted");
+  });
+
+  // 리뷰 Minor 3: status 필드 자체가 없을 때 조용히 성공으로 흘리면 스키마가
+  // 어긋난 응답을 통과시킨다. 실측에선 항상 있었지만 방어는 싸다.
+  it("result에 status 필드가 아예 없으면 방어적으로 에러 취급한다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "result", result: { response: "뭔가 응답" } });
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(mapper.finish().errorText).toContain("뭔가 응답");
+  });
+
+  it("버퍼에 남은 마지막 줄을 finish에서 흘린다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "개행 없는 줄" },
+    });
+    expect(events).toHaveLength(0);
+    mapper.finish();
+    expect(events.map((e) => e.text)).toEqual(["개행 없는 줄"]);
+  });
+
+  // 리뷰 Important 1: tool_info.parameters를 버리면 잡이 무슨 명령을 실행했는지
+  // 로그·진단 번들 어디서도 알 수 없다. claude-code.ts처럼 요약해 싣는다.
+  it("완료된 툴의 tool_info.parameters를 로그에 요약해 싣는다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: {
+        state: "DONE",
+        step_type: "tool",
+        tool_name: "run_command",
+        tool_info: { name: "run_command", parameters: { command: "python3 build_email.py" } },
+      },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("tool");
+    expect(events[0].text).toContain("run_command");
+    expect(events[0].text).toContain("python3 build_email.py");
+  });
+
+  it("긴 tool_info.parameters는 200자로 절단한다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: {
+        state: "DONE",
+        step_type: "tool",
+        tool_name: "write_file",
+        tool_info: { name: "write_file", parameters: { content: "x".repeat(500) } },
+      },
+    });
+    expect(events[0].text.length).toBeLessThan(300);
+    expect(events[0].text).toMatch(/…$/);
+  });
+
+  it("tool_info가 없으면 예전처럼 tool_name만 남긴다 (기존 동작 보존)", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "DONE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toEqual([expect.objectContaining({ type: "tool", text: "run_command" })]);
+  });
+
+  it("모르는 event와 잡다한 step_type은 조용히 무시한다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "telemetry_whatever" });
+    mapper.handle({ event: "step_update", step_update: { state: "DONE", step_type: "checkpoint" } });
+    mapper.handle({ event: "step_update", step_update: { state: "DONE", step_type: "user_input" } });
+    expect(events).toHaveLength(0);
+  });
+});
+
+describe("stripAgySystemNoise", () => {
+  // 실측 응답에 그대로 들어 있던 모양이다.
+  it("SYSTEM_MESSAGE 블록을 통째로 걷어낸다", () => {
+    const raw = [
+      "빌드를 완료했습니다.",
+      "<SYSTEM_MESSAGE>",
+      "[Message] timestamp=2026-07-31T06:43:08Z sender=b0ff/task-55 priority=HIGH content=…",
+      "Log: file:///Users/example/.gemini/antigravity-cli/brain/…/task-55.log",
+      "</SYSTEM_MESSAGE>",
+      "verify.json은 PASS입니다.",
+    ].join("\n");
+    const out = stripAgySystemNoise(raw);
+    expect(out).toContain("빌드를 완료했습니다.");
+    expect(out).toContain("verify.json은 PASS입니다.");
+    expect(out).not.toContain("SYSTEM_MESSAGE");
+    expect(out).not.toContain("task-55");
+  });
+
+  it("'production mode active' 줄을 걷어낸다", () => {
+    expect(stripAgySystemNoise("... production mode active ...\n결과입니다.").trim()).toBe(
+      "결과입니다.",
+    );
+  });
+
+  // run3(/tmp/agy-stream-run3.ndjson) 실측 모양 — SYSTEM_MESSAGE가 아니라
+  // <notification> 블록이었다. 내부 task id와 절대 로그 경로가 그대로 실린다.
+  it("notification 블록을 통째로 걷어낸다 (task id·절대경로 포함)", () => {
+    const raw = [
+      "빌드를 완료했습니다.",
+      "<notification>",
+      "Task cd5e3158-9220-4899-b093-c59f2d15c1a6/task-28 has completed.",
+      "Log: /Users/example/.gemini/antigravity-cli/brain/cd5e3158-.../.system_generated/tasks/task-32.log",
+      "Output:",
+      "Downloaded figma_full.png: (700, 2158)",
+      "</notification>",
+      "verify.json은 PASS입니다.",
+    ].join("\n");
+    const out = stripAgySystemNoise(raw);
+    expect(out).toContain("빌드를 완료했습니다.");
+    expect(out).toContain("verify.json은 PASS입니다.");
+    expect(out).not.toContain("notification");
+    expect(out).not.toContain("task-28");
+    expect(out).not.toContain("task-32");
+    expect(out).not.toContain(".system_generated");
+    expect(out).not.toContain("cd5e3158");
+  });
+
+  it("SYSTEM_MESSAGE가 여러 번 나와도 전부 걷어낸다", () => {
+    const raw = "A\n<SYSTEM_MESSAGE>\nx\n</SYSTEM_MESSAGE>\nB\n<SYSTEM_MESSAGE>\ny\n</SYSTEM_MESSAGE>\nC";
+    const out = stripAgySystemNoise(raw);
+    expect(out).not.toContain("x");
+    expect(out).not.toContain("y");
+    expect(out.replace(/\n+/g, " ").trim()).toBe("A B C");
+  });
+
+  it("잡음이 없으면 원문을 그대로 둔다", () => {
+    expect(stripAgySystemNoise("평범한 요약입니다.")).toBe("평범한 요약입니다.");
+  });
+});
+
+// 리뷰 Minor 1: --print-timeout이 잡 타임아웃과 똑같으면 agy의 타임아웃과
+// 러너의 AbortController가 같은 순간 발화해 어느 메시지가 남을지 경합이 된다.
+describe("printTimeoutArg (agy --print-timeout 경합 방지)", () => {
+  let dir: string;
+  const settingsPath = () => path.join(dir, "settings.json");
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "mhm-agy-timeout-"));
+    process.env.MHM_SETTINGS_FILE = settingsPath();
+  });
+
+  afterEach(async () => {
+    delete process.env.MHM_SETTINGS_FILE;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("잡 타임아웃보다 1분 짧게 준다 (agy가 먼저 끊겨야 명확한 메시지가 남는다)", async () => {
+    await writeFile(settingsPath(), JSON.stringify({ jobTimeoutMinutes: 45 }));
+    expect(printTimeoutArg()).toBe("44m");
+  });
+
+  it("잡 타임아웃이 1분이어도 0이나 음수가 되지 않는다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({ jobTimeoutMinutes: 1 }));
+    expect(printTimeoutArg()).toBe("1m");
   });
 });

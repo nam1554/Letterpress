@@ -7,7 +7,7 @@ import { runHealthChecks } from "../health";
 import type { Job } from "../jobs/store";
 import { findPython } from "../python";
 import { getSettings } from "../settings";
-import { getBackendSetup } from "../setup";
+import { getBackendSetup, type BackendSetup } from "../setup";
 import { readRecentLog } from "./log";
 
 const execFileAsync = promisify(execFile);
@@ -16,15 +16,15 @@ const execFileAsync = promisify(execFile);
  * 문제 신고용 진단 번들 — 사용자가 폴더를 뒤지지 않고 버튼 하나로 받아
  * 그대로 전달할 수 있는 파일 한 개를 만든다.
  *
- * 원칙: 담을 것은 넉넉히, 비밀은 절대로. 설정에는 Figma 토큰과 Gemini API 키가
- * 들어 있고, 로그에 그 값이 찍혀 있을 수도 있다. 값 자체를 문자열 치환으로
- * 지운 뒤에만 번들에 넣는다.
+ * 원칙: 담을 것은 넉넉히, 비밀은 절대로. 설정에는 Figma 토큰이 들어 있고,
+ * 로그에 그 값이 찍혀 있을 수도 있다. 값 자체를 문자열 치환으로 지운 뒤에만
+ * 번들에 넣는다.
  */
 
 /** 설정에 저장된 비밀값들 — 번들 어디에서든 이 문자열은 지운다. */
 function secrets(): string[] {
-  const { figmaToken, geminiApiKey } = getSettings();
-  return [figmaToken, geminiApiKey].filter((s): s is string => Boolean(s) && s.length >= 8);
+  const { figmaToken } = getSettings();
+  return [figmaToken].filter((s): s is string => Boolean(s) && s.length >= 8);
 }
 
 /**
@@ -79,12 +79,25 @@ export interface BundleInput {
   job?: Job | null;
 }
 
+/**
+ * 테스트가 실제 CLI 스폰(최대 45초, `claudeSetup`의 `mcp list`)을 피할 수
+ * 있도록 백엔드 진단 함수를 주입 가능하게 뒀다. 생략하면 프로덕션과 동일하게
+ * `getBackendSetup`을 그대로 쓴다 — 실제 출력은 바뀌지 않는다.
+ */
+export interface BuildSummaryDeps {
+  getBackendSetup?: (force?: boolean) => Promise<BackendSetup[]>;
+}
+
 /** 사람이 먼저 읽을 요약 — 여는 순간 상황이 보이게. */
-export async function buildSummary(input: BundleInput): Promise<string> {
+export async function buildSummary(
+  input: BundleInput,
+  deps: BuildSummaryDeps = {},
+): Promise<string> {
+  const backendSetup = deps.getBackendSetup ?? getBackendSetup;
   const python = await findPython();
   const [health, backends, appVersion, gitRev] = await Promise.all([
     runHealthChecks(true).catch(() => []),
-    getBackendSetup(false).catch(() => []),
+    backendSetup(false).catch(() => []),
     readFile(path.join(process.cwd(), "package.json"), "utf8")
       .then((raw) => JSON.parse(raw).version as string)
       .catch(() => "unknown"),
@@ -110,8 +123,9 @@ export async function buildSummary(input: BundleInput): Promise<string> {
       ? ["(진단 없음)"]
       : backends.map(
           (b) =>
-            `- ${b.label}: ${b.ready ? "준비됨" : "준비 안 됨"} — ` +
-            b.steps.map((s) => `${s.name}=${s.ok === null ? "?" : s.ok ? "OK" : "실패"}`).join(", "),
+            `- ${b.label}: ${b.ready ? "준비됨" : "준비 안 됨"}` +
+            ` · 완주 기록: ${b.verification === "verified" ? "검증됨" : b.verification === "sample" ? "샘플 전용" : "미검증"}` +
+            ` — ${b.steps.map((s) => `${s.name}=${s.ok === null ? "?" : s.ok ? "OK" : "실패"}`).join(", ")}`,
         )),
     "",
     "## 최근 작업",

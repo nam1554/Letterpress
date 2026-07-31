@@ -196,7 +196,7 @@ export const theme = createTheme({
   // 평범한 객체가 같은 결과를 내면서 그 의존을 없앤다.
   components: {
     // 작은 칩에 16px 라운드가 걸리면 알약이 된다 — 태그처럼 보이게 sm 고정.
-    // textTransform: Mantine 기본값이 uppercase라 "GEMINI 설정 필요"처럼
+    // textTransform: Mantine 기본값이 uppercase라 "CODEX 설정 필요"처럼
     // 한글·영문 혼용 라벨이 소리치는 모양이 된다.
     Badge: {
       defaultProps: { radius: "sm" },

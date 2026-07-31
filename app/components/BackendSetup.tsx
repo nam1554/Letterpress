@@ -11,9 +11,9 @@ import {
   Group,
   Loader,
   Paper,
-  PasswordInput,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { sendJson } from "../lib/request";
@@ -31,6 +31,8 @@ export interface BackendInfo {
   id: string;
   label: string;
   ready: boolean;
+  verification: "verified" | "unverified" | "sample";
+  verificationNote: string;
   steps: SetupStep[];
 }
 
@@ -42,8 +44,8 @@ interface TestResult {
 
 const SHORT_NAME: Record<string, string> = {
   "claude-code": "Claude",
-  gemini: "Gemini",
   codex: "Codex",
+  antigravity: "Antigravity",
 };
 
 /**
@@ -71,6 +73,39 @@ function StepIcon({ ok }: { ok: boolean | null }) {
   );
 }
 
+/**
+ * 완주 기록(verification) 배지 — 근거(verificationNote)는 네이티브 title이 아니라
+ * Mantine Tooltip으로 보여준다. 브라우저 기본 title 툴팁은 뜨기까지 1초 이상
+ * 걸린다(DiagnosticsLink.tsx가 같은 이유로 이미 title을 걷어낸 전례가 있다).
+ */
+function VerificationBadge({
+  verification,
+  note,
+}: {
+  verification: "verified" | "unverified" | "sample";
+  note: string;
+}) {
+  if (verification === "sample") return null;
+  const badge = (
+    <Badge size="xs" variant="light" color={verification === "verified" ? "green" : "yellow"}>
+      {verification === "verified" ? "검증됨" : "미검증"}
+    </Badge>
+  );
+  if (!note) return badge;
+  return (
+    <Tooltip
+      label={note}
+      multiline
+      w={320}
+      withArrow
+      openDelay={100}
+      events={{ hover: true, focus: true, touch: true }}
+    >
+      {badge}
+    </Tooltip>
+  );
+}
+
 function CommandChip({ command }: { command: string }) {
   return (
     <Group gap={6} mt={4} wrap="nowrap">
@@ -82,58 +117,6 @@ function CommandChip({ command }: { command: string }) {
           </Button>
         )}
       </CopyButton>
-    </Group>
-  );
-}
-
-/** Gemini API 키 입력 — 카드 안에서 바로 저장·검증한다. */
-function GeminiKeyInput({ keySet, onSaved }: { keySet: boolean; onSaved: () => void }) {
-  const [value, setValue] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    if (!value.trim()) return;
-    setSaving(true);
-    try {
-      const r = await sendJson<{ warning?: string }>("/api/settings", "PUT", {
-        geminiApiKey: value.trim(),
-      });
-      if (!r.ok) {
-        notifications.show({ message: r.error, color: "red" });
-        return;
-      }
-      const data = r.data;
-      setValue("");
-      notifications.show({
-        message: data.warning
-          ? `키를 저장했습니다 — ${data.warning}`
-          : "Gemini API 키를 검증하고 저장했습니다.",
-        color: data.warning ? "yellow" : "teal",
-      });
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Group gap="xs" mt="sm" wrap="nowrap">
-      <PasswordInput
-        data-testid="gemini-key-input"
-        size="xs"
-        w={220}
-        value={value}
-        onChange={(e) => setValue(e.currentTarget.value)}
-        placeholder={keySet ? "변경하려면 새 키 입력" : "AIza… (aistudio.google.com/apikey)"}
-      />
-      <Button size="compact-sm" variant="light" onClick={save} loading={saving} disabled={!value.trim()}>
-        키 저장
-      </Button>
-      {keySet && !value && (
-        <Text size="xs" c="green">
-          설정됨
-        </Text>
-      )}
     </Group>
   );
 }
@@ -231,6 +214,7 @@ export default function BackendSetup({
                     <Badge size="sm" variant="light" color={b.ready ? "green" : "yellow"}>
                       {b.ready ? "사용 가능" : "설정 필요"}
                     </Badge>
+                    <VerificationBadge verification={b.verification} note={b.verificationNote} />
                   </Group>
                   {b.id !== "mock" && (
                     <Button
@@ -266,12 +250,6 @@ export default function BackendSetup({
                     </Group>
                   ))}
                 </Stack>
-                {b.id === "gemini" && (
-                  <GeminiKeyInput
-                    keySet={b.steps.some((s) => s.name === "API 키" && s.ok === true)}
-                    onSaved={() => onRefresh(true)}
-                  />
-                )}
                 {result && (
                   <Alert
                     mt="sm"

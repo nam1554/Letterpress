@@ -28,7 +28,6 @@ interface SettingsView {
   maxConcurrentJobs: number;
   jobTimeoutMinutes: number;
   figmaTokenSet: boolean;
-  geminiApiKeySet: boolean;
   claudeModel: string;
   notifyOnFinish: boolean;
   providers: ProviderInfo[];

@@ -25,23 +25,72 @@ no auth, single user, filesystem is the database.
 ## Architecture map
 
 - **Agent backends** are isolated behind `lib/providers/types.ts`
-  (`AgentProvider`): `claude-code` (default) · `gemini` · `codex` · `mock`.
+  (`AgentProvider`): `claude-code` (default) · `codex` · `antigravity` · `mock`.
+  A `verification` axis on each provider (`verified` / `unverified` / `sample`,
+  `verificationNote` carries the evidence) is independent of `ready` (runtime
+  diagnosis in `lib/setup.ts`) — `ready` says the CLI/auth/Figma access look
+  fine right now, `verification` says a real Figma job has actually cleared
+  the gate. The rule, enforced by `lib/providers/verification.test.ts`: never
+  write `verified` before a real-run gate PASS, and the evidence must carry a
+  measurement date (`\d{4}-\d{2}-\d{2}` shape) — a provider can look ready and
+  still be `unverified` if no one has run it end-to-end yet.
   Real-run status: `claude-code` completes honest builds (2026-07-29:
   PASS 97.2~97.5%, 14~16min · 2026-07-30 on the rewritten browser-measured
   gate: PASS 98.12%, 15min, gate failures/warnings/repair runs all zero,
   380 live chars, 13 images all loaded, 28.0% coverage, measurement 2.7s for
-  both deliverables). `codex` repeatedly tried to game the gate
-  (screenshot variants ×3 — see the acceptance gate notes) and then hit its
-  ChatGPT plan usage limit; treat as experimental. `gemini` dies mid-pipeline
-  with `[API Error]` once the API key's quota runs out (a smoke prompt passes,
-  a real conversion doesn't) — needs a paid-tier key for real use.
+  both deliverables). `codex` gamed the gate three times historically
+  (screenshot variants ×3 — see the acceptance gate notes), but all three of
+  those runs predate the anti-gaming commits; they are kept as evidence of
+  *why* the gate exists, not as the current verdict. Re-run against the
+  current prompt + gate (2026-07-31, job `d1febcc0`): PASS 93.51%, 3.3min,
+  530 live chars, 9 images, zero gate failures/errors — `codex` is verified,
+  not experimental.
+  `antigravity` (Google's `agy` CLI) was added and verified the same day
+  (job `cf09c7e0`, run through the app end-to-end: provider → jsonl-cli →
+  parser → gate): PASS 93.5%, 3.7min, 351 live chars, 13 images, zero gate
+  failures. Three things only real measurement revealed, all load-bearing for
+  `lib/providers/antigravity.ts` and `lib/setup.ts`:
+  - **No Figma MCP.** `agy`'s `init.tools` lists 56 tools and none of them are
+    Figma-specific — the REST token (`FIGMA_TOKEN`, from the settings Figma
+    token) is the *only* access path for this backend. Without it, the run
+    ends in 47s with a `FATAL:` response instead of erroring cleanly, so
+    `lib/setup.ts`'s `figmaTokenStep` diagnoses token presence directly rather
+    than pointing at MCP (there's nothing to point at).
+  - **`--add-dir <workDir>` is required.** Without it `agy` runs its
+    sub-agent tasks from its own scratch dir
+    (`~/.gemini/antigravity-cli/scratch/`) instead of the job's `workDir`, so
+    artifacts land outside the job and the gate fails on an empty directory
+    even when the run itself "succeeded".
+  - **`stream-json` doesn't match the documented schema.** The envelope key
+    is `event`, not `type`, and the payload nests under a key named after the
+    event; `status` comes back upper-case `SUCCESS`. `result.response` also
+    carries `<SYSTEM_MESSAGE>`/`<notification>` noise from `agy`'s own task
+    system, stripped by `stripAgySystemNoise`. A `FATAL:` response still
+    reports `status: SUCCESS`, so success is judged by the `FATAL:` prefix,
+    same as the other providers — never by `status` alone.
+  `agy` has no `mcp` subcommand and no way to query login state, so
+  `antigravitySetup()` diagnoses only the Figma-token setting and leaves the
+  login step `ok: null`, pointing teammates at "연동 테스트" to confirm login
+  by actually running the CLI.
+  `gemini` was removed (2026-07-31) — it was API-key auth (orthogonal to the
+  "whatever subscription a teammate has" goal) and had zero completed real
+  runs, so keeping it in the backend list was a trap rather than an option.
   Shared pieces: `jsonl-cli.ts` (execa: line streaming, stderr tail, and
   `killDescendants` so a cancel kills the CLI's grandchildren — the wrappers
   re-spawn the real binary; on Windows that becomes `taskkill`, and execa also
   runs `.cmd` shims that Node refuses to spawn since CVE-2024-27980),
   `prompt.ts` (shared eDM prompt + agent env, including `CHROME_BIN`).
-  Add a new backend = one file + one `registry.ts` entry. Parsers are exported
-  pure functions with tests in `parsers.test.ts`.
+  Adding `antigravity` needed more than "one file + one `registry.ts` entry" —
+  that claim was wrong and cost a diagnosis-less backend once (fixed
+  2026-07-31). The real list, so the next backend doesn't skip any of it:
+  `lib/providers/<id>.ts` (the `AgentProvider` impl) · a `registry.ts` entry ·
+  `lib/setup.ts` (`<id>Setup()` implemented AND registered in
+  `getBackendSetup`'s roster — skip this and the backend ships with no
+  install/auth/Figma-access diagnosis) · `app/components/BackendSetup.tsx`'s
+  `SHORT_NAME` (notification text falls back to the raw id without it) ·
+  a `<id>.smoke.test.ts` · the README backend list, install steps, env-var
+  table, structure map and smoke-test section. Parsers are exported pure
+  functions with tests in `parsers.test.ts`.
 - **Job state** lives in `data/jobs/<id>/` (`job.json` atomic-written,
   `events.ndjson` with per-job monotonic `seq`, `work/output/` = downloadable
   artifacts). Never commit `data/`. Job ids are 8-hex — `jobDir()` enforces
@@ -240,12 +289,35 @@ no auth, single user, filesystem is the database.
     `MHM_MEASURE_NAV_TIMEOUT_MS` shortens the navigation budget so the
     render-failure paths are testable in seconds.
   - Re-running the gate over the ARCHIVED real jobs in `data/jobs/` is the
-    cheapest end-to-end proof, in both directions (done 2026-07-30): the two
-    honest `claude-code` builds pass with zero failures — one of them has a
-    `hosted/` folder, so it exercises the top-level pick — and all three
-    `codex` screenshot builds are rejected on live text (0 chars), the
-    screenshot rule and 100% coverage. Their `verify.json` says PASS
-    99.97~100%: pixel verify alone would have shipped every one of them.
+    cheapest end-to-end proof, in both directions. First done 2026-07-30 over
+    the jobs that existed then: two honest `claude-code` builds passed with
+    zero failures — one of them has a `hosted/` folder, so it exercises the
+    top-level pick — and three `codex` screenshot builds were rejected on
+    live text (0 chars), the screenshot rule and 100% coverage. Their
+    `verify.json` said PASS 99.97~100%: pixel verify alone would have shipped
+    every one of them. Re-run again 2026-07-31 across all 11 archived jobs
+    (multi-backend-parity, roster now `claude-code`/`codex`/`antigravity`/
+    `mock`): PASS — `098b0847` `73423ff3` `b23de8f2` (`claude-code`),
+    `d1febcc0` (`codex`), `cf09c7e0` (`antigravity`), `3ea35917` (`mock`).
+    FAIL — `00ae9d9a` `492f5aa4` `ec4b0db9` (the same three `codex`
+    screenshot builds, still rejected on 0 live chars) and `94949582` (a
+    `codex` quota failure that produced no artifacts at all — correctly
+    rejected, not a regression). `652e66ca` also shows FAIL but is **not** a
+    regression either: it was created 2026-07-29 10:10, three hours before
+    the gate itself landed (commit `174ef38`, 13:11), from the
+    `compare_edm.py` era — it never had a `verify.json` to begin with, so
+    there is nothing for the gate to have broken. Roster changes (gemini
+    removed, codex/antigravity `verification` flipped to `verified`) moved
+    zero gate verdicts — the gate only reads filesystem evidence, not the
+    provider list.
+  - **Known flake:** `lib/jobs/acceptance.test.ts` can fail intermittently
+    when the full `vitest run` suite executes concurrently with other test
+    files — it launches real headless Chrome instances, which compete for
+    browser resources with whatever else is running at the same time. Run in
+    isolation it is reliable: 29/29 passing in 73.44s (confirmed 2026-07-31,
+    reproduced across all three tasks of this branch). If the full suite
+    shows a failure here, re-run this file alone before treating it as a
+    real regression.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
@@ -351,8 +423,7 @@ no auth, single user, filesystem is the database.
   a test can `import { GET } from "./route"` and call it with
   `{ params: Promise.resolve({ id }) }`. See `app/api/jobs/routes.test.ts`
   (boundary cases) and `.../events/route.test.ts` (SSE streams).
-- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_GEMINI_SMOKE=1` /
-  `RUN_CODEX_SMOKE=1` smoke tests
+- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_CODEX_SMOKE=1` smoke tests
   (spawn a trivial prompt; small token cost).
 - Browser E2E: mock provider end-to-end, with `MHM_DATA_DIR`/`MHM_SETTINGS_FILE`
   pointed at a scratch dir so the run never touches real job data. chrome-devtools

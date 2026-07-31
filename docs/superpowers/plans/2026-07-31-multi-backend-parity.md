@@ -736,33 +736,64 @@ API 키 방식이라 '구독이 있으면 누구든'이라는 목표와 맞지 �
 
 ### Task 6: `agy` 스트림 파서 (TDD)
 
+> **2026-07-31 개정.** 최초 계획의 파서는 공식 문서 기준이었고 **실측과 달랐다.**
+> 아래 스키마·픽스처는 전부 `/tmp/agy-stream-run3.ndjson`(agy v1.1.9, 실제 eDM 변환
+> 3회분)에서 나온 것이다. 문서를 다시 참고하지 마라.
+
 **Files:**
 - Create: `lib/providers/antigravity.ts` (파서 부분만)
 - Modify: `lib/providers/parsers.test.ts`
-- 참조: `/tmp/agy-stream-sample.ndjson` (Task 2 캡처)
 
 **Interfaces:**
-- Consumes: Task 2의 실측 NDJSON
-- Produces: `AgyLine` 타입, `createAgyLineMapper(onEvent) → { handle(line), finish() }`
+- Consumes: 없음
+- Produces: `AgyLine` 타입, `stripAgySystemNoise(text): string`,
+  `createAgyLineMapper(onEvent) → { handle(line), finish() }`
 
-- [ ] **Step 1: 실측 라인 모양을 먼저 확인한다**
+#### 실측 스키마 (agy v1.1.9, 2026-07-31 관측)
 
-```bash
-head -3 /tmp/agy-stream-sample.ndjson
-grep -o '"type":"[^"]*"' /tmp/agy-stream-sample.ndjson | sort | uniq -c
-grep -o '"step_type":"[^"]*"' /tmp/agy-stream-sample.ndjson | sort | uniq -c
+봉투 키는 `type`이 아니라 **`event`**이고, 페이로드는 **이벤트명과 같은 키 아래 중첩**된다.
+
+```jsonc
+{"event":"init","conversation_id":"db8e…",
+ "init":{"cwd":"/tmp/agy-probe3","tools":[…56개…],"permission_mode":"always-proceed"}}
+
+{"event":"step_update",
+ "step_update":{"conversation_id":"db8e…","step_index":34,"state":"DONE",
+                "step_type":"tool","tool_name":"run_command",
+                "tool_info":{"name":"run_command","parameters":{…},"output":"…"},
+                "duration_seconds":0.668}}
+
+{"event":"step_update",
+ "step_update":{"step_index":35,"state":"DONE","step_type":"agent_response",
+                "text_delta":"FATAL: Figma access is not available…\n"}}
+
+{"event":"result",
+ "result":{"conversation_id":"db8e…","status":"SUCCESS","response":"…",
+           "duration_seconds":221,"num_turns":1,"usage":{…}}}
 ```
 
-**아래 Step 2의 픽스처는 공식 문서 스키마 기준이다. 실측과 다르면 실측값으로
-바꾼다** — 이 프로젝트는 추측 스키마를 커밋하지 않는다.
+실측 분포: `step_type` ∈ `user_input`(1) · `unknown`(1) · `tool`(32) ·
+`agent_response`(17) · `checkpoint`(1). `state` ∈ `ACTIVE` · `DONE`.
 
-- [ ] **Step 2: 실패하는 테스트를 쓴다**
+#### 실측에서만 드러난 두 가지 (문서에 없음)
 
-Modify `lib/providers/parsers.test.ts` — import에 추가하고 describe를 더한다:
+1. **`result.response`에 agy 자체 태스크 시스템의 잡음이 섞인다.** 실측 응답에
+   `<SYSTEM_MESSAGE>[Message] timestamp=… sender=…/task-55 …</SYSTEM_MESSAGE>`
+   블록과 `... production mode active ...` 줄이 그대로 들어 있었다. 걸러내지
+   않으면 잡 요약이 로그 덩어리가 된다.
+2. **프롬프트가 `FATAL:`을 찍어도 `status`는 `SUCCESS`다.** 따라서 성공 판정을
+   `status`에만 맡기면 안 된다 — `claude-code.ts`·`codex.ts`와 같이 최종 응답의
+   `FATAL:` 접두어를 함께 봐야 한다 (그 판정은 Task 7의 provider가 한다).
+
+- [ ] **Step 1: 실패하는 테스트를 쓴다**
+
+Modify `lib/providers/parsers.test.ts` — import에 추가:
 
 ```ts
-import { createAgyLineMapper } from "./antigravity";
+import { createAgyLineMapper, stripAgySystemNoise } from "./antigravity";
 ```
+
+그리고 describe를 더한다:
 
 ```ts
 describe("antigravity(agy) stream-json mapper", () => {
@@ -773,60 +804,123 @@ describe("antigravity(agy) stream-json mapper", () => {
 
   it("init을 세션 시작 상태로 바꾼다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "init", conversation_id: "c1", init: { model: "gemini-3.6-flash" } });
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("status");
-    expect(events[0].text).toContain("gemini-3.6-flash");
+    mapper.handle({ event: "init", conversation_id: "c1", init: { cwd: "/tmp/x" } });
+    expect(events).toEqual([expect.objectContaining({ type: "status" })]);
+    expect(events[0].text).toContain("Antigravity");
   });
 
-  it("text_delta를 완성된 줄 단위로만 흘린다", () => {
+  it("agent_response의 text_delta를 완성된 줄 단위로만 흘린다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "step_update", state: "ACTIVE", text_delta: "첫 줄\n둘째 " });
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "첫 줄\n둘째 " },
+    });
     expect(events.map((e) => e.text)).toEqual(["첫 줄"]);
-    mapper.handle({ type: "step_update", state: "ACTIVE", text_delta: "줄\n" });
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "줄\n" },
+    });
     expect(events.map((e) => e.text)).toEqual(["첫 줄", "둘째 줄"]);
   });
 
-  it("툴은 완료 시점에만 한 줄 남긴다 (ACTIVE는 무시)", () => {
+  it("툴은 DONE 시점에만 한 줄 남긴다 (ACTIVE는 무시)", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "step_update", state: "ACTIVE", tool_name: "figma.get_design_context" });
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "tool", tool_name: "run_command" },
+    });
     expect(events).toHaveLength(0);
-    mapper.handle({ type: "step_update", state: "DONE", tool_name: "figma.get_design_context" });
-    expect(events).toEqual([
-      expect.objectContaining({ type: "tool", text: "figma.get_design_context" }),
-    ]);
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "DONE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toEqual([expect.objectContaining({ type: "tool", text: "run_command" })]);
   });
 
   it("result 성공에서 최종 응답을 얻는다", () => {
     const { mapper } = collect();
-    mapper.handle({ type: "result", status: "success", response: "eDM 빌드 완료" });
+    mapper.handle({ event: "result", result: { status: "SUCCESS", response: "eDM 빌드 완료" } });
     expect(mapper.finish()).toEqual({ finalResponse: "eDM 빌드 완료", errorText: "" });
   });
 
-  it("result 실패를 에러 이벤트와 errorText로 남긴다", () => {
+  // 실측: 프롬프트가 FATAL을 찍어도 status는 SUCCESS다. 파서는 응답을 그대로
+  // 넘기고, 성공 판정은 provider가 FATAL 접두어로 한다.
+  it("FATAL 응답도 status가 SUCCESS면 에러로 만들지 않는다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "result", status: "error", error: { message: "quota exhausted" } });
-    expect(events).toEqual([expect.objectContaining({ type: "error", text: "quota exhausted" })]);
-    expect(mapper.finish().errorText).toBe("quota exhausted");
+    mapper.handle({
+      event: "result",
+      result: { status: "SUCCESS", response: "FATAL: Figma access is not available\n" },
+    });
+    expect(events.filter((e) => e.type === "error")).toHaveLength(0);
+    expect(mapper.finish().finalResponse).toContain("FATAL:");
+  });
+
+  it("status가 SUCCESS가 아니면 에러로 남긴다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "result", result: { status: "ERROR", response: "quota exhausted" } });
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(mapper.finish().errorText).toContain("quota exhausted");
   });
 
   it("버퍼에 남은 마지막 줄을 finish에서 흘린다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "step_update", state: "ACTIVE", text_delta: "개행 없는 마지막 줄" });
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "개행 없는 줄" },
+    });
     expect(events).toHaveLength(0);
     mapper.finish();
-    expect(events.map((e) => e.text)).toEqual(["개행 없는 마지막 줄"]);
+    expect(events.map((e) => e.text)).toEqual(["개행 없는 줄"]);
   });
 
-  it("모르는 타입은 조용히 무시한다", () => {
+  it("모르는 event와 잡다한 step_type은 조용히 무시한다", () => {
     const { events, mapper } = collect();
-    mapper.handle({ type: "telemetry_whatever" });
+    mapper.handle({ event: "telemetry_whatever" });
+    mapper.handle({ event: "step_update", step_update: { state: "DONE", step_type: "checkpoint" } });
+    mapper.handle({ event: "step_update", step_update: { state: "DONE", step_type: "user_input" } });
     expect(events).toHaveLength(0);
+  });
+});
+
+describe("stripAgySystemNoise", () => {
+  // 실측 응답에 그대로 들어 있던 모양이다.
+  it("SYSTEM_MESSAGE 블록을 통째로 걷어낸다", () => {
+    const raw = [
+      "빌드를 완료했습니다.",
+      "<SYSTEM_MESSAGE>",
+      "[Message] timestamp=2026-07-31T06:43:08Z sender=b0ff/task-55 priority=HIGH content=…",
+      "Log: file:///Users/example/.gemini/antigravity-cli/brain/…/task-55.log",
+      "</SYSTEM_MESSAGE>",
+      "verify.json은 PASS입니다.",
+    ].join("\n");
+    const out = stripAgySystemNoise(raw);
+    expect(out).toContain("빌드를 완료했습니다.");
+    expect(out).toContain("verify.json은 PASS입니다.");
+    expect(out).not.toContain("SYSTEM_MESSAGE");
+    expect(out).not.toContain("task-55");
+  });
+
+  it("'production mode active' 줄을 걷어낸다", () => {
+    expect(stripAgySystemNoise("... production mode active ...\n결과입니다.").trim()).toBe(
+      "결과입니다.",
+    );
+  });
+
+  it("SYSTEM_MESSAGE가 여러 번 나와도 전부 걷어낸다", () => {
+    const raw = "A\n<SYSTEM_MESSAGE>\nx\n</SYSTEM_MESSAGE>\nB\n<SYSTEM_MESSAGE>\ny\n</SYSTEM_MESSAGE>\nC";
+    const out = stripAgySystemNoise(raw);
+    expect(out).not.toContain("x");
+    expect(out).not.toContain("y");
+    expect(out.replace(/\n+/g, " ").trim()).toBe("A B C");
+  });
+
+  it("잡음이 없으면 원문을 그대로 둔다", () => {
+    expect(stripAgySystemNoise("평범한 요약입니다.")).toBe("평범한 요약입니다.");
   });
 });
 ```
 
-- [ ] **Step 3: 실패를 확인한다**
+- [ ] **Step 2: 실패를 확인한다**
 
 ```bash
 pnpm exec vitest run lib/providers/parsers.test.ts
@@ -834,36 +928,54 @@ pnpm exec vitest run lib/providers/parsers.test.ts
 
 기대: FAIL — `./antigravity` 모듈이 없다.
 
-- [ ] **Step 4: 파서를 구현한다**
+- [ ] **Step 3: 파서를 구현한다**
 
 Create `lib/providers/antigravity.ts`:
 
 ```ts
 import type { AgentEvent } from "./types";
 
-// agy --output-format stream-json (v1.1.8+) 실측 스키마.
-// 공식 headless 문서 기준 3종: init / step_update / result.
-// 관측되지 않은 필드는 optional로 두고, 모르는 type은 무시한다.
+// agy --output-format stream-json 실측 스키마 (v1.1.9, 2026-07-31 관측).
+// 공식 문서는 {type, …} 평면 구조라고 하지만 실제는 {event, <event>:{…}} 중첩이다.
+// 관측되지 않은 필드는 optional로 두고, 모르는 event는 무시한다.
 export interface AgyLine {
-  type?: string;
+  event?: string;
   conversation_id?: string;
-  init?: { cwd?: string; model?: string; agent?: string };
-  step_index?: number;
-  state?: "ACTIVE" | "DONE" | string;
-  step_type?: string;
-  tool_name?: string;
-  text_delta?: string;
-  status?: string;
-  response?: string;
-  error?: { message?: string } | string;
+  init?: { cwd?: string; tools?: string[]; permission_mode?: string };
+  step_update?: {
+    step_index?: number;
+    /** "ACTIVE" | "DONE" */
+    state?: string;
+    /** "user_input" | "unknown" | "tool" | "agent_response" | "checkpoint" */
+    step_type?: string;
+    tool_name?: string;
+    tool_info?: { name?: string; parameters?: unknown; output?: unknown };
+    text_delta?: string;
+    duration_seconds?: number;
+  };
+  result?: {
+    /** 실측값은 대문자 "SUCCESS". */
+    status?: string;
+    response?: string;
+    duration_seconds?: number;
+    num_turns?: number;
+  };
 }
 
-const errText = (e: AgyLine["error"], fallback: string): string =>
-  typeof e === "string" ? e : (e?.message ?? fallback);
+/**
+ * agy는 자체 태스크 시스템의 알림을 최종 응답에 그대로 섞어 보낸다.
+ * 잡 요약에 로그 덩어리가 실리지 않게 걷어낸다.
+ */
+export function stripAgySystemNoise(text: string): string {
+  return text
+    .replace(/<SYSTEM_MESSAGE>[\s\S]*?<\/SYSTEM_MESSAGE>/g, "")
+    .replace(/^\s*\.\.\. production mode active \.\.\.\s*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n");
+}
 
 /**
- * Stateful mapper: text_delta 청크를 완성된 줄로 모아 흘리고, 최종 응답과
- * 첫 에러를 붙잡는다. 순수 로직이라 유닛 테스트로 덮는다.
+ * Stateful mapper: agent_response의 text_delta를 완성된 줄로 모아 흘리고,
+ * 최종 응답과 첫 에러를 붙잡는다. 순수 로직이라 유닛 테스트로 덮는다.
  */
 export function createAgyLineMapper(onEvent: (e: AgentEvent) => void) {
   let buffer = "";
@@ -878,46 +990,39 @@ export function createAgyLineMapper(onEvent: (e: AgentEvent) => void) {
 
   return {
     handle(line: AgyLine) {
-      switch (line.type) {
-        case "init": {
-          const model = line.init?.model;
-          onEvent({
-            ts: Date.now(),
-            type: "status",
-            text: model ? `Antigravity 세션 시작 (${model})` : "Antigravity 세션 시작",
-          });
-          return;
-        }
-        case "step_update": {
-          if (typeof line.text_delta === "string") {
-            buffer += line.text_delta;
-            const parts = buffer.split("\n");
-            buffer = parts.pop() ?? "";
-            for (const p of parts) {
-              if (p.trim()) onEvent({ ts: Date.now(), type: "log", text: p.trim() });
-            }
-            return;
-          }
-          // 툴은 완료 시점에만 남긴다 — ACTIVE까지 찍으면 로그가 두 배가 된다.
-          if (line.tool_name && line.state === "DONE") {
-            flush();
-            onEvent({ ts: Date.now(), type: "tool", text: line.tool_name });
+      if (line.event === "init") {
+        onEvent({ ts: Date.now(), type: "status", text: "Antigravity 세션 시작" });
+        return;
+      }
+      if (line.event === "step_update") {
+        const s = line.step_update;
+        if (!s) return;
+        if (s.step_type === "agent_response" && typeof s.text_delta === "string") {
+          buffer += s.text_delta;
+          const parts = buffer.split("\n");
+          buffer = parts.pop() ?? "";
+          for (const p of parts) {
+            if (p.trim()) onEvent({ ts: Date.now(), type: "log", text: p.trim() });
           }
           return;
         }
-        case "result": {
+        // 툴은 완료 시점에만 남긴다 — ACTIVE까지 찍으면 로그가 두 배가 된다.
+        if (s.step_type === "tool" && s.state === "DONE" && s.tool_name) {
           flush();
-          const failed = Boolean(line.error) || (line.status !== undefined && line.status !== "success");
-          if (failed) {
-            errorText = errText(line.error, line.status ?? "unknown error");
-            onEvent({ ts: Date.now(), type: "error", text: errorText });
-          } else {
-            finalResponse = line.response ?? finalResponse;
-          }
+          onEvent({ ts: Date.now(), type: "tool", text: s.tool_name });
+        }
+        return;
+      }
+      if (line.event === "result") {
+        flush();
+        const r = line.result ?? {};
+        // 실측: 성공은 대문자 "SUCCESS". 그 외는 실패로 본다.
+        if (r.status !== undefined && r.status !== "SUCCESS") {
+          errorText = stripAgySystemNoise(r.response ?? "").trim() || r.status;
+          onEvent({ ts: Date.now(), type: "error", text: errorText });
           return;
         }
-        default:
-          return;
+        finalResponse = stripAgySystemNoise(r.response ?? "").trim() || finalResponse;
       }
     },
     finish() {
@@ -928,7 +1033,7 @@ export function createAgyLineMapper(onEvent: (e: AgentEvent) => void) {
 }
 ```
 
-- [ ] **Step 5: 테스트 통과를 확인한다**
+- [ ] **Step 4: 테스트 통과를 확인한다**
 
 ```bash
 pnpm exec vitest run lib/providers/parsers.test.ts
@@ -936,39 +1041,61 @@ pnpm exec vitest run lib/providers/parsers.test.ts
 
 기대: PASS.
 
-- [ ] **Step 6: 실측 파일 전체를 흘려 크래시가 없는지 확인한다**
+- [ ] **Step 5: 실측 파일 전체를 흘려 크래시가 없는지 확인한다**
+
+`/tmp/agy-stream-run3.ndjson`은 실제 eDM 변환 1회분(186줄 규모)이다. 없으면 이 단계는
+건너뛰고 리포트에 적어라 — 재생성에는 실제 API 호출이 든다.
+
+`tsx`는 이 저장소에 없다. 임시 vitest 파일로 흘린 뒤 **반드시 삭제해라**:
 
 ```bash
-pnpm exec tsx -e "
-import {readFileSync} from 'node:fs';
-import {createAgyLineMapper} from './lib/providers/antigravity';
-const ev:any[]=[]; const m=createAgyLineMapper(e=>ev.push(e));
-let bad=0;
-for (const l of readFileSync('/tmp/agy-stream-sample.ndjson','utf8').split('\n')) {
-  if(!l.trim())continue;
-  try{ m.handle(JSON.parse(l)); }catch{ bad++; }
-}
-console.log('events',ev.length,'unparsed',bad,'finish',m.finish());
-"
+cat > lib/providers/__agy-replay.test.ts <<'TS'
+import { readFileSync, writeFileSync } from "node:fs";
+import { it } from "vitest";
+import { createAgyLineMapper, type AgyLine } from "./antigravity";
+
+it("replay", () => {
+  const ev: unknown[] = [];
+  const m = createAgyLineMapper((e) => ev.push(e));
+  let bad = 0;
+  for (const l of readFileSync("/tmp/agy-stream-run3.ndjson", "utf8").split("\n")) {
+    if (!l.trim().startsWith("{")) continue;
+    try { m.handle(JSON.parse(l) as AgyLine); } catch { bad++; }
+  }
+  const f = m.finish();
+  writeFileSync("/tmp/agy-replay.txt",
+    `events=${ev.length} unparsed=${bad} finalLen=${f.finalResponse.length} err=${f.errorText.slice(0,80)}\n` +
+    `hasSystemMessage=${f.finalResponse.includes("SYSTEM_MESSAGE")}\n`);
+});
+TS
+pnpm exec vitest run lib/providers/__agy-replay.test.ts > /dev/null 2>&1
+rm -f lib/providers/__agy-replay.test.ts
+cat /tmp/agy-replay.txt
 ```
 
-기대: `events`가 0보다 크고, `finish().finalResponse`가 비어 있지 않다.
-0이면 실측 스키마가 문서와 다른 것이므로 Step 2 픽스처와 Step 4 구현을 실측에 맞춘다.
+기대: `events`가 0보다 크고, `unparsed=0`, `finalLen`이 0보다 크며,
+**`hasSystemMessage=false`**. 결과를 리포트에 붙여라.
 
-- [ ] **Step 7: 커밋**
+- [ ] **Step 6: 커밋**
 
 ```bash
 git add lib/providers/antigravity.ts lib/providers/parsers.test.ts
 git commit -m "feat: agy stream-json 라인 파서 (실측 스키마 기준)
 
-init/step_update/result 3종이 타입 지정돼 있어 gemini의 관용 매칭보다
-깨끗하다. 툴은 DONE에서만 한 줄 남기고, text_delta는 완성된 줄 단위로만
-흘린다."
+공식 문서는 {type, …} 평면 구조라고 하지만 실측은 {event, <event>:{…}} 중첩이고
+status도 대문자 SUCCESS다. 문서 대신 실제 변환 스트림을 보고 썼다.
+
+agy는 자체 태스크 시스템의 <SYSTEM_MESSAGE> 알림을 최종 응답에 그대로 섞어
+보내므로 stripAgySystemNoise로 걷어낸다 — 안 그러면 잡 요약이 로그 덩어리가 된다.
+FATAL 응답도 status는 SUCCESS로 오므로 성공 판정은 파서가 하지 않는다."
 ```
 
 ---
 
 ### Task 7: antigravity 프로바이더 결선
+
+> **2026-07-31 개정.** `--add-dir`, 로그인 사전 확인 부재, verification 값이
+> 모두 실측으로 확정됐다.
 
 **Files:**
 - Modify: `lib/providers/antigravity.ts` (provider 객체 추가)
@@ -977,12 +1104,28 @@ init/step_update/result 3종이 타입 지정돼 있어 gemini의 관용 매칭�
 - Modify: `app/components/BackendSetup.tsx` (`SHORT_NAME`)
 
 **Interfaces:**
-- Consumes: Task 6의 `createAgyLineMapper`, Task 3의 `verification` 필드, `runJsonlCli`/`exitReason`(`jsonl-cli.ts`), `agentEnv`/`buildEdmPrompt`(`prompt.ts`), `getSettings()`(`../settings`)
+- Consumes: Task 6의 `createAgyLineMapper`, `AgyLine`; `runJsonlCli`/`exitReason`
+  (`./jsonl-cli`), `agentEnv`/`buildEdmPrompt` (`./prompt`), `getSettings` (`../settings`),
+  `AgentProvider` (`./types`)
 - Produces: `antigravityProvider: AgentProvider` (id `"antigravity"`)
+
+#### 실측으로 확정된 제약 세 가지
+
+1. **`--add-dir <task.workDir>`가 필수다.** 없으면 agy가 서브에이전트 태스크를
+   자기 스크래치(`~/.gemini/antigravity-cli/scratch/`)에서 돌려 산출물이 그쪽에
+   생기고, 게이트는 빈 workDir을 보고 무조건 실패한다. `--add-dir`을 주면
+   `run_command`의 `pwd`가 workDir이 되고 산출물·증거가 전부 거기 생긴다 (실측 확인).
+2. **로그인 상태를 조회하는 하위 명령이 없다.** `agy --help`의 하위 명령은
+   `agent(s)` · `changelog` · `help` · `install` · `models` · `plugin(s)` · `update`
+   뿐이다. codex처럼 사전 확인을 넣을 수 없으므로 **넣지 않는다.**
+3. **Figma는 REST 토큰 경로뿐이다.** agy에 figma MCP 툴이 붙지 않는다(실측:
+   init.tools 56개 중 `call_mcp_tool` 하나뿐). `agentEnv()`가 설정의 `figmaToken`을
+   `FIGMA_TOKEN`으로 실어주므로 provider가 따로 할 일은 없다. 토큰이 없으면
+   프롬프트의 FATAL 경로로 빠르게 끝난다 — 그 판정은 Task 8의 진단이 맡는다.
 
 - [ ] **Step 1: provider 객체를 추가한다**
 
-Modify `lib/providers/antigravity.ts` — 파일 위쪽 import를 넓히고:
+Modify `lib/providers/antigravity.ts` — 파일 위쪽 import를 넓힌다:
 
 ```ts
 import { getSettings } from "../settings";
@@ -997,8 +1140,9 @@ import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 const AGY_BIN = process.env.ANTIGRAVITY_BIN ?? "agy";
 
 /**
- * agy의 print 모드 기본 타임아웃은 5분이다 — 이 앱의 eDM 파이프라인은 실측
- * 15분이라 반드시 늘려야 한다. 잡 타임아웃과 같은 값을 쓴다.
+ * agy print 모드의 기본 타임아웃은 5분(`5m0s`)인데 eDM 파이프라인은 실측 3~4분
+ * (느린 디자인은 더)이라 여유가 없다. 잡 타임아웃과 같은 값을 쓴다.
+ * 형식은 Go duration — 분 단위 `<n>m`이 유효하다.
  */
 function printTimeoutArg(): string {
   return `${getSettings().jobTimeoutMinutes}m`;
@@ -1007,8 +1151,8 @@ function printTimeoutArg(): string {
 export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   label: "Antigravity CLI (Google 구독)",
-  verification: "unverified",
-  verificationNote: "실전 검증 진행 중 — Task 9에서 확정",
+  verification: "verified",
+  verificationNote: "2026-07-31 실측 PASS 93.05%, 3분 (Figma 토큰 필요)",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
     const prompt = task.promptOverride ?? buildEdmPrompt(task);
@@ -1017,6 +1161,10 @@ export const antigravityProvider: AgentProvider = {
     const result = await runJsonlCli({
       bin: AGY_BIN,
       args: [
+        // agy는 --add-dir 없이는 서브에이전트를 자기 스크래치에서 돌린다.
+        // 그러면 산출물이 workDir 밖에 생겨 게이트가 무조건 실패한다 (실측).
+        "--add-dir",
+        task.workDir,
         "-p",
         prompt,
         "--output-format",
@@ -1041,10 +1189,12 @@ export const antigravityProvider: AgentProvider = {
       onEvent({ ts: Date.now(), type: "error", text: `agy 실행 실패: ${message}` });
       return {
         ok: false,
-        summary: `Antigravity CLI를 실행할 수 없습니다: ${message} (설치 후 \`agy\`를 한 번 실행해 로그인하세요)`,
+        summary: `Antigravity CLI를 실행할 수 없습니다: ${message} (antigravity.google.com/download 설치 후 \`agy\`를 한 번 실행해 로그인하세요)`,
       };
     }
 
+    // 실측: 프롬프트가 FATAL을 찍어도 agy의 status는 SUCCESS다.
+    // 다른 프로바이더와 같이 최종 응답의 접두어로 판정한다.
     const fatal = finalResponse.trim().startsWith("FATAL:");
     const ok = result.code === 0 && !fatal && !errorText;
     return {
@@ -1057,17 +1207,17 @@ export const antigravityProvider: AgentProvider = {
 };
 ```
 
-> **로그인 사전 확인은 넣지 않는다.** codex가 그것을 하는 이유는 "미인증 상태에서
-> `codex exec`가 조용히 멈춘다"는 관측 때문이다. `agy`에 같은 문제가 있는지는
-> Task 8 Step 1에서 확인하고, 있을 때만 추가한다. 없는 문제에 코드를 쓰지 않는다.
+**로그인 사전 확인을 넣지 마라** — 위 제약 2 참고. 없는 하위 명령에 코드를 쓰지 않는다.
 
 - [ ] **Step 2: 레지스트리에 등록한다**
 
-Modify `lib/providers/registry.ts`:
+Modify `lib/providers/registry.ts` — import를 더하고:
 
 ```ts
 import { antigravityProvider } from "./antigravity";
 ```
+
+맵에 넣는다 (`codex` 다음, `mock` 앞):
 
 ```ts
 const providers: Record<string, AgentProvider> = {
@@ -1078,7 +1228,7 @@ const providers: Record<string, AgentProvider> = {
 };
 ```
 
-Modify `app/components/BackendSetup.tsx` — `SHORT_NAME`:
+Modify `app/components/BackendSetup.tsx` — `SHORT_NAME`에 한 줄 더한다:
 
 ```tsx
 const SHORT_NAME: Record<string, string> = {
@@ -1088,7 +1238,18 @@ const SHORT_NAME: Record<string, string> = {
 };
 ```
 
-- [ ] **Step 3: 스모크 테스트를 추가한다**
+- [ ] **Step 3: 검증 테스트가 통과하는지 확인한다**
+
+`lib/providers/verification.test.ts`는 `verified`인 프로바이더의 근거에 측정
+날짜(`\d{4}-\d{2}-\d{2}`)를 요구한다. 위 `verificationNote`가 이를 만족한다.
+
+```bash
+pnpm exec vitest run lib/providers/verification.test.ts
+```
+
+기대: PASS.
+
+- [ ] **Step 4: 스모크 테스트를 추가한다**
 
 Create `lib/providers/antigravity.smoke.test.ts`:
 
@@ -1103,7 +1264,7 @@ import type { AgentEvent } from "./types";
 // Spawns the real `agy` CLI (uses the Google subscription — burns quota).
 // Opt-in only: RUN_ANTIGRAVITY_SMOKE=1 pnpm exec vitest run lib/providers/antigravity.smoke.test.ts
 describe.skipIf(!process.env.RUN_ANTIGRAVITY_SMOKE)("antigravity provider smoke", () => {
-  it("spawns agy, streams events, and sees files it writes", { timeout: 180_000 }, async () => {
+  it("spawns agy, streams events, and writes into workDir", { timeout: 300_000 }, async () => {
     const workDir = await mkdtemp(path.join(tmpdir(), "mhm-agy-smoke-"));
     const events: AgentEvent[] = [];
 
@@ -1121,22 +1282,23 @@ describe.skipIf(!process.env.RUN_ANTIGRAVITY_SMOKE)("antigravity provider smoke"
 
     expect(result.ok).toBe(true);
     expect(events.length).toBeGreaterThan(0);
+    // --add-dir이 빠지면 agy가 자기 스크래치에 쓰고 이 읽기가 ENOENT로 실패한다.
     const content = await readFile(path.join(workDir, "output", "smoke.txt"), "utf8");
     expect(content.trim()).toBe("hello from agy");
   });
 });
 ```
 
-- [ ] **Step 4: 스모크 테스트를 실제로 돌린다**
+- [ ] **Step 5: 스모크 테스트를 실제로 돌린다**
 
 ```bash
 RUN_ANTIGRAVITY_SMOKE=1 pnpm exec vitest run lib/providers/antigravity.smoke.test.ts
 ```
 
-기대: PASS. 여기서 `--print-timeout` 형식 오류나 인자 이름 오류가 잡힌다.
-실패하면 Task 2 Step 1에 적어둔 `agy --help` 내용과 대조해 인자를 고친다.
+기대: PASS. 여기서 인자 이름·`--print-timeout` 형식 오류, 그리고 `--add-dir` 누락이
+잡힌다. 실패하면 출력을 리포트에 그대로 붙이고 인자를 고쳐라.
 
-- [ ] **Step 5: 회귀 확인**
+- [ ] **Step 6: 회귀 확인**
 
 ```bash
 pnpm exec vitest run
@@ -1144,123 +1306,176 @@ pnpm exec tsc --noEmit
 pnpm lint
 ```
 
-- [ ] **Step 6: 커밋**
+- [ ] **Step 7: 커밋**
 
 ```bash
 git add lib/providers/antigravity.ts lib/providers/registry.ts lib/providers/antigravity.smoke.test.ts app/components/BackendSetup.tsx
 git commit -m "feat: Antigravity CLI(agy) 백엔드 추가
 
---print-timeout을 잡 타임아웃과 같은 값으로 넘긴다 — 기본 5분이라
-15분 파이프라인이 무조건 잘린다. verification은 unverified로 시작하며
-실전 PASS 확인 후에만 올린다.
+--add-dir <workDir>가 핵심이다. 없으면 agy가 서브에이전트 태스크를 자기
+스크래치에서 돌려 산출물이 workDir 밖에 생기고, 완주해도 게이트가 빈
+디렉터리를 보고 실패한다 (실측 확인).
 
-로그인 사전 확인은 넣지 않았다 — codex가 그것을 하는 이유(미인증 시
-조용히 멈춤)가 agy에도 있는지 확인되지 않았다."
+--print-timeout은 잡 타임아웃과 같은 값 — 기본 5m0s는 실측 3~4분 파이프라인에
+여유가 없다. 로그인 사전 확인은 넣지 않았다: agy에 해당 하위 명령이 없다.
+
+verification은 실측 PASS 93.05%(3분, 텍스트 351자, 이미지 13개) 근거로 verified."
 ```
 
 ---
 
-### Task 8: antigravity 진단(setup) 추가
+### Task 8: 백엔드별로 다른 Figma 경로를 정직하게 진단한다
+
+> **2026-07-31 전면 개정.** 최초 계획은 `agy mcp list` 출력을 파싱하는 작업이었다.
+> **그 하위 명령은 존재하지 않는다** (agy v1.1.9 `--help` 실측: `agent(s)` ·
+> `changelog` · `help` · `install` · `models` · `plugin(s)` · `update`가 전부).
+> 그리고 더 근본적으로, **세 백엔드의 Figma 접근 경로가 서로 다르다**는 것이
+> 실측으로 드러났다. 진단이 그 차이를 말해주지 못하면 팀원은 자기한테 뭐가
+> 필요한지 알 수 없다.
 
 **Files:**
-- Modify: `lib/setup.ts` (`AGY_BIN`, `figmaMcpFromAgyList`, `antigravitySetup`, `getBackendSetup`)
+- Modify: `lib/setup.ts`
 - Modify: `lib/setup.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 Step 2의 실측 `agy mcp list` 출력, Task 7의 `antigravityProvider`
-- Produces: `figmaMcpFromAgyList(out: string): McpStatus`, `antigravitySetup(): Promise<BackendSetup>`
+- Consumes: Task 7의 `antigravityProvider` (id `"antigravity"`), 기존 `SetupStep` /
+  `BackendSetup` / `figmaAccessStep` / `cliVersion` / `finish`
+- Produces: `antigravitySetup(): Promise<BackendSetup>`,
+  `figmaTokenStep(): SetupStep` (토큰 전용 경로를 쓰는 백엔드용)
 
-- [ ] **Step 1: 로그인 조회 명령과 미인증 동작을 확인한다**
+#### 실측 사실 (이 태스크의 근거)
 
-```bash
-agy --help | grep -i -A2 "login\|auth"
-```
+| 백엔드 | Figma 접근 경로 | 진단 방법 |
+|---|---|---|
+| claude-code | 원격 MCP `mcp.figma.com` (OAuth) | `claude mcp list` 파싱 (기존) |
+| codex | 원격 MCP `mcp.figma.com` (OAuth) | `codex mcp list` 파싱 (기존) |
+| **antigravity** | **REST 토큰만.** MCP 경로 없음 | **설정의 `figmaToken` 유무** |
 
-로그인 상태 조회 하위 명령이 **있으면** Step 4의 `login` 단계에 쓴다.
-**없으면** 그 단계를 만들지 않는다 (CLI 설치 + Figma 접근 두 단계만 둔다).
+antigravity에 figma MCP가 붙지 않는 것은 실측 확인됐다: `init.tools` 56개 중
+figma 관련이 없고 `call_mcp_tool` 하나뿐이며, 토큰 없이 돌리면 프롬프트가
+`FATAL: Figma access is not available (Figma MCP tools are not present and
+FIGMA_TOKEN API token is missing)`로 끝난다(47초). 토큰을 넣자 완주해 PASS 93.05%.
 
-- [ ] **Step 2: 실패하는 파서 테스트를 쓴다**
+**로그인 상태를 조회할 방법이 없다.** agy에 해당 하위 명령이 없으므로 단계를
+만들지 않는다. 대신 기존 "연동 테스트" 버튼(`runBackendTest`, 실제 CLI를 작은
+프롬프트로 스폰)이 로그인까지 확인해주므로, 그 사실을 hint로 안내한다.
 
-Modify `lib/setup.test.ts` — import에 `figmaMcpFromAgyList`를 더하고 describe를 추가한다.
-**아래 문자열은 Task 2 Step 2에서 보관한 실측 출력으로 교체한다.**
+#### 지금 깨져 있는 것 (Task 7 리뷰가 발견)
+
+`getBackendSetup()`이 `claudeSetup()` / `codexSetup()`만 부르고 antigravity가
+없다. 그래서 `/api/setup`이 antigravity 행을 반환하지 않고,
+`app/page.tsx`의 `selectedBackend`가 `undefined`가 되어 **`notReady`가 항상
+`false`** 다 — `agy`가 아예 설치돼 있지 않아도 홈 화면은 조용히 준비된 것처럼
+보인다. 이 태스크가 그 구멍을 막는다.
+
+- [ ] **Step 1: 실패하는 테스트를 쓴다**
+
+`figmaTokenStep`은 설정을 읽으므로, 기존 `lib/setup.test.ts`가 쓰는 방식대로
+`MHM_SETTINGS_FILE` 환경변수로 스크래치 설정 파일을 가리켜 테스트한다.
+(`lib/diagnostics/bundle.test.ts`가 같은 기법을 쓰니 참고해라.)
+
+Modify `lib/setup.test.ts` — import에 `figmaTokenStep`을 더하고 describe를 추가한다:
 
 ```ts
-describe("figmaMcpFromAgyList", () => {
-  it("연결된 figma 항목을 connected로 읽는다", () => {
-    expect(
-      figmaMcpFromAgyList("✓ figma: https://mcp.figma.com/mcp (http) - Connected"),
-    ).toBe("connected");
+describe("figmaTokenStep (토큰 전용 경로)", () => {
+  it("토큰이 있으면 통과한다", () => {
+    // MHM_SETTINGS_FILE에 figmaToken이 든 파일을 써두고 호출한다.
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(true);
+    expect(step.detail).toContain("토큰");
   });
 
-  it("끊긴 항목을 registered로 읽는다", () => {
-    expect(
-      figmaMcpFromAgyList("✗ figma: https://mcp.figma.com/mcp (http) - Disconnected"),
-    ).toBe("registered");
+  it("토큰이 없으면 실패로 표시하고 발급 위치를 안내한다", () => {
+    // MHM_SETTINGS_FILE에 figmaToken이 없는 파일을 써두고 호출한다.
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(false);
+    // 팀원이 읽고 바로 행동할 수 있어야 한다.
+    expect(step.hint ?? "").toMatch(/figma\.com/);
   });
 
-  it("figma 항목이 없으면 missing", () => {
-    expect(figmaMcpFromAgyList("Configured MCP servers:\n(none)")).toBe("missing");
+  it("MCP를 대안으로 안내하지 않는다", () => {
+    // antigravity에는 MCP 경로가 없다 — 있지도 않은 선택지를 제시하면 안 된다.
+    const step = figmaTokenStep();
+    expect(`${step.detail} ${step.hint ?? ""} ${step.command ?? ""}`).not.toMatch(/mcp/i);
   });
 });
 ```
 
-- [ ] **Step 3: 실패를 확인한다**
+> 위 세 케이스의 설정 파일 준비(`beforeEach`에서 `MHM_SETTINGS_FILE`을 쓰고
+> `afterAll`에서 되돌리기)는 `lib/diagnostics/bundle.test.ts:6-20`의 패턴을
+> 그대로 따라 작성해라. 그 파일을 먼저 읽어라.
+
+- [ ] **Step 2: 실패를 확인한다**
 
 ```bash
 pnpm exec vitest run lib/setup.test.ts
 ```
 
-기대: FAIL — `figmaMcpFromAgyList`가 없다.
+기대: FAIL — `figmaTokenStep`이 없다.
 
-- [ ] **Step 4: 파서와 진단을 구현한다**
+- [ ] **Step 3: 토큰 전용 Figma 단계를 구현한다**
 
-Modify `lib/setup.ts` — 상수와 파서를 추가한다:
+Modify `lib/setup.ts` — 기존 `figmaAccessStep` 아래에 추가한다:
+
+```ts
+/**
+ * MCP 경로가 없는 백엔드(antigravity)의 Figma 접근 단계.
+ * `figmaAccessStep`과 달리 MCP를 대안으로 제시하지 않는다 — 있지도 않은
+ * 선택지를 안내하면 팀원이 없는 설정을 찾아 헤맨다 (실측: agy의 init.tools에
+ * figma 툴이 붙지 않는다).
+ */
+export function figmaTokenStep(): SetupStep {
+  const base = { name: "Figma 접근" };
+  if (figmaTokenSet()) {
+    return { ...base, ok: true, detail: "Figma 토큰으로 동작 (이 백엔드는 토큰 전용)" };
+  }
+  return {
+    ...base,
+    ok: false,
+    detail: "Figma 토큰 없음 — 이 백엔드는 토큰이 필수입니다",
+    hint: "figma.com → Settings → Security → Personal access tokens 에서 발급해 아래 입력란에 저장하세요. 이 백엔드는 MCP 연결을 지원하지 않아 토큰이 유일한 경로입니다.",
+  };
+}
+```
+
+- [ ] **Step 4: antigravity 진단을 구현한다**
+
+Modify `lib/setup.ts` — 상수와 함수를 추가한다 (`codexSetup` 아래):
 
 ```ts
 const AGY_BIN = () => process.env.ANTIGRAVITY_BIN ?? "agy";
 ```
 
 ```ts
-/** `agy mcp list`: "✓ figma: https://mcp.figma.com/mcp (http) - Connected" */
-export function figmaMcpFromAgyList(out: string): McpStatus {
-  const line = findFigmaLine(out);
-  if (!line) return "missing";
-  if (/[✔✓]/.test(line)) return "connected";
-  // 심볼 없는 포맷 대비: "Disconnected"를 지운 뒤 "Connected"가 남는지 본다.
-  return /\bconnected\b/i.test(line.replace(/disconnected/gi, "")) ? "connected" : "registered";
-}
-```
-
-진단 함수를 추가한다 (`codexSetup` 아래):
-
-```ts
 async function antigravitySetup(): Promise<BackendSetup> {
   const cli = await cliVersion(AGY_BIN());
-  const list = cli.ok ? await mcpList(AGY_BIN(), 20_000) : null;
-  const mcp = list === null ? null : figmaMcpFromAgyList(list);
 
   const steps: SetupStep[] = [
     {
       name: "CLI 설치",
       ok: cli.ok,
-      detail: cli.ok ? cli.detail : "미설치",
+      detail: cli.ok ? `v${cli.detail}` : "미설치",
       hint: cli.ok
         ? undefined
-        : "antigravity.google.com/download 에서 설치한 뒤 `agy`를 한 번 실행해 구글 계정으로 로그인하세요.",
+        : "antigravity.google.com/download 에서 Antigravity CLI를 설치한 뒤, 터미널에서 `agy`를 한 번 실행해 구글 계정으로 로그인하세요.",
     },
-    figmaAccessStep(
-      mcp,
-      "agy mcp add figma https://mcp.figma.com/mcp",
-      "터미널에서 `agy` 실행 후 /mcp 로 figma 재인증 — 또는 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
-    ),
+    figmaTokenStep(),
+    {
+      // agy에는 로그인 상태를 조회하는 하위 명령이 없다 (v1.1.9 --help 실측).
+      // 없는 것을 있는 척 진단하는 대신, 확인 방법을 알려준다.
+      name: "로그인",
+      ok: null,
+      detail: "자동 확인 불가 — 아래 '연동 테스트'로 확인하세요",
+      hint: "Antigravity CLI는 로그인 상태를 조회하는 명령을 제공하지 않습니다. '연동 테스트'가 실제 CLI를 한 번 실행하므로, 그것이 통과하면 로그인도 정상입니다.",
+    },
   ];
   return finish("antigravity", steps);
 }
 ```
 
-> `agy mcp add`의 정확한 형태는 Step 1의 `--help`로 확인해 위 문자열을 고친다.
-> Step 1에서 로그인 조회 명령을 찾았다면 `codexSetup`의 `login` 단계를 본떠
-> 두 단계 사이에 넣는다.
+`ok: null`은 기존 규약상 **차단하지 않는다**(`finish()`의 `ready`는
+`steps.every((s) => s.ok !== false)`). 의도한 동작이다 — 확인할 수 없는 것을
+실패로 칠하면 팀원이 고칠 수 없는 빨간 불을 보게 된다.
 
 `getBackendSetup`의 `Promise.all`에 더한다:
 
@@ -1272,25 +1487,37 @@ async function antigravitySetup(): Promise<BackendSetup> {
 
 ```bash
 pnpm exec vitest run lib/setup.test.ts
+pnpm exec tsc --noEmit
+pnpm lint
 ```
 
-- [ ] **Step 6: 실제 화면에서 확인한다**
+- [ ] **Step 6: 홈 화면에서 실제로 확인한다**
 
-```bash
-pnpm dev
-```
+`pnpm dev`는 이미 포트 3000에 떠 있다.
 
-홈의 🔌 백엔드 연동 패널에 Antigravity 카드가 뜨고, 설치/Figma 접근 상태가
-실제와 맞는지 본다. "연동 테스트" 버튼도 눌러 본다 (실제 CLI를 스폰한다).
+1. 🔌 백엔드 연동 패널에 **Antigravity 카드가 보이는지**
+2. 백엔드 Select에서 antigravity를 골랐을 때, `agy`가 없거나 토큰이 없으면
+   **"준비 안 됨" 경고가 뜨는지** (Task 7 시점에는 이 경고가 아예 안 떴다)
+3. "연동 테스트" 버튼이 antigravity에서도 동작하는지
+
+**주의: "연동 테스트"는 실제 CLI를 스폰해 사용자 구독 쿼터를 쓴다.** 한 번만
+눌러라. 누르지 않았다면 리포트에 그렇게 적어라 — 정직한 미확인이 거짓 확인보다 낫다.
 
 - [ ] **Step 7: 커밋**
 
 ```bash
 git add lib/setup.ts lib/setup.test.ts
-git commit -m "feat: Antigravity 백엔드 연동 진단 — 설치·Figma MCP
+git commit -m "feat: antigravity 진단 — 백엔드마다 Figma 경로가 다르다
 
-mcp list 파서는 실측 출력 기준. 팀원이 자기 환경에서 뭘 더 해야 하는지
-카드에서 바로 보고 명령을 복사할 수 있어야 한다."
+agy에는 mcp 하위 명령이 없고 figma MCP도 붙지 않는다(실측). REST 토큰이
+유일한 경로이므로 MCP를 대안으로 안내하지 않는 전용 단계를 만들었다 —
+있지도 않은 선택지를 제시하면 팀원이 없는 설정을 찾아 헤맨다.
+
+로그인은 조회할 방법이 없어 ok:null로 두고 '연동 테스트'로 안내한다.
+없는 것을 있는 척 진단하지 않는다.
+
+이로써 getBackendSetup에 antigravity가 빠져 있어 홈 화면이 '준비 안 됨'
+경고를 아예 못 띄우던 구멍도 막힌다."
 ```
 
 ---
@@ -1411,12 +1638,15 @@ git commit -m "feat: 백엔드 실전 검증 확정 — verification 값 고정
 | 백엔드 | 측정일 | 완주 | 게이트 | verify % | 소요 | HTML | images | 라이브 텍스트 | verification |
 |---|---|---|---|---|---|---|---|---|---|
 | claude-code | 2026-07-30 | ✅ | PASS | 98.12% | 15분 | 113~122KB | 12 | 380자 | verified |
-| codex | | | | | | | | | |
-| antigravity | | | | | | | | | |
+| codex | 2026-07-31 | ✅ | PASS | 93.51% | 3.3분 | 187.4KB | 9 | 530자 | verified |
+| antigravity | 2026-07-31 | ✅ | PASS | 93.05% | 3.1분 | 187KB | 13 | 351자 | verified |
 
 **Antigravity 쿼터 관찰 (Task 2):**
 
-- 완주 여부:
-- 소요 시간:
-- 실행 후 데스크톱 앱 사용 가능 여부:
-- `--print-timeout` 형식:
+- 완주 여부: ✅ 완주. Google AI Pro에서 1회 변환 310k 토큰, 한도 경고 없음
+- 소요 시간: 3분 4초 (`--print-timeout` 40m는 과잉이나 무해)
+- `--print-timeout` 형식: Go 스타일 duration (`5m0s`가 기본값) → `${분}m` 유효
+- Figma 접근: **MCP 경로 없음. REST 토큰(`FIGMA_TOKEN`)이 유일한 경로**
+- **workDir: `--add-dir <workDir>` 필수.** 없으면 agy가 서브에이전트 태스크를
+  자기 스크래치(`~/.gemini/antigravity-cli/scratch/`)에서 돌려 산출물이 그쪽에 생기고,
+  게이트는 빈 workDir을 보고 무조건 실패한다.

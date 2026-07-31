@@ -1,14 +1,14 @@
 import { execa } from "execa";
 
 /**
- * Shared subprocess runner for JSONL-streaming agent CLIs (claude/codex/gemini).
+ * Shared subprocess runner for JSONL-streaming agent CLIs (claude/codex).
  *
  * execa가 손으로 짜기 까다로운 부분을 대신 맡는다:
  * - 줄 단위 스트리밍(`lines: true`)과 마지막 개행 없는 줄
  * - 취소 시 **자손 프로세스까지** 종료(`killDescendants`) — CLI들은 래퍼(shim)가
  *   실제 바이너리를 다시 spawn하므로 직계 자식만 죽이면 손자가 고아로 남아
  *   토큰을 계속 소모한다. 유닉스는 프로세스 그룹, 윈도우는 taskkill.
- * - 윈도우에서 `gemini.cmd` 같은 셸 shim 실행 (Node는 CVE-2024-27980 이후
+ * - 윈도우에서 `codex.cmd` 같은 셸 shim 실행 (Node는 CVE-2024-27980 이후
  *   `.cmd`를 shell 없이 spawn하면 예외를 던진다)
  * 여기 남는 것은 "무엇을 결과로 볼 것인가"뿐이다.
  */

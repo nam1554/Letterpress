@@ -1,9 +1,8 @@
-import { describe, expect, it } from "vitest";
-import {
-  figmaMcpFromClaudeList,
-  figmaMcpFromCodexList,
-  figmaMcpFromGeminiList,
-} from "./setup";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { figmaMcpFromClaudeList, figmaMcpFromCodexList, figmaTokenStep } from "./setup";
 
 // 실측 출력 (2026-07-29, 각 CLI `mcp list`) 기반 — 포맷이 바뀌면 여기서 잡는다.
 
@@ -53,26 +52,49 @@ describe("figmaMcpFromCodexList", () => {
   });
 });
 
-describe("figmaMcpFromGeminiList", () => {
-  it("detects disconnected vs connected", () => {
-    expect(
-      figmaMcpFromGeminiList(
-        "Configured MCP servers:\n\n✗ figma: https://mcp.figma.com/mcp (http) - Disconnected",
-      ),
-    ).toBe("registered");
-    expect(
-      figmaMcpFromGeminiList("✓ figma: https://mcp.figma.com/mcp (http) - Connected"),
-    ).toBe("connected");
-    // 심볼 없는 포맷도 "Disconnected"에 속지 않아야 한다
-    expect(figmaMcpFromGeminiList("figma: https://mcp.figma.com/mcp - Connected")).toBe(
-      "connected",
-    );
-    expect(figmaMcpFromGeminiList("figma: https://mcp.figma.com/mcp - Disconnected")).toBe(
-      "registered",
-    );
+describe("figmaTokenStep (토큰 전용 경로)", () => {
+  let dir: string;
+  const settingsPath = () => path.join(dir, "settings.json");
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "mhm-setup-"));
+    process.env.MHM_SETTINGS_FILE = settingsPath();
   });
 
-  it("reports missing when unregistered", () => {
-    expect(figmaMcpFromGeminiList("Configured MCP servers:\n(none)")).toBe("missing");
+  afterEach(async () => {
+    delete process.env.MHM_SETTINGS_FILE;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("토큰이 있으면 통과한다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({ figmaToken: "figd_test_token" }));
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(true);
+    expect(step.detail).toContain("토큰");
+  });
+
+  it("토큰이 없으면 실패로 표시하고 발급 위치를 안내한다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({}));
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(false);
+    // 팀원이 읽고 바로 행동할 수 있어야 한다.
+    expect(step.hint ?? "").toMatch(/figma\.com/);
+  });
+
+  it("MCP를 대안으로 안내하지 않는다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({}));
+    const step = figmaTokenStep();
+    expect(`${step.detail} ${step.hint ?? ""} ${step.command ?? ""}`).not.toMatch(/mcp/i);
+  });
+
+  // 리뷰 Important 2: "아래 입력란에 저장하세요"는 이 브랜치에서 삭제된
+  // GeminiKeyInput(같은 카드 안 입력란)의 잔재다. Figma 토큰 입력란은 지금
+  // SettingsPanel.tsx에 있고 그 Section은 접힌 채로 시작하므로, 목적지를
+  // 명시적으로 가리켜야 한다.
+  it("목적지(⚙️ 설정 패널)를 명시하고, 사라진 '아래 입력란'을 가리키지 않는다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({}));
+    const step = figmaTokenStep();
+    expect(step.hint ?? "").toMatch(/설정/);
+    expect(step.hint ?? "").not.toMatch(/아래 입력란/);
   });
 });

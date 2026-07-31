@@ -45,6 +45,8 @@ export function claudeEventsFromLine(line: ClaudeStreamLine): AgentEvent[] {
 export const claudeCodeProvider: AgentProvider = {
   id: "claude-code",
   label: "Claude Code (local CLI)",
+  verification: "verified",
+  verificationNote: "2026-07-30 실측 PASS 98.12%, 15분 (게이트 실패·경고 0)",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
     const prompt = task.promptOverride ?? buildEdmPrompt(task);

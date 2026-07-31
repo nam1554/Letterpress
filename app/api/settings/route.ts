@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import { getSettings, saveSettings } from "@/lib/settings";
 import { listProviders } from "@/lib/providers/registry";
-import { validateFigmaToken, validateGeminiKey } from "@/lib/setup";
+import { validateFigmaToken } from "@/lib/setup";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,6 @@ function masked() {
     maxConcurrentJobs: s.maxConcurrentJobs,
     jobTimeoutMinutes: s.jobTimeoutMinutes,
     figmaTokenSet: s.figmaToken.length > 0,
-    geminiApiKeySet: s.geminiApiKey.length > 0,
     cdnTemplate: s.cdnTemplate,
     claudeModel: s.claudeModel,
     notifyOnFinish: s.notifyOnFinish,
@@ -42,7 +41,6 @@ const settingsBody = z.object({
     .max(180, "작업 제한 시간은 180분 이하여야 합니다.")
     .optional(),
   figmaToken: z.string().optional(),
-  geminiApiKey: z.string().optional(),
   cdnTemplate: z.string().optional(),
   claudeModel: z
     .string()
@@ -76,16 +74,6 @@ export async function PUT(req: NextRequest) {
       );
     }
     if (check === "network") warnings.push("네트워크 문제로 Figma 토큰을 검증하지 못했습니다.");
-  }
-  if (body.geminiApiKey?.trim()) {
-    const check = await validateGeminiKey(body.geminiApiKey.trim());
-    if (check === "invalid") {
-      return NextResponse.json(
-        { error: "Gemini API 키가 유효하지 않습니다 (Google API 인증 거부). aistudio.google.com/apikey 에서 확인해 주세요." },
-        { status: 400 },
-      );
-    }
-    if (check === "network") warnings.push("네트워크 문제로 Gemini API 키를 검증하지 못했습니다.");
   }
 
   saveSettings(body);

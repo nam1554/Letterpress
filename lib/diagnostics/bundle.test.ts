@@ -10,7 +10,7 @@ beforeAll(async () => {
   process.env.MHM_SETTINGS_FILE = path.join(dir, "settings.json");
   await writeFile(
     process.env.MHM_SETTINGS_FILE,
-    JSON.stringify({ figmaToken: "figd_SUPER_SECRET_TOKEN_1234", geminiApiKey: "AIzaSyFAKEKEY000" }),
+    JSON.stringify({ figmaToken: "figd_SUPER_SECRET_TOKEN_1234" }),
   );
 });
 
@@ -26,7 +26,6 @@ describe("진단 번들 — 비밀값", () => {
     const masked = maskedSettings();
     const raw = JSON.stringify(masked);
     expect(raw).not.toContain("figd_SUPER_SECRET_TOKEN_1234");
-    expect(raw).not.toContain("AIzaSyFAKEKEY000");
     expect(String(masked.figmaToken)).toContain("설정됨");
     // 비밀이 아닌 설정은 그대로 보여야 진단에 쓸모가 있다.
     expect(masked.maxConcurrentJobs).toBeDefined();
@@ -60,7 +59,7 @@ describe("진단 번들 — 잡 파일 경로", () => {
     const job = {
       id: "abc12345",
       summary:
-        "gemini 실패: GET https://generativelanguage.googleapis.com/v1?key=AIzaSyTESTKEY1234567 401",
+        "백엔드 실패: GET https://generativelanguage.googleapis.com/v1?key=AIzaSyTESTKEY1234567 401",
     };
     const out = scrubForBundle(JSON.stringify(job));
     expect(out).not.toContain("AIzaSyTESTKEY1234567");
@@ -71,6 +70,54 @@ describe("진단 번들 — 잡 파일 경로", () => {
     const events =
       '{"type":"log","text":"curl -H \'X-Figma-Token: figd_SUPER_SECRET_TOKEN_1234\' ..."}';
     expect(scrubForBundle(events)).not.toContain("SUPER_SECRET");
+  });
+});
+
+describe("진단 번들 — summary.md의 백엔드 완주 기록", () => {
+  // 리뷰 Minor 2: ready만 적고 verification을 안 적으면 사람이 읽는 페이지에서
+  // "이 백엔드가 실제로 끝까지 동작한 적은 있나"를 답할 수 없다.
+  it("각 백엔드 줄에 준비 상태뿐 아니라 완주 기록도 싣는다", async () => {
+    // 이 테스트는 summary.md 포맷팅만 검증한다 — 실제 CLI 진단
+    // (getBackendSetup)이 동작하는지는 관심사가 아니고, claudeSetup()의
+    // `mcp list`가 최대 45초까지 걸려 전체 스위트 부하 아래에서는 30초 예산을
+    // 넘겨 간헐 실패했다(단독 실행 시에는 통과). 실제 CLI를 스폰하지 않도록
+    // getBackendSetup을 주입한다 — buildSummary의 프로덕션 경로(bundleTexts가
+    // 인자 없이 부르는 경우)는 그대로 실제 getBackendSetup을 쓴다.
+    const { buildSummary } = await import("./bundle");
+    const summary = await buildSummary(
+      { jobs: [] },
+      {
+        getBackendSetup: async () => [
+          {
+            id: "claude-code",
+            label: "Claude Code",
+            ready: true,
+            verification: "verified",
+            verificationNote: "",
+            steps: [{ name: "CLI 설치", ok: true, detail: "claude 1.0.0" }],
+          },
+          {
+            id: "codex",
+            label: "Codex",
+            ready: false,
+            verification: "sample",
+            verificationNote: "",
+            steps: [{ name: "CLI 설치", ok: false, detail: "미설치" }],
+          },
+          {
+            id: "mock",
+            label: "Mock",
+            ready: true,
+            verification: "unverified",
+            verificationNote: "",
+            steps: [{ name: "준비", ok: true, detail: "항상 사용 가능" }],
+          },
+        ],
+      },
+    );
+    const backendSection = summary.split("## 백엔드 연동")[1]?.split("## ")[0] ?? "";
+    expect(backendSection).toMatch(/완주 기록:/);
+    expect(backendSection).toMatch(/검증됨|미검증|샘플 전용/);
   });
 });
 

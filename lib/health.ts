@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-// 선택 백엔드(Gemini/Codex)의 상세 진단은 lib/setup.ts(백엔드 연동 카드)가 담당한다.
+// 선택 백엔드(Codex)의 상세 진단은 lib/setup.ts(백엔드 연동 카드)가 담당한다.
 // 여기는 기본 변환 경로에 필수인 항목만 다룬다.
 export interface HealthCheck {
   name: string;
