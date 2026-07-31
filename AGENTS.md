@@ -485,5 +485,7 @@ no auth, single user, filesystem is the database.
   real `computer` click plus a screenshot (which forces frames), not
   `javascript_tool` alone.
 
-Reference output the generated eDMs should resemble:
-`(로컬 참고 산출물 — 저장소에 없음)`
+Reference output the generated eDMs should resemble: the `aisurfer_edm_production`
+bundle, kept locally by the maintainer — it is **not** in this repo (it contains
+unreleased campaign artwork). Ask for it if you need it; the pixel-verify report
+on any archived PASS job shows the same target quality.

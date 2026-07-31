@@ -12,6 +12,19 @@ Codex CLI · Antigravity CLI · Mock 중 선택할 수 있습니다 — 팀원�
 픽셀 검증 포함)을 그대로 사용하며, 산출물은 실무 발송 패키지 형태(700px 테이블 레이아웃, `images/`
 상대경로, 반응형 변형, base64 자립형 프리뷰)입니다.
 
+## 받기
+
+```bash
+git clone https://github.com/nam1554/Letterpress.git
+cd Letterpress
+```
+
+> Git이 없다면 GitHub 페이지의 **Code → Download ZIP**으로 받아도 됩니다.
+> 다만 `git clone`으로 받아 두면 나중에 `git pull` 한 번으로 최신 상태가
+> 되고, 런처가 코드 변경을 감지해 알아서 다시 빌드합니다.
+
+의존성 설치는 하지 않아도 됩니다 — 아래 런처가 처리합니다.
+
 ## 빠른 시작 (3줄 요약)
 
 1. Finder에서 **`시작하기.command` 더블클릭** → 브라우저가 자동으로 열립니다
@@ -282,4 +295,20 @@ UI에서 백엔드별 **"연동 테스트"** 버튼을 눌러도 같은 검증�
 
 ## 설계 문서
 
-`docs/superpowers/specs/2026-07-28-marketing-html-maker-design.md`
+- `docs/superpowers/specs/2026-07-28-marketing-html-maker-design.md` — 최초 설계
+- `docs/superpowers/specs/2026-07-31-multi-backend-parity-design.md` — 백엔드 다중화
+- `docs/public-repo-readiness.md` — 공개 저장소 전환 점검 기록
+
+## 이 저장소에 대해
+
+BECUAI 사내 도구입니다. 팀원이 각자 받아 쓰기 편하도록 공개해 두었을 뿐,
+범용 제품이 아닙니다. **별도 라이선스가 없으므로 저작권은 유보되어 있습니다** —
+사내 사용 외의 이용은 문의해 주세요.
+
+**기여하실 때 (그리고 이슈를 올리실 때) 주의:**
+
+- `data/`는 커밋 대상이 아닙니다. 변환 결과물과 **Figma 토큰**이 그 아래
+  저장됩니다. `.gitignore`의 `/data/` 줄을 지우지 마세요.
+- 앱의 **"문제 신고용 파일"** 에는 Figma URL과 작업 로그 본문이 들어갑니다.
+  토큰·API 키는 마스킹되지만 URL은 아닙니다 — 공개 이슈에 그대로 첨부하지
+  마세요. 담당자에게 직접 보내주세요.

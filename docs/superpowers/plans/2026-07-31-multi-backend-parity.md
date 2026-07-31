@@ -142,7 +142,7 @@ cat ~/.gemini/config/mcp_config.json
 
 ```bash
 mkdir -p /tmp/agy-probe
-cd /Users/example/projects/letterpress
+cd <repo>
 pnpm exec tsx -e "import{buildEdmPrompt}from'./lib/providers/prompt';console.log(buildEdmPrompt({jobId:'probe',figmaUrl:process.argv[1],workDir:'/tmp/agy-probe'}))" '<FIGMA_URL>' > /tmp/agy-prompt.txt
 wc -c /tmp/agy-prompt.txt
 ```
@@ -889,7 +889,7 @@ describe("stripAgySystemNoise", () => {
       "빌드를 완료했습니다.",
       "<SYSTEM_MESSAGE>",
       "[Message] timestamp=2026-07-31T06:43:08Z sender=b0ff/task-55 priority=HIGH content=…",
-      "Log: file:///Users/example/.gemini/antigravity-cli/brain/…/task-55.log",
+      "Log: file://~/.gemini/antigravity-cli/brain/…/task-55.log",
       "</SYSTEM_MESSAGE>",
       "verify.json은 PASS입니다.",
     ].join("\n");
