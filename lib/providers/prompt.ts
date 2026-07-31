@@ -27,7 +27,7 @@ export const FIGMA_EDM_SKILL_DIR = path.join(process.cwd(), "skills", "figma-edm
 export function buildEdmPrompt(task: AgentTask): string {
   const skillIntro = `Read ${FIGMA_EDM_SKILL_DIR}/SKILL.md and ${FIGMA_EDM_SKILL_DIR}/references/workflow.md, then follow that pipeline exactly (the bundled scripts are in ${FIGMA_EDM_SKILL_DIR}/scripts/, read-only reference — if a script needs a change, copy it into your working directory first and edit the copy)`;
 
-  if (task.edit) return buildEditPrompt(task, skillIntro);
+  if (task.edit) return buildEditPrompt(task, task.edit, skillIntro);
 
   return `You are converting a Figma eDM design into email HTML.
 
@@ -90,7 +90,13 @@ ${figmaAccessClause()}
  * 의도적으로 원본 Figma와 달라지므로 verify는 실행하되 PASS를 강제하지 않는다
  * (게이트도 edit 잡에서는 verify FAIL을 경고로 강등).
  */
-function buildEditPrompt(task: AgentTask, skillIntro: string): string {
+// edit을 인자로 받는다 — task.edit!로 쓰면 호출부의 가드를 빼먹었을 때
+// 런타임에서야 터진다. 시그니처로 막으면 그런 호출 자체가 컴파일되지 않는다.
+function buildEditPrompt(
+  task: AgentTask,
+  edit: NonNullable<AgentTask["edit"]>,
+  skillIntro: string,
+): string {
   return `You are updating an ALREADY BUILT Figma eDM in the current working
 directory. It was produced earlier with the figma-edm pipeline — the build
 scripts, assets, fonts, verify evidence, and ./output/ deliverables are all
@@ -99,7 +105,7 @@ present. Do NOT rebuild from scratch.
 Original Figma design URL: ${task.figmaUrl}
 
 Requested change — apply ONLY this, nothing else:
-${task.edit!.instruction}
+${edit.instruction}
 
 ${skillIntro}, specifically its "Adapting when copy or design changes" flow.
 Set EDM_DIR to the current working directory.

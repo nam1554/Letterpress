@@ -121,14 +121,18 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
         emit({ ts: Date.now(), type: "status", text: `주의: ${w}` });
       }
 
+      // 게이트를 돌리지 않은 경우(스모크 테스트)는 acceptance가 null이고 통과로
+      // 친다. `gateFailures`가 비어 있지 않다는 것 자체가 acceptance가 있었고
+      // 미충족이었다는 뜻이라, non-null 단언 없이도 분기가 성립한다.
       const gateOk = acceptance?.ok ?? true;
+      const gateFailures = gateOk ? [] : (acceptance?.failures ?? []);
       const ok = result.ok && gateOk && !timedOut;
       const summary = timedOut
         ? `제한 시간(${timeoutMinutes}분)을 초과해 중단되었습니다.`
         : !result.ok
           ? result.summary
           : !gateOk
-            ? `품질 게이트 미충족: ${acceptance!.failures.join(" / ")}`
+            ? `품질 게이트 미충족: ${gateFailures.join(" / ")}`
             : result.summary;
       await updateJob(job.id, {
         status: ok ? "succeeded" : "failed",
