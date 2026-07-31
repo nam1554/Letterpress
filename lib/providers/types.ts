@@ -34,6 +34,14 @@ export interface AgentResult {
 }
 
 /**
+ * 실전 잡 완주 기록. 코드 완성도가 아니라 측정 결과다.
+ * - verified   : 실제 Figma 잡을 끝까지 돌려 게이트 PASS를 확인함
+ * - unverified : 코드는 있으나 완주 기록 없음 (선택 시 UI가 경고)
+ * - sample     : mock 전용
+ */
+export type ProviderVerification = "verified" | "unverified" | "sample";
+
+/**
  * One agent backend (Claude Code, Codex, mock, ...).
  * Contract: run the task in task.workDir, stream progress via onEvent,
  * leave downloadable artifacts in task.workDir/output/.
@@ -41,6 +49,10 @@ export interface AgentResult {
 export interface AgentProvider {
   id: string;
   label: string;
+  /** 측정으로만 올라간다. 실전 PASS 확인 전에는 "verified"로 쓰지 않는다. */
+  verification: ProviderVerification;
+  /** 근거 한 줄. 예: "2026-07-30 실측 PASS 98.12%, 15분" */
+  verificationNote: string;
   run(
     task: AgentTask,
     onEvent: (e: AgentEvent) => void,

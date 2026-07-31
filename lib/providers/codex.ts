@@ -70,6 +70,8 @@ export function codexEventsFromLine(line: CodexLine): AgentEvent[] {
 export const codexProvider: AgentProvider = {
   id: "codex",
   label: "Codex CLI (ChatGPT 구독)",
+  verification: "unverified",
+  verificationNote: "현재 게이트에서 미측정 — 과거 실패 3건은 모두 대응 커밋 이전 실행분",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
     if (!(await loggedIn())) {

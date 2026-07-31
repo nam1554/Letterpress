@@ -67,6 +67,8 @@ const delay = (ms: number, signal: AbortSignal) =>
 export const mockProvider: AgentProvider = {
   id: "mock",
   label: "Mock (샘플 산출물, 토큰 소모 없음)",
+  verification: "sample",
+  verificationNote: "환경 없이 흐름만 보는 샘플 — 실제 Figma를 읽지 않는다",
 
   async run(task, onEvent, signal) {
     const outDir = path.join(task.workDir, "output");

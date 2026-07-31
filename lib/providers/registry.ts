@@ -25,6 +25,16 @@ export function getProvider(id?: string): AgentProvider {
   return provider;
 }
 
-export function listProviders(): Array<Pick<AgentProvider, "id" | "label">> {
-  return Object.values(providers).map(({ id, label }) => ({ id, label }));
+export type ProviderInfo = Pick<
+  AgentProvider,
+  "id" | "label" | "verification" | "verificationNote"
+>;
+
+export function listProviders(): ProviderInfo[] {
+  return Object.values(providers).map(({ id, label, verification, verificationNote }) => ({
+    id,
+    label,
+    verification,
+    verificationNote,
+  }));
 }
