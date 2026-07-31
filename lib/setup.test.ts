@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { figmaMcpFromClaudeList, figmaMcpFromCodexList } from "./setup";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { figmaMcpFromClaudeList, figmaMcpFromCodexList, figmaTokenStep } from "./setup";
 
 // 실측 출력 (2026-07-29, 각 CLI `mcp list`) 기반 — 포맷이 바뀌면 여기서 잡는다.
 
@@ -46,5 +49,41 @@ describe("figmaMcpFromCodexList", () => {
 
   it("reports missing without a figma row", () => {
     expect(figmaMcpFromCodexList("Name  Url  Status\nother  https://x  enabled")).toBe("missing");
+  });
+});
+
+describe("figmaTokenStep (토큰 전용 경로)", () => {
+  let dir: string;
+  const settingsPath = () => path.join(dir, "settings.json");
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "mhm-setup-"));
+    process.env.MHM_SETTINGS_FILE = settingsPath();
+  });
+
+  afterEach(async () => {
+    delete process.env.MHM_SETTINGS_FILE;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("토큰이 있으면 통과한다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({ figmaToken: "figd_test_token" }));
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(true);
+    expect(step.detail).toContain("토큰");
+  });
+
+  it("토큰이 없으면 실패로 표시하고 발급 위치를 안내한다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({}));
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(false);
+    // 팀원이 읽고 바로 행동할 수 있어야 한다.
+    expect(step.hint ?? "").toMatch(/figma\.com/);
+  });
+
+  it("MCP를 대안으로 안내하지 않는다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({}));
+    const step = figmaTokenStep();
+    expect(`${step.detail} ${step.hint ?? ""} ${step.command ?? ""}`).not.toMatch(/mcp/i);
   });
 });

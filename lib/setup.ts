@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 
 const CLAUDE_BIN = () => process.env.CLAUDE_BIN ?? "claude";
 const CODEX_BIN = () => process.env.CODEX_BIN ?? "codex";
+const AGY_BIN = () => process.env.ANTIGRAVITY_BIN ?? "agy";
 
 // ---------------------------------------------------------------------------
 // Figma MCP 연결 상태 파서 — 각 CLI의 `mcp list` 출력에서 figma 항목을 찾는다.
@@ -125,6 +126,25 @@ function figmaAccessStep(
   return { ...base, ok: null, detail: "확인 불가 (CLI 미설치 또는 시간 초과)" };
 }
 
+/**
+ * MCP 경로가 없는 백엔드(antigravity)의 Figma 접근 단계.
+ * `figmaAccessStep`과 달리 MCP를 대안으로 제시하지 않는다 — 있지도 않은
+ * 선택지를 안내하면 팀원이 없는 설정을 찾아 헤맨다 (실측: agy의 init.tools에
+ * figma 툴이 붙지 않는다).
+ */
+export function figmaTokenStep(): SetupStep {
+  const base = { name: "Figma 접근" };
+  if (figmaTokenSet()) {
+    return { ...base, ok: true, detail: "Figma 토큰으로 동작 (이 백엔드는 토큰 전용)" };
+  }
+  return {
+    ...base,
+    ok: false,
+    detail: "Figma 토큰 없음 — 이 백엔드는 토큰이 필수입니다",
+    hint: "figma.com → Settings → Security → Personal access tokens 에서 발급해 아래 입력란에 저장하세요. 이 백엔드는 토큰 입력이 유일한 연결 방법입니다.",
+  };
+}
+
 async function claudeSetup(): Promise<BackendSetup> {
   const cli = await cliVersion(CLAUDE_BIN());
   // claude mcp list는 등록된 모든 서버에 헬스체크를 돌린다 — 넉넉한 타임아웃.
@@ -204,6 +224,31 @@ async function codexSetup(): Promise<BackendSetup> {
   return finish("codex", steps);
 }
 
+async function antigravitySetup(): Promise<BackendSetup> {
+  const cli = await cliVersion(AGY_BIN());
+
+  const steps: SetupStep[] = [
+    {
+      name: "CLI 설치",
+      ok: cli.ok,
+      detail: cli.ok ? `v${cli.detail}` : "미설치",
+      hint: cli.ok
+        ? undefined
+        : "antigravity.google.com/download 에서 Antigravity CLI를 설치한 뒤, 터미널에서 `agy`를 한 번 실행해 구글 계정으로 로그인하세요.",
+    },
+    figmaTokenStep(),
+    {
+      // agy에는 로그인 상태를 조회하는 하위 명령이 없다 (v1.1.9 --help 실측).
+      // 없는 것을 있는 척 진단하는 대신, 확인 방법을 알려준다.
+      name: "로그인",
+      ok: null,
+      detail: "자동 확인 불가 — 아래 '연동 테스트'로 확인하세요",
+      hint: "Antigravity CLI는 로그인 상태를 조회하는 명령을 제공하지 않습니다. '연동 테스트'가 실제 CLI를 한 번 실행하므로, 그것이 통과하면 로그인도 정상입니다.",
+    },
+  ];
+  return finish("antigravity", steps);
+}
+
 function finish(id: string, steps: SetupStep[]): BackendSetup {
   const info = listProviders().find((p) => p.id === id);
   return {
@@ -231,7 +276,7 @@ export async function getBackendSetup(force = false): Promise<BackendSetup[]> {
 
   const run = (async () => {
     const backends = [
-      ...(await Promise.all([claudeSetup(), codexSetup()])),
+      ...(await Promise.all([claudeSetup(), codexSetup(), antigravitySetup()])),
       finish("mock", [
         { name: "준비", ok: true, detail: "항상 사용 가능 — 토큰 소모 없이 UI 플로우 확인" },
       ]),
