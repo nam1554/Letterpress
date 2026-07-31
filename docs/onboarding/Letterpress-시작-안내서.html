@@ -86,11 +86,20 @@
   <p class="sub">Figma eDM 디자인 → 이메일 HTML. 처음 준비에 약 10분, 그 뒤로는 링크만 붙여넣으면 됩니다.</p>
 
   <section>
-    <h2><span class="num">1</span>앱 파일 압축 풀기</h2>
-    <p>노션 페이지에 첨부된 <code>Letterpress.zip</code>을 내려받아 압축을 풉니다.
-      바탕화면이나 문서 폴더처럼 <strong>본인이 찾기 쉬운 곳</strong>에 두세요 — 앞으로 계속 여기서 실행합니다.</p>
+    <h2><span class="num">1</span>앱 받기</h2>
+    <p>앱은 GitHub 저장소에 있습니다 —
+      <a href="https://github.com/nam1554/Letterpress">github.com/nam1554/Letterpress</a></p>
+    <p><strong>권장 — git으로 받기.</strong> 터미널에 아래를 붙여넣으세요.
+      이후로는 <code>git pull</code> 한 번이면 최신 상태가 되고, 실행 파일이 변경을 감지해
+      알아서 다시 빌드합니다.</p>
+    <div class="cmd"><code>git clone https://github.com/nam1554/Letterpress.git</code><button>복사</button></div>
+    <p><strong>git이 익숙하지 않다면</strong> 저장소 페이지의 초록색 <strong>Code</strong> 버튼 →
+      <strong>Download ZIP</strong>을 누르고 압축을 푸세요. 다만 이 방식은 업데이트를 받으려면
+      매번 다시 내려받아야 합니다.</p>
+    <p>어느 쪽이든 바탕화면이나 문서 폴더처럼 <strong>본인이 찾기 쉬운 곳</strong>에 두세요 —
+      앞으로 계속 여기서 실행합니다.</p>
     <div class="callout warn">
-      <strong>Windows</strong>라면 압축을 풀기 전에 zip 파일을
+      <strong>Windows에서 ZIP으로 받으셨다면</strong> 압축을 풀기 전에 zip 파일을
       <strong>우클릭 → 속성 → 아래쪽 "차단 해제" 체크 → 확인</strong>을 먼저 해 주세요.
       이걸 안 하면 실행 파일이 조용히 차단됩니다.
     </div>
@@ -153,7 +162,7 @@
     </div>
 
     <div class="panel" id="mac">
-      <p>압축 푼 폴더 안의 <code>시작하기.command</code>를 <strong>더블클릭</strong>하세요.
+      <p>받은 폴더 안의 <code>시작하기.command</code>를 <strong>더블클릭</strong>하세요.
         검은 창이 뜨고 준비가 끝나면 브라우저가 자동으로 열립니다.</p>
       <div class="callout">
         <strong>"확인되지 않은 개발자" 경고가 뜬다면</strong> — 처음 한 번만
@@ -163,7 +172,7 @@
     </div>
 
     <div class="panel" id="win" hidden>
-      <p>압축 푼 폴더 안의 <code>시작하기.bat</code>을 <strong>더블클릭</strong>하세요.
+      <p>받은 폴더 안의 <code>시작하기.bat</code>을 <strong>더블클릭</strong>하세요.
         준비가 끝나면 브라우저가 자동으로 열립니다.</p>
       <div class="callout warn">
         파이썬 설치 화면이 나오면 <strong>"Add python.exe to PATH"를 반드시 체크</strong>하세요.
@@ -243,10 +252,11 @@
       압축 파일 하나가 내려받아집니다. 그걸 그대로 담당자에게 보내 주세요.</p>
     <p class="dim">환경 점검 결과, 서버 오류 로그, OS·Node·Chrome·파이썬 버전, 해당 작업의 로그와
       검증 결과가 담깁니다. <strong>Figma 토큰과 API 키 값은 제외됩니다</strong>(설정 여부와 길이만 표시).
-      다만 Figma URL과 작업 로그 본문은 포함되니 외부로 보낼 때는 참고하세요.</p>
+      다만 Figma URL과 작업 로그 본문은 포함되니 <strong>공개된 GitHub 이슈에 그대로 올리지 마시고</strong>
+      담당자에게 직접 보내주세요.</p>
   </section>
 
-  <footer>자세한 내용은 압축 푼 폴더 안 <code>README.md</code>에 있습니다.</footer>
+  <footer>자세한 내용은 받은 폴더 안 <code>README.md</code>에 있습니다.</footer>
 </div>
 
 <script>
