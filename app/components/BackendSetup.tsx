@@ -13,6 +13,7 @@ import {
   Paper,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { sendJson } from "../lib/request";
@@ -68,6 +69,39 @@ function StepIcon({ ok }: { ok: boolean | null }) {
         <IconQuestion size={13} label="확인 안 됨" />
       )}
     </Text>
+  );
+}
+
+/**
+ * 완주 기록(verification) 배지 — 근거(verificationNote)는 네이티브 title이 아니라
+ * Mantine Tooltip으로 보여준다. 브라우저 기본 title 툴팁은 뜨기까지 1초 이상
+ * 걸린다(DiagnosticsLink.tsx가 같은 이유로 이미 title을 걷어낸 전례가 있다).
+ */
+function VerificationBadge({
+  verification,
+  note,
+}: {
+  verification: "verified" | "unverified" | "sample";
+  note: string;
+}) {
+  if (verification === "sample") return null;
+  const badge = (
+    <Badge size="xs" variant="light" color={verification === "verified" ? "green" : "yellow"}>
+      {verification === "verified" ? "검증됨" : "미검증"}
+    </Badge>
+  );
+  if (!note) return badge;
+  return (
+    <Tooltip
+      label={note}
+      multiline
+      w={320}
+      withArrow
+      openDelay={100}
+      events={{ hover: true, focus: true, touch: true }}
+    >
+      {badge}
+    </Tooltip>
   );
 }
 
@@ -179,15 +213,7 @@ export default function BackendSetup({
                     <Badge size="sm" variant="light" color={b.ready ? "green" : "yellow"}>
                       {b.ready ? "사용 가능" : "설정 필요"}
                     </Badge>
-                    {b.verification === "verified" ? (
-                      <Badge size="xs" variant="light" color="green" title={b.verificationNote}>
-                        검증됨
-                      </Badge>
-                    ) : b.verification === "unverified" ? (
-                      <Badge size="xs" variant="light" color="yellow" title={b.verificationNote}>
-                        미검증
-                      </Badge>
-                    ) : null}
+                    <VerificationBadge verification={b.verification} note={b.verificationNote} />
                   </Group>
                   {b.id !== "mock" && (
                     <Button
