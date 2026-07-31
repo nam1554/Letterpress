@@ -213,9 +213,13 @@ app/api/**                 잡 CRUD/SSE/다운로드 · 설정 · 연동 라우�
 data/jobs/<id>/work/output/    다운로드 대상 산출물 (git 제외)
 ```
 
-새 백엔드 추가 = `lib/providers/`에 `AgentProvider` 구현 파일 1개 +
-`registry.ts` 등록 1줄. 기본 백엔드는 ⚙️ 설정 패널(또는 `AGENT_PROVIDER`
-env)로 지정합니다 (`claude-code` | `codex` | `mock`).
+새 백엔드 추가는 "파일 1개 + 등록 1줄"보다 손이 더 갑니다 — `AgentProvider`
+구현과 `registry.ts` 등록 외에 `lib/setup.ts`에 진단 로직을 추가하고 그
+로스터에도 등록해야 하며, 이걸 빠뜨리면 그 백엔드는 홈 화면에 "준비 안 됨"
+경고조차 뜨지 않는 채로 나갑니다 (실제로 한 번 그렇게 나간 적 있음). UI 표시
+이름·스모크 테스트·이 문서까지 같이 손봐야 하는 항목입니다. 기본 백엔드는
+⚙️ 설정 패널(또는 `AGENT_PROVIDER` env)로 지정합니다 (`claude-code` | `codex`
+| `antigravity` | `mock`).
 
 ## 테스트
 
