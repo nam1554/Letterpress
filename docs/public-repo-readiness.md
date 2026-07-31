@@ -93,6 +93,32 @@ git-filter-repo --force \
   --message-callback '...'       # Claude-Session: 줄 제거
 ```
 
+## ⚠️ 강제 푸시는 GitHub에서 커밋을 지우지 않는다 (실측)
+
+재작성 후 확인해 보니 **저장소는 이미 퍼블릭이었고**(2026-07-29 생성),
+재작성 전 커밋이 **여전히 SHA로 공개 조회된다.**
+
+```
+$ gh api repos/nam1554/Letterpress/commits/7e7d2f5b5b7… --jq '.commit.author.email'
+<개인 Gmail 주소>        # 강제 푸시 이후에도 그대로 나온다
+$ gh api repos/nam1554/Letterpress/commits/93eab86 --jq '.commit.author.email'
+<개인 Gmail 주소>
+```
+
+GitHub은 참조가 끊긴 커밋을 즉시 수거하지 않는다. 브랜치에서 사라져 목록에는
+안 보이지만, SHA를 아는 사람은 `/commit/<sha>`로 계속 열 수 있다. 즉 **위
+"히스토리 재작성" 표의 효과는 앞으로 clone 하는 사람에게만 적용된다** — 이미
+공개돼 있던 2일치 히스토리는 아직 조회 가능하다.
+
+새는 것은 **자격증명이 아니다**(시크릿은 애초에 없었다). 개인 Gmail 주소,
+개인 홈 경로, 사내 Figma 파일 키다. 완전히 없애려면 둘 중 하나가 필요하다:
+
+- **저장소 삭제 후 재생성** — 확실하다. 이 저장소는 star·fork·issue·PR이
+  모두 0이라 잃을 것이 코드 외에 없다. 정리된 히스토리를 그대로 다시 올리면
+  된다.
+- **GitHub Support에 gc 요청** — 저장소를 유지한 채 처리할 수 있지만 회신을
+  기다려야 한다.
+
 ## 남은 판단 (소유자 결정)
 
 ### 라이선스
