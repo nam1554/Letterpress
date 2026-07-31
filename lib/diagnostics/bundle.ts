@@ -7,7 +7,7 @@ import { runHealthChecks } from "../health";
 import type { Job } from "../jobs/store";
 import { findPython } from "../python";
 import { getSettings } from "../settings";
-import { getBackendSetup } from "../setup";
+import { getBackendSetup, type BackendSetup } from "../setup";
 import { readRecentLog } from "./log";
 
 const execFileAsync = promisify(execFile);
@@ -79,12 +79,25 @@ export interface BundleInput {
   job?: Job | null;
 }
 
+/**
+ * 테스트가 실제 CLI 스폰(최대 45초, `claudeSetup`의 `mcp list`)을 피할 수
+ * 있도록 백엔드 진단 함수를 주입 가능하게 뒀다. 생략하면 프로덕션과 동일하게
+ * `getBackendSetup`을 그대로 쓴다 — 실제 출력은 바뀌지 않는다.
+ */
+export interface BuildSummaryDeps {
+  getBackendSetup?: (force?: boolean) => Promise<BackendSetup[]>;
+}
+
 /** 사람이 먼저 읽을 요약 — 여는 순간 상황이 보이게. */
-export async function buildSummary(input: BundleInput): Promise<string> {
+export async function buildSummary(
+  input: BundleInput,
+  deps: BuildSummaryDeps = {},
+): Promise<string> {
+  const backendSetup = deps.getBackendSetup ?? getBackendSetup;
   const python = await findPython();
   const [health, backends, appVersion, gitRev] = await Promise.all([
     runHealthChecks(true).catch(() => []),
-    getBackendSetup(false).catch(() => []),
+    backendSetup(false).catch(() => []),
     readFile(path.join(process.cwd(), "package.json"), "utf8")
       .then((raw) => JSON.parse(raw).version as string)
       .catch(() => "unknown"),

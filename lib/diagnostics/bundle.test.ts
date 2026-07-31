@@ -77,12 +77,48 @@ describe("진단 번들 — summary.md의 백엔드 완주 기록", () => {
   // 리뷰 Minor 2: ready만 적고 verification을 안 적으면 사람이 읽는 페이지에서
   // "이 백엔드가 실제로 끝까지 동작한 적은 있나"를 답할 수 없다.
   it("각 백엔드 줄에 준비 상태뿐 아니라 완주 기록도 싣는다", async () => {
+    // 이 테스트는 summary.md 포맷팅만 검증한다 — 실제 CLI 진단
+    // (getBackendSetup)이 동작하는지는 관심사가 아니고, claudeSetup()의
+    // `mcp list`가 최대 45초까지 걸려 전체 스위트 부하 아래에서는 30초 예산을
+    // 넘겨 간헐 실패했다(단독 실행 시에는 통과). 실제 CLI를 스폰하지 않도록
+    // getBackendSetup을 주입한다 — buildSummary의 프로덕션 경로(bundleTexts가
+    // 인자 없이 부르는 경우)는 그대로 실제 getBackendSetup을 쓴다.
     const { buildSummary } = await import("./bundle");
-    const summary = await buildSummary({ jobs: [] });
+    const summary = await buildSummary(
+      { jobs: [] },
+      {
+        getBackendSetup: async () => [
+          {
+            id: "claude-code",
+            label: "Claude Code",
+            ready: true,
+            verification: "verified",
+            verificationNote: "",
+            steps: [{ name: "CLI 설치", ok: true, detail: "claude 1.0.0" }],
+          },
+          {
+            id: "codex",
+            label: "Codex",
+            ready: false,
+            verification: "sample",
+            verificationNote: "",
+            steps: [{ name: "CLI 설치", ok: false, detail: "미설치" }],
+          },
+          {
+            id: "mock",
+            label: "Mock",
+            ready: true,
+            verification: "unverified",
+            verificationNote: "",
+            steps: [{ name: "준비", ok: true, detail: "항상 사용 가능" }],
+          },
+        ],
+      },
+    );
     const backendSection = summary.split("## 백엔드 연동")[1]?.split("## ")[0] ?? "";
     expect(backendSection).toMatch(/완주 기록:/);
     expect(backendSection).toMatch(/검증됨|미검증|샘플 전용/);
-  }, 30_000);
+  });
 });
 
 describe("진단 번들 — 모든 항목이 문을 지나는가", () => {
