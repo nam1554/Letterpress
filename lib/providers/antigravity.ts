@@ -124,7 +124,7 @@ export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   label: "Antigravity CLI (Google 구독)",
   verification: "verified",
-  verificationNote: "2026-07-31 실측 PASS 93.05%, 3분 (Figma 토큰 필요)",
+  verificationNote: "2026-07-31 실측 PASS 93.5%, 3.7분 (Figma 토큰 필요)",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
     const prompt = task.promptOverride ?? buildEdmPrompt(task);
