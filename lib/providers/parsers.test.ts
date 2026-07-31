@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { createAgyLineMapper, stripAgySystemNoise } from "./antigravity";
 import { claudeEventsFromLine } from "./claude-code";
 import { codexEventsFromLine } from "./codex";
+import type { AgentEvent } from "./types";
 
 describe("claude stream-json parser", () => {
   it("maps init / text / tool_use / result lines", () => {
@@ -76,5 +78,128 @@ describe("codex exec --json parser", () => {
     ).toEqual([]);
     expect(codexEventsFromLine({ type: "turn.completed" })).toEqual([]);
     expect(codexEventsFromLine({})).toEqual([]);
+  });
+});
+
+describe("antigravity(agy) stream-json mapper", () => {
+  const collect = () => {
+    const events: AgentEvent[] = [];
+    return { events, mapper: createAgyLineMapper((e) => events.push(e)) };
+  };
+
+  it("init을 세션 시작 상태로 바꾼다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "init", conversation_id: "c1", init: { cwd: "/tmp/x" } });
+    expect(events).toEqual([expect.objectContaining({ type: "status" })]);
+    expect(events[0].text).toContain("Antigravity");
+  });
+
+  it("agent_response의 text_delta를 완성된 줄 단위로만 흘린다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "첫 줄\n둘째 " },
+    });
+    expect(events.map((e) => e.text)).toEqual(["첫 줄"]);
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "줄\n" },
+    });
+    expect(events.map((e) => e.text)).toEqual(["첫 줄", "둘째 줄"]);
+  });
+
+  it("툴은 DONE 시점에만 한 줄 남긴다 (ACTIVE는 무시)", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toHaveLength(0);
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "DONE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toEqual([expect.objectContaining({ type: "tool", text: "run_command" })]);
+  });
+
+  it("result 성공에서 최종 응답을 얻는다", () => {
+    const { mapper } = collect();
+    mapper.handle({ event: "result", result: { status: "SUCCESS", response: "eDM 빌드 완료" } });
+    expect(mapper.finish()).toEqual({ finalResponse: "eDM 빌드 완료", errorText: "" });
+  });
+
+  // 실측: 프롬프트가 FATAL을 찍어도 status는 SUCCESS다. 파서는 응답을 그대로
+  // 넘기고, 성공 판정은 provider가 FATAL 접두어로 한다.
+  it("FATAL 응답도 status가 SUCCESS면 에러로 만들지 않는다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "result",
+      result: { status: "SUCCESS", response: "FATAL: Figma access is not available\n" },
+    });
+    expect(events.filter((e) => e.type === "error")).toHaveLength(0);
+    expect(mapper.finish().finalResponse).toContain("FATAL:");
+  });
+
+  it("status가 SUCCESS가 아니면 에러로 남긴다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "result", result: { status: "ERROR", response: "quota exhausted" } });
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(mapper.finish().errorText).toContain("quota exhausted");
+  });
+
+  it("버퍼에 남은 마지막 줄을 finish에서 흘린다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "ACTIVE", step_type: "agent_response", text_delta: "개행 없는 줄" },
+    });
+    expect(events).toHaveLength(0);
+    mapper.finish();
+    expect(events.map((e) => e.text)).toEqual(["개행 없는 줄"]);
+  });
+
+  it("모르는 event와 잡다한 step_type은 조용히 무시한다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "telemetry_whatever" });
+    mapper.handle({ event: "step_update", step_update: { state: "DONE", step_type: "checkpoint" } });
+    mapper.handle({ event: "step_update", step_update: { state: "DONE", step_type: "user_input" } });
+    expect(events).toHaveLength(0);
+  });
+});
+
+describe("stripAgySystemNoise", () => {
+  // 실측 응답에 그대로 들어 있던 모양이다.
+  it("SYSTEM_MESSAGE 블록을 통째로 걷어낸다", () => {
+    const raw = [
+      "빌드를 완료했습니다.",
+      "<SYSTEM_MESSAGE>",
+      "[Message] timestamp=2026-07-31T06:43:08Z sender=b0ff/task-55 priority=HIGH content=…",
+      "Log: file:///Users/example/.gemini/antigravity-cli/brain/…/task-55.log",
+      "</SYSTEM_MESSAGE>",
+      "verify.json은 PASS입니다.",
+    ].join("\n");
+    const out = stripAgySystemNoise(raw);
+    expect(out).toContain("빌드를 완료했습니다.");
+    expect(out).toContain("verify.json은 PASS입니다.");
+    expect(out).not.toContain("SYSTEM_MESSAGE");
+    expect(out).not.toContain("task-55");
+  });
+
+  it("'production mode active' 줄을 걷어낸다", () => {
+    expect(stripAgySystemNoise("... production mode active ...\n결과입니다.").trim()).toBe(
+      "결과입니다.",
+    );
+  });
+
+  it("SYSTEM_MESSAGE가 여러 번 나와도 전부 걷어낸다", () => {
+    const raw = "A\n<SYSTEM_MESSAGE>\nx\n</SYSTEM_MESSAGE>\nB\n<SYSTEM_MESSAGE>\ny\n</SYSTEM_MESSAGE>\nC";
+    const out = stripAgySystemNoise(raw);
+    expect(out).not.toContain("x");
+    expect(out).not.toContain("y");
+    expect(out.replace(/\n+/g, " ").trim()).toBe("A B C");
+  });
+
+  it("잡음이 없으면 원문을 그대로 둔다", () => {
+    expect(stripAgySystemNoise("평범한 요약입니다.")).toBe("평범한 요약입니다.");
   });
 });
