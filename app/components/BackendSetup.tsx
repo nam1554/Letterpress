@@ -30,6 +30,8 @@ export interface BackendInfo {
   id: string;
   label: string;
   ready: boolean;
+  verification: "verified" | "unverified" | "sample";
+  verificationNote: string;
   steps: SetupStep[];
 }
 
@@ -177,6 +179,15 @@ export default function BackendSetup({
                     <Badge size="sm" variant="light" color={b.ready ? "green" : "yellow"}>
                       {b.ready ? "사용 가능" : "설정 필요"}
                     </Badge>
+                    {b.verification === "verified" ? (
+                      <Badge size="xs" variant="light" color="green" title={b.verificationNote}>
+                        검증됨
+                      </Badge>
+                    ) : b.verification === "unverified" ? (
+                      <Badge size="xs" variant="light" color="yellow" title={b.verificationNote}>
+                        미검증
+                      </Badge>
+                    ) : null}
                   </Group>
                   {b.id !== "mock" && (
                     <Button

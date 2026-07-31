@@ -47,6 +47,8 @@ type StatusFilter = "all" | "running" | "succeeded" | "failed";
 interface ProviderInfo {
   id: string;
   label: string;
+  verification: "verified" | "unverified" | "sample";
+  verificationNote: string;
 }
 interface HealthCheck {
   name: string;
@@ -205,6 +207,8 @@ export default function Home() {
   const requiredFails = health?.filter((c) => !c.ok) ?? [];
   const selectedBackend = backends?.find((b) => b.id === provider);
   const notReady = Boolean(selectedBackend && !selectedBackend.ready);
+  const selectedProvider = providers.find((p) => p.id === provider);
+  const unverified = selectedProvider?.verification === "unverified";
 
   const totalBytes = jobs.reduce((sum, j) => sum + (j.diskBytes ?? 0), 0);
   const visibleJobs = jobs.filter((j) => {
@@ -407,9 +411,14 @@ export default function Home() {
                 onChange={setProviderChoice}
                 data={providers.map((p) => {
                   const b = backends?.find((x) => x.id === p.id);
+                  // 두 축을 각각 표시한다: 설정이 덜 됐다 / 완주 기록이 없다.
+                  const marks = [
+                    b && !b.ready ? "설정 필요" : null,
+                    p.verification === "unverified" ? "미검증" : null,
+                  ].filter(Boolean);
                   return {
                     value: p.id,
-                    label: b && !b.ready ? `${p.label} · 설정 필요` : p.label,
+                    label: marks.length ? `${p.label} · ${marks.join(" · ")}` : p.label,
                   };
                 })}
                 allowDeselect={false}
@@ -442,6 +451,22 @@ export default function Home() {
                   선택한 백엔드가 아직 준비되지 않았습니다 — 아래 <b>백엔드 연동</b>에서 남은
                   단계를 확인하세요. 지금 실행하면 대부분 실패합니다. 환경 없이 흐름만 보고
                   싶다면 아래 <b>샘플로 체험해보기</b>를 쓰세요.
+                </Text>
+              </Alert>
+            )}
+            {unverified && (
+              <Alert
+                color="yellow"
+                variant="light"
+                mt="md"
+                p="sm"
+                data-testid="provider-unverified"
+                icon={<IconAlert size={16} />}
+              >
+                <Text size="xs">
+                  이 백엔드는 <b>실제 변환을 끝까지 완주한 기록이 없습니다</b> — 설정이
+                  끝나 있어도 중간에 실패할 수 있습니다. 확실한 결과가 필요하면 검증된
+                  백엔드를 쓰세요. {selectedProvider?.verificationNote}
                 </Text>
               </Alert>
             )}

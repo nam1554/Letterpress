@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getProvider, listProviders } from "./providers/registry";
+import type { ProviderVerification } from "./providers/types";
 import { getSettings } from "./settings";
 
 const execFileAsync = promisify(execFile);
@@ -55,6 +56,9 @@ export interface BackendSetup {
   label: string;
   /** 명시적으로 실패한 단계가 없으면 true (ok=null은 차단하지 않음) */
   ready: boolean;
+  /** 실전 완주 기록 — ready와 독립된 축 (registry에서 가져온다). */
+  verification: ProviderVerification;
+  verificationNote: string;
   steps: SetupStep[];
 }
 
@@ -201,10 +205,13 @@ async function codexSetup(): Promise<BackendSetup> {
 }
 
 function finish(id: string, steps: SetupStep[]): BackendSetup {
+  const info = listProviders().find((p) => p.id === id);
   return {
     id,
-    label: listProviders().find((p) => p.id === id)?.label ?? id,
+    label: info?.label ?? id,
     ready: steps.every((s) => s.ok !== false),
+    verification: info?.verification ?? "unverified",
+    verificationNote: info?.verificationNote ?? "",
     steps,
   };
 }
