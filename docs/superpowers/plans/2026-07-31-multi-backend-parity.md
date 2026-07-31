@@ -1324,107 +1324,158 @@ verification은 실측 PASS 93.05%(3분, 텍스트 351자, 이미지 13개) 근�
 
 ---
 
-### Task 8: antigravity 진단(setup) 추가
+### Task 8: 백엔드별로 다른 Figma 경로를 정직하게 진단한다
+
+> **2026-07-31 전면 개정.** 최초 계획은 `agy mcp list` 출력을 파싱하는 작업이었다.
+> **그 하위 명령은 존재하지 않는다** (agy v1.1.9 `--help` 실측: `agent(s)` ·
+> `changelog` · `help` · `install` · `models` · `plugin(s)` · `update`가 전부).
+> 그리고 더 근본적으로, **세 백엔드의 Figma 접근 경로가 서로 다르다**는 것이
+> 실측으로 드러났다. 진단이 그 차이를 말해주지 못하면 팀원은 자기한테 뭐가
+> 필요한지 알 수 없다.
 
 **Files:**
-- Modify: `lib/setup.ts` (`AGY_BIN`, `figmaMcpFromAgyList`, `antigravitySetup`, `getBackendSetup`)
+- Modify: `lib/setup.ts`
 - Modify: `lib/setup.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 Step 2의 실측 `agy mcp list` 출력, Task 7의 `antigravityProvider`
-- Produces: `figmaMcpFromAgyList(out: string): McpStatus`, `antigravitySetup(): Promise<BackendSetup>`
+- Consumes: Task 7의 `antigravityProvider` (id `"antigravity"`), 기존 `SetupStep` /
+  `BackendSetup` / `figmaAccessStep` / `cliVersion` / `finish`
+- Produces: `antigravitySetup(): Promise<BackendSetup>`,
+  `figmaTokenStep(): SetupStep` (토큰 전용 경로를 쓰는 백엔드용)
 
-- [ ] **Step 1: 로그인 조회 명령과 미인증 동작을 확인한다**
+#### 실측 사실 (이 태스크의 근거)
 
-```bash
-agy --help | grep -i -A2 "login\|auth"
-```
+| 백엔드 | Figma 접근 경로 | 진단 방법 |
+|---|---|---|
+| claude-code | 원격 MCP `mcp.figma.com` (OAuth) | `claude mcp list` 파싱 (기존) |
+| codex | 원격 MCP `mcp.figma.com` (OAuth) | `codex mcp list` 파싱 (기존) |
+| **antigravity** | **REST 토큰만.** MCP 경로 없음 | **설정의 `figmaToken` 유무** |
 
-로그인 상태 조회 하위 명령이 **있으면** Step 4의 `login` 단계에 쓴다.
-**없으면** 그 단계를 만들지 않는다 (CLI 설치 + Figma 접근 두 단계만 둔다).
+antigravity에 figma MCP가 붙지 않는 것은 실측 확인됐다: `init.tools` 56개 중
+figma 관련이 없고 `call_mcp_tool` 하나뿐이며, 토큰 없이 돌리면 프롬프트가
+`FATAL: Figma access is not available (Figma MCP tools are not present and
+FIGMA_TOKEN API token is missing)`로 끝난다(47초). 토큰을 넣자 완주해 PASS 93.05%.
 
-- [ ] **Step 2: 실패하는 파서 테스트를 쓴다**
+**로그인 상태를 조회할 방법이 없다.** agy에 해당 하위 명령이 없으므로 단계를
+만들지 않는다. 대신 기존 "연동 테스트" 버튼(`runBackendTest`, 실제 CLI를 작은
+프롬프트로 스폰)이 로그인까지 확인해주므로, 그 사실을 hint로 안내한다.
 
-Modify `lib/setup.test.ts` — import에 `figmaMcpFromAgyList`를 더하고 describe를 추가한다.
-**아래 문자열은 Task 2 Step 2에서 보관한 실측 출력으로 교체한다.**
+#### 지금 깨져 있는 것 (Task 7 리뷰가 발견)
+
+`getBackendSetup()`이 `claudeSetup()` / `codexSetup()`만 부르고 antigravity가
+없다. 그래서 `/api/setup`이 antigravity 행을 반환하지 않고,
+`app/page.tsx`의 `selectedBackend`가 `undefined`가 되어 **`notReady`가 항상
+`false`** 다 — `agy`가 아예 설치돼 있지 않아도 홈 화면은 조용히 준비된 것처럼
+보인다. 이 태스크가 그 구멍을 막는다.
+
+- [ ] **Step 1: 실패하는 테스트를 쓴다**
+
+`figmaTokenStep`은 설정을 읽으므로, 기존 `lib/setup.test.ts`가 쓰는 방식대로
+`MHM_SETTINGS_FILE` 환경변수로 스크래치 설정 파일을 가리켜 테스트한다.
+(`lib/diagnostics/bundle.test.ts`가 같은 기법을 쓰니 참고해라.)
+
+Modify `lib/setup.test.ts` — import에 `figmaTokenStep`을 더하고 describe를 추가한다:
 
 ```ts
-describe("figmaMcpFromAgyList", () => {
-  it("연결된 figma 항목을 connected로 읽는다", () => {
-    expect(
-      figmaMcpFromAgyList("✓ figma: https://mcp.figma.com/mcp (http) - Connected"),
-    ).toBe("connected");
+describe("figmaTokenStep (토큰 전용 경로)", () => {
+  it("토큰이 있으면 통과한다", () => {
+    // MHM_SETTINGS_FILE에 figmaToken이 든 파일을 써두고 호출한다.
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(true);
+    expect(step.detail).toContain("토큰");
   });
 
-  it("끊긴 항목을 registered로 읽는다", () => {
-    expect(
-      figmaMcpFromAgyList("✗ figma: https://mcp.figma.com/mcp (http) - Disconnected"),
-    ).toBe("registered");
+  it("토큰이 없으면 실패로 표시하고 발급 위치를 안내한다", () => {
+    // MHM_SETTINGS_FILE에 figmaToken이 없는 파일을 써두고 호출한다.
+    const step = figmaTokenStep();
+    expect(step.ok).toBe(false);
+    // 팀원이 읽고 바로 행동할 수 있어야 한다.
+    expect(step.hint ?? "").toMatch(/figma\.com/);
   });
 
-  it("figma 항목이 없으면 missing", () => {
-    expect(figmaMcpFromAgyList("Configured MCP servers:\n(none)")).toBe("missing");
+  it("MCP를 대안으로 안내하지 않는다", () => {
+    // antigravity에는 MCP 경로가 없다 — 있지도 않은 선택지를 제시하면 안 된다.
+    const step = figmaTokenStep();
+    expect(`${step.detail} ${step.hint ?? ""} ${step.command ?? ""}`).not.toMatch(/mcp/i);
   });
 });
 ```
 
-- [ ] **Step 3: 실패를 확인한다**
+> 위 세 케이스의 설정 파일 준비(`beforeEach`에서 `MHM_SETTINGS_FILE`을 쓰고
+> `afterAll`에서 되돌리기)는 `lib/diagnostics/bundle.test.ts:6-20`의 패턴을
+> 그대로 따라 작성해라. 그 파일을 먼저 읽어라.
+
+- [ ] **Step 2: 실패를 확인한다**
 
 ```bash
 pnpm exec vitest run lib/setup.test.ts
 ```
 
-기대: FAIL — `figmaMcpFromAgyList`가 없다.
+기대: FAIL — `figmaTokenStep`이 없다.
 
-- [ ] **Step 4: 파서와 진단을 구현한다**
+- [ ] **Step 3: 토큰 전용 Figma 단계를 구현한다**
 
-Modify `lib/setup.ts` — 상수와 파서를 추가한다:
+Modify `lib/setup.ts` — 기존 `figmaAccessStep` 아래에 추가한다:
+
+```ts
+/**
+ * MCP 경로가 없는 백엔드(antigravity)의 Figma 접근 단계.
+ * `figmaAccessStep`과 달리 MCP를 대안으로 제시하지 않는다 — 있지도 않은
+ * 선택지를 안내하면 팀원이 없는 설정을 찾아 헤맨다 (실측: agy의 init.tools에
+ * figma 툴이 붙지 않는다).
+ */
+export function figmaTokenStep(): SetupStep {
+  const base = { name: "Figma 접근" };
+  if (figmaTokenSet()) {
+    return { ...base, ok: true, detail: "Figma 토큰으로 동작 (이 백엔드는 토큰 전용)" };
+  }
+  return {
+    ...base,
+    ok: false,
+    detail: "Figma 토큰 없음 — 이 백엔드는 토큰이 필수입니다",
+    hint: "figma.com → Settings → Security → Personal access tokens 에서 발급해 아래 입력란에 저장하세요. 이 백엔드는 MCP 연결을 지원하지 않아 토큰이 유일한 경로입니다.",
+  };
+}
+```
+
+- [ ] **Step 4: antigravity 진단을 구현한다**
+
+Modify `lib/setup.ts` — 상수와 함수를 추가한다 (`codexSetup` 아래):
 
 ```ts
 const AGY_BIN = () => process.env.ANTIGRAVITY_BIN ?? "agy";
 ```
 
 ```ts
-/** `agy mcp list`: "✓ figma: https://mcp.figma.com/mcp (http) - Connected" */
-export function figmaMcpFromAgyList(out: string): McpStatus {
-  const line = findFigmaLine(out);
-  if (!line) return "missing";
-  if (/[✔✓]/.test(line)) return "connected";
-  // 심볼 없는 포맷 대비: "Disconnected"를 지운 뒤 "Connected"가 남는지 본다.
-  return /\bconnected\b/i.test(line.replace(/disconnected/gi, "")) ? "connected" : "registered";
-}
-```
-
-진단 함수를 추가한다 (`codexSetup` 아래):
-
-```ts
 async function antigravitySetup(): Promise<BackendSetup> {
   const cli = await cliVersion(AGY_BIN());
-  const list = cli.ok ? await mcpList(AGY_BIN(), 20_000) : null;
-  const mcp = list === null ? null : figmaMcpFromAgyList(list);
 
   const steps: SetupStep[] = [
     {
       name: "CLI 설치",
       ok: cli.ok,
-      detail: cli.ok ? cli.detail : "미설치",
+      detail: cli.ok ? `v${cli.detail}` : "미설치",
       hint: cli.ok
         ? undefined
-        : "antigravity.google.com/download 에서 설치한 뒤 `agy`를 한 번 실행해 구글 계정으로 로그인하세요.",
+        : "antigravity.google.com/download 에서 Antigravity CLI를 설치한 뒤, 터미널에서 `agy`를 한 번 실행해 구글 계정으로 로그인하세요.",
     },
-    figmaAccessStep(
-      mcp,
-      "agy mcp add figma https://mcp.figma.com/mcp",
-      "터미널에서 `agy` 실행 후 /mcp 로 figma 재인증 — 또는 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
-    ),
+    figmaTokenStep(),
+    {
+      // agy에는 로그인 상태를 조회하는 하위 명령이 없다 (v1.1.9 --help 실측).
+      // 없는 것을 있는 척 진단하는 대신, 확인 방법을 알려준다.
+      name: "로그인",
+      ok: null,
+      detail: "자동 확인 불가 — 아래 '연동 테스트'로 확인하세요",
+      hint: "Antigravity CLI는 로그인 상태를 조회하는 명령을 제공하지 않습니다. '연동 테스트'가 실제 CLI를 한 번 실행하므로, 그것이 통과하면 로그인도 정상입니다.",
+    },
   ];
   return finish("antigravity", steps);
 }
 ```
 
-> `agy mcp add`의 정확한 형태는 Step 1의 `--help`로 확인해 위 문자열을 고친다.
-> Step 1에서 로그인 조회 명령을 찾았다면 `codexSetup`의 `login` 단계를 본떠
-> 두 단계 사이에 넣는다.
+`ok: null`은 기존 규약상 **차단하지 않는다**(`finish()`의 `ready`는
+`steps.every((s) => s.ok !== false)`). 의도한 동작이다 — 확인할 수 없는 것을
+실패로 칠하면 팀원이 고칠 수 없는 빨간 불을 보게 된다.
 
 `getBackendSetup`의 `Promise.all`에 더한다:
 
@@ -1436,25 +1487,37 @@ async function antigravitySetup(): Promise<BackendSetup> {
 
 ```bash
 pnpm exec vitest run lib/setup.test.ts
+pnpm exec tsc --noEmit
+pnpm lint
 ```
 
-- [ ] **Step 6: 실제 화면에서 확인한다**
+- [ ] **Step 6: 홈 화면에서 실제로 확인한다**
 
-```bash
-pnpm dev
-```
+`pnpm dev`는 이미 포트 3000에 떠 있다.
 
-홈의 🔌 백엔드 연동 패널에 Antigravity 카드가 뜨고, 설치/Figma 접근 상태가
-실제와 맞는지 본다. "연동 테스트" 버튼도 눌러 본다 (실제 CLI를 스폰한다).
+1. 🔌 백엔드 연동 패널에 **Antigravity 카드가 보이는지**
+2. 백엔드 Select에서 antigravity를 골랐을 때, `agy`가 없거나 토큰이 없으면
+   **"준비 안 됨" 경고가 뜨는지** (Task 7 시점에는 이 경고가 아예 안 떴다)
+3. "연동 테스트" 버튼이 antigravity에서도 동작하는지
+
+**주의: "연동 테스트"는 실제 CLI를 스폰해 사용자 구독 쿼터를 쓴다.** 한 번만
+눌러라. 누르지 않았다면 리포트에 그렇게 적어라 — 정직한 미확인이 거짓 확인보다 낫다.
 
 - [ ] **Step 7: 커밋**
 
 ```bash
 git add lib/setup.ts lib/setup.test.ts
-git commit -m "feat: Antigravity 백엔드 연동 진단 — 설치·Figma MCP
+git commit -m "feat: antigravity 진단 — 백엔드마다 Figma 경로가 다르다
 
-mcp list 파서는 실측 출력 기준. 팀원이 자기 환경에서 뭘 더 해야 하는지
-카드에서 바로 보고 명령을 복사할 수 있어야 한다."
+agy에는 mcp 하위 명령이 없고 figma MCP도 붙지 않는다(실측). REST 토큰이
+유일한 경로이므로 MCP를 대안으로 안내하지 않는 전용 단계를 만들었다 —
+있지도 않은 선택지를 제시하면 팀원이 없는 설정을 찾아 헤맨다.
+
+로그인은 조회할 방법이 없어 ok:null로 두고 '연동 테스트'로 안내한다.
+없는 것을 있는 척 진단하지 않는다.
+
+이로써 getBackendSetup에 antigravity가 빠져 있어 홈 화면이 '준비 안 됨'
+경고를 아예 못 띄우던 구멍도 막힌다."
 ```
 
 ---
