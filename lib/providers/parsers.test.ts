@@ -147,6 +147,15 @@ describe("antigravity(agy) stream-json mapper", () => {
     expect(mapper.finish().errorText).toContain("quota exhausted");
   });
 
+  // 리뷰 Minor 3: status 필드 자체가 없을 때 조용히 성공으로 흘리면 스키마가
+  // 어긋난 응답을 통과시킨다. 실측에선 항상 있었지만 방어는 싸다.
+  it("result에 status 필드가 아예 없으면 방어적으로 에러 취급한다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({ event: "result", result: { response: "뭔가 응답" } });
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(mapper.finish().errorText).toContain("뭔가 응답");
+  });
+
   it("버퍼에 남은 마지막 줄을 finish에서 흘린다", () => {
     const { events, mapper } = collect();
     mapper.handle({
@@ -189,6 +198,29 @@ describe("stripAgySystemNoise", () => {
     expect(stripAgySystemNoise("... production mode active ...\n결과입니다.").trim()).toBe(
       "결과입니다.",
     );
+  });
+
+  // run3(/tmp/agy-stream-run3.ndjson) 실측 모양 — SYSTEM_MESSAGE가 아니라
+  // <notification> 블록이었다. 내부 task id와 절대 로그 경로가 그대로 실린다.
+  it("notification 블록을 통째로 걷어낸다 (task id·절대경로 포함)", () => {
+    const raw = [
+      "빌드를 완료했습니다.",
+      "<notification>",
+      "Task cd5e3158-9220-4899-b093-c59f2d15c1a6/task-28 has completed.",
+      "Log: /Users/example/.gemini/antigravity-cli/brain/cd5e3158-.../.system_generated/tasks/task-32.log",
+      "Output:",
+      "Downloaded figma_full.png: (700, 2158)",
+      "</notification>",
+      "verify.json은 PASS입니다.",
+    ].join("\n");
+    const out = stripAgySystemNoise(raw);
+    expect(out).toContain("빌드를 완료했습니다.");
+    expect(out).toContain("verify.json은 PASS입니다.");
+    expect(out).not.toContain("notification");
+    expect(out).not.toContain("task-28");
+    expect(out).not.toContain("task-32");
+    expect(out).not.toContain(".system_generated");
+    expect(out).not.toContain("cd5e3158");
   });
 
   it("SYSTEM_MESSAGE가 여러 번 나와도 전부 걷어낸다", () => {

@@ -30,10 +30,16 @@ export interface AgyLine {
 /**
  * agy는 자체 태스크 시스템의 알림을 최종 응답에 그대로 섞어 보낸다.
  * 잡 요약에 로그 덩어리가 실리지 않게 걷어낸다.
+ *
+ * 2026-07-31 리뷰 수정: 최초 브리프는 run2 스트림 한 건만 보고 `<SYSTEM_MESSAGE>`와
+ * `production mode active`만 지시했다. run3(재생 검증에 쓴 실측 파일)에는 그 둘이
+ * 하나도 없고 대신 `<notification>…</notification>`(내부 task id + 절대 로그 경로 포함,
+ * run2/run3 양쪽 다 등장 — 셋 중 가장 흔함)가 그대로 남아 있었다. 세 패턴 다 걷어낸다.
  */
 export function stripAgySystemNoise(text: string): string {
   return text
     .replace(/<SYSTEM_MESSAGE>[\s\S]*?<\/SYSTEM_MESSAGE>/g, "")
+    .replace(/<notification>[\s\S]*?<\/notification>/g, "")
     .replace(/^\s*\.\.\. production mode active \.\.\.\s*$/gm, "")
     .replace(/\n{3,}/g, "\n\n");
 }
@@ -81,9 +87,12 @@ export function createAgyLineMapper(onEvent: (e: AgentEvent) => void) {
       if (line.event === "result") {
         flush();
         const r = line.result ?? {};
-        // 실측: 성공은 대문자 "SUCCESS". 그 외는 실패로 본다.
-        if (r.status !== undefined && r.status !== "SUCCESS") {
-          errorText = stripAgySystemNoise(r.response ?? "").trim() || r.status;
+        // 실측: 성공은 대문자 "SUCCESS". 그 외(다른 값 또는 status 필드 자체가
+        // 없는 경우)는 실패로 본다 — 리뷰 수정: status 부재를 성공으로 흘리면
+        // 스키마가 예상과 어긋난 응답을 조용히 통과시킨다. 실측에선 항상 있었지만
+        // 방어 비용이 싸다.
+        if (r.status !== "SUCCESS") {
+          errorText = stripAgySystemNoise(r.response ?? "").trim() || r.status || "status 없음";
           onEvent({ ts: Date.now(), type: "error", text: errorText });
           return;
         }
