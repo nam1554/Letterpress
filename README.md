@@ -21,14 +21,25 @@ Codex CLI · Antigravity CLI · Mock 중 선택할 수 있습니다 — 팀원�
 
 ## 팀원 온보딩 (처음 받은 사람용)
 
-이 도구는 각자의 머신에서 각자의 Claude 구독으로 실행됩니다.
+이 도구는 각자의 머신에서 **각자가 이미 갖고 있는 구독**으로 실행됩니다.
+Claude · ChatGPT(Codex) · Google(Antigravity) 중 **하나만 있으면 됩니다** —
+셋 다 실제 잡을 끝까지 돌려 같은 품질 게이트를 통과한 기록이 있습니다.
 
 **직접 하셔야 하는 것은 두 가지뿐입니다:**
 
-1. **Claude Code CLI 설치 + 로그인** — 설치 후 `claude`를 한 번 실행해
-   로그인하세요 (변환 1회당 본인 구독의 토큰을 사용합니다. 통상 10~20분).
-2. **Figma 연결** — Claude Code에 claude.ai Figma 커넥터가 연결·로그인돼
-   있어야 합니다 (`claude` 대화에서 Figma 링크가 읽히면 정상).
+1. **본인 구독의 CLI 설치 + 로그인** — 하나만 고르세요. 변환 1회당 본인
+   구독의 토큰을 사용합니다.
+2. **Figma 접근 연결** — **고른 백엔드에 따라 방법이 다릅니다.**
+
+| 갖고 있는 구독 | ① 설치 + 로그인 | ② Figma 접근 |
+|---|---|---|
+| Claude | `claude`를 한 번 실행해 로그인 | claude.ai **Figma 커넥터** 연결 (`claude` 대화에서 Figma 링크가 읽히면 정상) |
+| ChatGPT | `npm i -g @openai/codex` → `codex login` | `codex mcp add figma --url https://mcp.figma.com/mcp` (등록 시 브라우저 OAuth) |
+| Google | [antigravity.google.com/download](https://antigravity.google.com/download) 설치 → `agy` 한 번 실행해 구글 로그인 | **Figma 개인 토큰 필수** — 이 백엔드만 MCP 경로가 없습니다. figma.com → Settings → Security → Personal access tokens에서 발급해 앱 **⚙️ 설정**의 "Figma 토큰" 칸에 저장 |
+
+> 어느 쪽이든 **🔌 백엔드 연동 패널**이 위 두 단계를 백엔드별로 점검하고,
+> 막힌 단계에 해결 명령을 복사 버튼과 함께 띄웁니다. 표를 외울 필요 없이
+> 앱이 시키는 대로 따라가면 됩니다.
 
 **나머지는 런처가 처리합니다** (macOS는 `시작하기.command`, Windows는
 `시작하기.bat`을 더블클릭):
