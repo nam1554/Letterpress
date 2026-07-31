@@ -1411,7 +1411,7 @@ git commit -m "feat: 백엔드 실전 검증 확정 — verification 값 고정
 | 백엔드 | 측정일 | 완주 | 게이트 | verify % | 소요 | HTML | images | 라이브 텍스트 | verification |
 |---|---|---|---|---|---|---|---|---|---|
 | claude-code | 2026-07-30 | ✅ | PASS | 98.12% | 15분 | 113~122KB | 12 | 380자 | verified |
-| codex | | | | | | | | | |
+| codex | 2026-07-31 | ✅ | PASS | 93.51% | 3.3분 | 187.4KB | 9 | 530자 | verified |
 | antigravity | | | | | | | | | |
 
 **Antigravity 쿼터 관찰 (Task 2):**
