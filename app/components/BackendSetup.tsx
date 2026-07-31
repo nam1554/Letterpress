@@ -45,6 +45,7 @@ interface TestResult {
 const SHORT_NAME: Record<string, string> = {
   "claude-code": "Claude",
   codex: "Codex",
+  antigravity: "Antigravity",
 };
 
 /**

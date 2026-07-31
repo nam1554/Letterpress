@@ -1,4 +1,7 @@
-import type { AgentEvent } from "./types";
+import { getSettings } from "../settings";
+import { exitReason, runJsonlCli } from "./jsonl-cli";
+import { agentEnv, buildEdmPrompt } from "./prompt";
+import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
 // agy --output-format stream-json 실측 스키마 (v1.1.9, 2026-07-31 관측).
 // 공식 문서는 {type, …} 평면 구조라고 하지만 실제는 {event, <event>:{…}} 중첩이다.
@@ -105,3 +108,72 @@ export function createAgyLineMapper(onEvent: (e: AgentEvent) => void) {
     },
   };
 }
+
+const AGY_BIN = process.env.ANTIGRAVITY_BIN ?? "agy";
+
+/**
+ * agy print 모드의 기본 타임아웃은 5분(`5m0s`)인데 eDM 파이프라인은 실측 3~4분
+ * (느린 디자인은 더)이라 여유가 없다. 잡 타임아웃과 같은 값을 쓴다.
+ * 형식은 Go duration — 분 단위 `<n>m`이 유효하다.
+ */
+function printTimeoutArg(): string {
+  return `${getSettings().jobTimeoutMinutes}m`;
+}
+
+export const antigravityProvider: AgentProvider = {
+  id: "antigravity",
+  label: "Antigravity CLI (Google 구독)",
+  verification: "verified",
+  verificationNote: "2026-07-31 실측 PASS 93.05%, 3분 (Figma 토큰 필요)",
+
+  async run(task, onEvent, signal): Promise<AgentResult> {
+    const prompt = task.promptOverride ?? buildEdmPrompt(task);
+    const mapper = createAgyLineMapper(onEvent);
+
+    const result = await runJsonlCli({
+      bin: AGY_BIN,
+      args: [
+        // agy는 --add-dir 없이는 서브에이전트를 자기 스크래치에서 돌린다.
+        // 그러면 산출물이 workDir 밖에 생겨 게이트가 무조건 실패한다 (실측).
+        "--add-dir",
+        task.workDir,
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        // 잡 작업 디렉터리는 우리가 만든 것이고 앱은 로컬 전용이다.
+        "--dangerously-skip-permissions",
+        "--print-timeout",
+        printTimeoutArg(),
+      ],
+      cwd: task.workDir,
+      env: agentEnv(),
+      signal,
+      onJson: (obj) => mapper.handle(obj as AgyLine),
+      onText: (raw) => onEvent({ ts: Date.now(), type: "log", text: raw }),
+    });
+
+    const { finalResponse, errorText } = mapper.finish();
+
+    if (result.kind === "aborted") return { ok: false, summary: "사용자가 취소했습니다." };
+    if (result.kind === "spawn-error") {
+      const message = result.error?.message ?? "unknown";
+      onEvent({ ts: Date.now(), type: "error", text: `agy 실행 실패: ${message}` });
+      return {
+        ok: false,
+        summary: `Antigravity CLI를 실행할 수 없습니다: ${message} (antigravity.google.com/download 설치 후 \`agy\`를 한 번 실행해 로그인하세요)`,
+      };
+    }
+
+    // 실측: 프롬프트가 FATAL을 찍어도 agy의 status는 SUCCESS다.
+    // 다른 프로바이더와 같이 최종 응답의 접두어로 판정한다.
+    const fatal = finalResponse.trim().startsWith("FATAL:");
+    const ok = result.code === 0 && !fatal && !errorText;
+    return {
+      ok,
+      summary: ok
+        ? finalResponse || "완료"
+        : errorText || finalResponse || result.stderrTail || exitReason(result),
+    };
+  },
+};
