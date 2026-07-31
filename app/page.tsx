@@ -30,6 +30,7 @@ import { parseFigmaUrl } from "@/lib/figma";
 import { fetcher } from "./lib/fetcher";
 import { figmaLabel, formatBytes, relativeTime } from "./lib/format";
 import { PAGE_WIDTH, PROSE_WIDTH } from "./lib/dimensions";
+import { providerOptionLabel } from "./lib/provider-select";
 import { sendJson } from "./lib/request";
 
 interface Job {
@@ -409,18 +410,13 @@ export default function Home() {
                 data-testid="provider"
                 value={provider}
                 onChange={setProviderChoice}
-                data={providers.map((p) => {
-                  const b = backends?.find((x) => x.id === p.id);
-                  // 두 축을 각각 표시한다: 설정이 덜 됐다 / 완주 기록이 없다.
-                  const marks = [
-                    b && !b.ready ? "설정 필요" : null,
-                    p.verification === "unverified" ? "미검증" : null,
-                  ].filter(Boolean);
-                  return {
-                    value: p.id,
-                    label: marks.length ? `${p.label} · ${marks.join(" · ")}` : p.label,
-                  };
-                })}
+                data={providers.map((p) => ({
+                  value: p.id,
+                  label: providerOptionLabel(
+                    p,
+                    backends?.find((x) => x.id === p.id),
+                  ),
+                }))}
                 allowDeselect={false}
                 w={280}
               />

@@ -5,7 +5,8 @@
 Figma eDM 디자인 링크를 붙여넣으면 **AI 에이전트가 헤드리스로 이메일 HTML을
 생성**하고, 브라우저에서 결과물(HTML + images/)을 zip으로 다운로드하는 **로컬
 전용** 도구입니다. 서비스 배포용이 아닙니다. 백엔드는 Claude Code(기본) ·
-Codex CLI · Mock 중 선택할 수 있습니다.
+Codex CLI · Antigravity CLI · Mock 중 선택할 수 있습니다 — 팀원이 어떤 구독
+(Claude · ChatGPT/Codex · Google/Antigravity)을 갖고 있든 골라서 쓰면 됩니다.
 
 생성 파이프라인은 이 저장소에 포함된 `figma-edm` 스킬(`skills/figma-edm`,
 픽셀 검증 포함)을 그대로 사용하며, 산출물은 실무 발송 패키지 형태(700px 테이블 레이아웃, `images/`
@@ -105,10 +106,18 @@ pnpm build && pnpm start
    - **Codex CLI (ChatGPT 구독)** — `npm i -g @openai/codex`, `codex login`.
      Figma 접근은 `codex mcp add figma --url https://mcp.figma.com/mcp` (등록 시
      브라우저 OAuth).
+   - **Antigravity CLI (Google 구독)** — [antigravity.google.com/download](https://antigravity.google.com/download)에서
+     설치한 뒤, 터미널에서 `agy`를 한 번 실행해 구글 계정으로 로그인하세요.
+     **Figma 개인 액세스 토큰이 필수입니다** — 이 백엔드는 다른 두 백엔드와
+     달리 **Figma MCP 연결 경로가 없어서** 토큰이 Figma에 접근하는 유일한
+     방법입니다. figma.com → Settings → Security → Personal access tokens에서
+     발급해 앱의 **⚙️ 설정** 패널의 "Figma 토큰" 칸에 저장하세요.
    - **Mock** — 토큰 소모 없이 UI/다운로드 플로우 확인용 샘플 산출물
 
-   Codex는 figma-edm 스킬 파일을 프롬프트로 읽어 따라가는 **실험적**
-   경로입니다 — 픽셀 검증 PASS 도달 품질은 Claude Code 기준으로 검증돼 있습니다.
+   세 백엔드 모두 **실제 Figma 잡을 끝까지 돌려 품질 게이트를 통과한 실측
+   기록**이 있습니다 (2026-07-31 기준): Claude Code PASS 98.12%·15분,
+   Codex PASS 93.51%·3.3분, Antigravity PASS 93.5%·3.7분. 구독만 있으면
+   어느 쪽을 골라도 같은 합격선의 결과물을 받습니다.
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
    전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
 4. **발송 준비** (완료된 작업에서):
@@ -155,7 +164,7 @@ Figma 토큰은 **저장하는 순간 실제 API로 검증**되므로, 오타를
 | `MAX_CONCURRENT_JOBS` | `2` | 동시 실행 잡 수 제한 |
 | `JOB_TIMEOUT_MS` | `2700000` (45분) | 잡 하드 타임아웃 |
 | `FIGMA_TOKEN` | - | Figma REST API 폴백 토큰 |
-| `CLAUDE_BIN` / `CODEX_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
+| `CLAUDE_BIN` / `CODEX_BIN` / `ANTIGRAVITY_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
 
 </details>
 
@@ -191,6 +200,7 @@ Figma URL과 작업 요약·로그 본문은 포함되니, 외부에 보낼 때�
 lib/providers/types.ts         AgentProvider 인터페이스 — 백엔드 계약
 lib/providers/claude-code.ts   claude -p stream-json (기본 백엔드)
 lib/providers/codex.ts         codex exec --json (ChatGPT 구독)
+lib/providers/antigravity.ts   agy -p --output-format stream-json (Google 구독)
 lib/providers/mock.ts          샘플 산출물 (개발/검증용)
 lib/providers/jsonl-cli.ts     공용 spawn 러너 (프로세스 그룹 정리 포함)
 lib/providers/prompt.ts        공용 eDM 프롬프트 + Figma REST 폴백 절
@@ -213,8 +223,9 @@ env)로 지정합니다 (`claude-code` | `codex` | `mock`).
 pnpm vitest run     # 유닛 테스트 (URL/파서/잡 스토어/품질 게이트/CDN 치환/연동 진단)
 
 # 실제 CLI spawn 스모크 (각 백엔드, 토큰 소량 소모 — 옵트인)
-RUN_CLAUDE_SMOKE=1 pnpm vitest run lib/providers/claude-code.smoke.test.ts
-RUN_CODEX_SMOKE=1  pnpm vitest run lib/providers/codex.smoke.test.ts
+RUN_CLAUDE_SMOKE=1      pnpm vitest run lib/providers/claude-code.smoke.test.ts
+RUN_CODEX_SMOKE=1       pnpm vitest run lib/providers/codex.smoke.test.ts
+RUN_ANTIGRAVITY_SMOKE=1 pnpm vitest run lib/providers/antigravity.smoke.test.ts
 ```
 
 UI에서 백엔드별 **"연동 테스트"** 버튼을 눌러도 같은 검증이 됩니다.

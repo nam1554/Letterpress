@@ -110,8 +110,9 @@ export async function buildSummary(input: BundleInput): Promise<string> {
       ? ["(진단 없음)"]
       : backends.map(
           (b) =>
-            `- ${b.label}: ${b.ready ? "준비됨" : "준비 안 됨"} — ` +
-            b.steps.map((s) => `${s.name}=${s.ok === null ? "?" : s.ok ? "OK" : "실패"}`).join(", "),
+            `- ${b.label}: ${b.ready ? "준비됨" : "준비 안 됨"}` +
+            ` · 완주 기록: ${b.verification === "verified" ? "검증됨" : b.verification === "sample" ? "샘플 전용" : "미검증"}` +
+            ` — ${b.steps.map((s) => `${s.name}=${s.ok === null ? "?" : s.ok ? "OK" : "실패"}`).join(", ")}`,
         )),
     "",
     "## 최근 작업",

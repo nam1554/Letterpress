@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { createAgyLineMapper, stripAgySystemNoise } from "./antigravity";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createAgyLineMapper, printTimeoutArg, stripAgySystemNoise } from "./antigravity";
 import { claudeEventsFromLine } from "./claude-code";
 import { codexEventsFromLine } from "./codex";
 import type { AgentEvent } from "./types";
@@ -167,6 +170,49 @@ describe("antigravity(agy) stream-json mapper", () => {
     expect(events.map((e) => e.text)).toEqual(["개행 없는 줄"]);
   });
 
+  // 리뷰 Important 1: tool_info.parameters를 버리면 잡이 무슨 명령을 실행했는지
+  // 로그·진단 번들 어디서도 알 수 없다. claude-code.ts처럼 요약해 싣는다.
+  it("완료된 툴의 tool_info.parameters를 로그에 요약해 싣는다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: {
+        state: "DONE",
+        step_type: "tool",
+        tool_name: "run_command",
+        tool_info: { name: "run_command", parameters: { command: "python3 build_email.py" } },
+      },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("tool");
+    expect(events[0].text).toContain("run_command");
+    expect(events[0].text).toContain("python3 build_email.py");
+  });
+
+  it("긴 tool_info.parameters는 200자로 절단한다", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: {
+        state: "DONE",
+        step_type: "tool",
+        tool_name: "write_file",
+        tool_info: { name: "write_file", parameters: { content: "x".repeat(500) } },
+      },
+    });
+    expect(events[0].text.length).toBeLessThan(300);
+    expect(events[0].text).toMatch(/…$/);
+  });
+
+  it("tool_info가 없으면 예전처럼 tool_name만 남긴다 (기존 동작 보존)", () => {
+    const { events, mapper } = collect();
+    mapper.handle({
+      event: "step_update",
+      step_update: { state: "DONE", step_type: "tool", tool_name: "run_command" },
+    });
+    expect(events).toEqual([expect.objectContaining({ type: "tool", text: "run_command" })]);
+  });
+
   it("모르는 event와 잡다한 step_type은 조용히 무시한다", () => {
     const { events, mapper } = collect();
     mapper.handle({ event: "telemetry_whatever" });
@@ -233,5 +279,32 @@ describe("stripAgySystemNoise", () => {
 
   it("잡음이 없으면 원문을 그대로 둔다", () => {
     expect(stripAgySystemNoise("평범한 요약입니다.")).toBe("평범한 요약입니다.");
+  });
+});
+
+// 리뷰 Minor 1: --print-timeout이 잡 타임아웃과 똑같으면 agy의 타임아웃과
+// 러너의 AbortController가 같은 순간 발화해 어느 메시지가 남을지 경합이 된다.
+describe("printTimeoutArg (agy --print-timeout 경합 방지)", () => {
+  let dir: string;
+  const settingsPath = () => path.join(dir, "settings.json");
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "mhm-agy-timeout-"));
+    process.env.MHM_SETTINGS_FILE = settingsPath();
+  });
+
+  afterEach(async () => {
+    delete process.env.MHM_SETTINGS_FILE;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("잡 타임아웃보다 1분 짧게 준다 (agy가 먼저 끊겨야 명확한 메시지가 남는다)", async () => {
+    await writeFile(settingsPath(), JSON.stringify({ jobTimeoutMinutes: 45 }));
+    expect(printTimeoutArg()).toBe("44m");
+  });
+
+  it("잡 타임아웃이 1분이어도 0이나 음수가 되지 않는다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({ jobTimeoutMinutes: 1 }));
+    expect(printTimeoutArg()).toBe("1m");
   });
 });

@@ -141,7 +141,7 @@ export function figmaTokenStep(): SetupStep {
     ...base,
     ok: false,
     detail: "Figma 토큰 없음 — 이 백엔드는 토큰이 필수입니다",
-    hint: "figma.com → Settings → Security → Personal access tokens 에서 발급해 아래 입력란에 저장하세요. 이 백엔드는 토큰 입력이 유일한 연결 방법입니다.",
+    hint: "figma.com → Settings → Security → Personal access tokens 에서 발급한 뒤, ⚙️ 설정 패널을 열고 'Figma 토큰' 칸에 저장하세요. 이 백엔드는 토큰 입력이 유일한 연결 방법입니다.",
   };
 }
 

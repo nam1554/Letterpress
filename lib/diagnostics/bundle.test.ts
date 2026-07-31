@@ -73,6 +73,18 @@ describe("진단 번들 — 잡 파일 경로", () => {
   });
 });
 
+describe("진단 번들 — summary.md의 백엔드 완주 기록", () => {
+  // 리뷰 Minor 2: ready만 적고 verification을 안 적으면 사람이 읽는 페이지에서
+  // "이 백엔드가 실제로 끝까지 동작한 적은 있나"를 답할 수 없다.
+  it("각 백엔드 줄에 준비 상태뿐 아니라 완주 기록도 싣는다", async () => {
+    const { buildSummary } = await import("./bundle");
+    const summary = await buildSummary({ jobs: [] });
+    const backendSection = summary.split("## 백엔드 연동")[1]?.split("## ")[0] ?? "";
+    expect(backendSection).toMatch(/완주 기록:/);
+    expect(backendSection).toMatch(/검증됨|미검증|샘플 전용/);
+  }, 30_000);
+});
+
 describe("진단 번들 — 모든 항목이 문을 지나는가", () => {
   it("번들에 실리는 텍스트 중 스크럽을 건너뛴 항목이 없다", async () => {
     // health.json이 그 구멍이었다 — CLI 오류 원문(detail)이 그대로 실렸다.

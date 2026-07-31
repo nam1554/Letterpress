@@ -47,6 +47,12 @@ export function stripAgySystemNoise(text: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+/** claude-code.ts의 tool_use input 절단과 같은 방식 — 200자 넘으면 자른다. */
+function truncateJson(value: unknown): string {
+  const json = JSON.stringify(value ?? {});
+  return json.length > 200 ? `${json.slice(0, 200)}…` : json;
+}
+
 /**
  * Stateful mapper: agent_response의 text_delta를 완성된 줄로 모아 흘리고,
  * 최종 응답과 첫 에러를 붙잡는다. 순수 로직이라 유닛 테스트로 덮는다.
@@ -81,9 +87,17 @@ export function createAgyLineMapper(onEvent: (e: AgentEvent) => void) {
           return;
         }
         // 툴은 완료 시점에만 남긴다 — ACTIVE까지 찍으면 로그가 두 배가 된다.
+        // 리뷰 Important 1: tool_name만 실으면 무슨 명령을 돌렸는지 로그도 진단
+        // 번들도 알 수 없다 (claude-code.ts의 tool_use input과 대조됨). parameters를
+        // claude-code.ts와 같은 방식(JSON, 200자 절단)으로 붙인다.
         if (s.step_type === "tool" && s.state === "DONE" && s.tool_name) {
           flush();
-          onEvent({ ts: Date.now(), type: "tool", text: s.tool_name });
+          const params = s.tool_info?.parameters;
+          const text =
+            params === undefined
+              ? s.tool_name
+              : `${s.tool_name} ${truncateJson(params)}`;
+          onEvent({ ts: Date.now(), type: "tool", text });
         }
         return;
       }
@@ -113,11 +127,16 @@ const AGY_BIN = process.env.ANTIGRAVITY_BIN ?? "agy";
 
 /**
  * agy print 모드의 기본 타임아웃은 5분(`5m0s`)인데 eDM 파이프라인은 실측 3~4분
- * (느린 디자인은 더)이라 여유가 없다. 잡 타임아웃과 같은 값을 쓴다.
- * 형식은 Go duration — 분 단위 `<n>m`이 유효하다.
+ * (느린 디자인은 더)이라 여유가 없다. 잡 타임아웃에서 1분을 뺀 값을 쓴다 —
+ * 잡 타임아웃과 똑같은 값이면 진짜로 행이 걸렸을 때 agy의 타임아웃과 러너의
+ * AbortController가 같은 순간 발화해, job.summary에 어느 메시지가 남을지가
+ * 경합이 된다. agy가 먼저 끊겨야 (사용자가 취소했습니다가 아니라) agy 쪽의
+ * 더 명확한 에러 메시지가 남는다. 잡 타임아웃이 1분으로 설정된 경우까지
+ * 대비해 최소 1분은 보장한다. 형식은 Go duration — 분 단위 `<n>m`이 유효하다.
  */
-function printTimeoutArg(): string {
-  return `${getSettings().jobTimeoutMinutes}m`;
+/** Exported for unit tests. */
+export function printTimeoutArg(): string {
+  return `${Math.max(1, getSettings().jobTimeoutMinutes - 1)}m`;
 }
 
 export const antigravityProvider: AgentProvider = {

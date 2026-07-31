@@ -80,8 +80,17 @@ no auth, single user, filesystem is the database.
   re-spawn the real binary; on Windows that becomes `taskkill`, and execa also
   runs `.cmd` shims that Node refuses to spawn since CVE-2024-27980),
   `prompt.ts` (shared eDM prompt + agent env, including `CHROME_BIN`).
-  Add a new backend = one file + one `registry.ts` entry. Parsers are exported
-  pure functions with tests in `parsers.test.ts`.
+  Adding `antigravity` needed more than "one file + one `registry.ts` entry" —
+  that claim was wrong and cost a diagnosis-less backend once (fixed
+  2026-07-31). The real list, so the next backend doesn't skip any of it:
+  `lib/providers/<id>.ts` (the `AgentProvider` impl) · a `registry.ts` entry ·
+  `lib/setup.ts` (`<id>Setup()` implemented AND registered in
+  `getBackendSetup`'s roster — skip this and the backend ships with no
+  install/auth/Figma-access diagnosis) · `app/components/BackendSetup.tsx`'s
+  `SHORT_NAME` (notification text falls back to the raw id without it) ·
+  a `<id>.smoke.test.ts` · the README backend list, install steps, env-var
+  table, structure map and smoke-test section. Parsers are exported pure
+  functions with tests in `parsers.test.ts`.
 - **Job state** lives in `data/jobs/<id>/` (`job.json` atomic-written,
   `events.ndjson` with per-job monotonic `seq`, `work/output/` = downloadable
   artifacts). Never commit `data/`. Job ids are 8-hex — `jobDir()` enforces

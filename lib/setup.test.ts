@@ -86,4 +86,15 @@ describe("figmaTokenStep (토큰 전용 경로)", () => {
     const step = figmaTokenStep();
     expect(`${step.detail} ${step.hint ?? ""} ${step.command ?? ""}`).not.toMatch(/mcp/i);
   });
+
+  // 리뷰 Important 2: "아래 입력란에 저장하세요"는 이 브랜치에서 삭제된
+  // GeminiKeyInput(같은 카드 안 입력란)의 잔재다. Figma 토큰 입력란은 지금
+  // SettingsPanel.tsx에 있고 그 Section은 접힌 채로 시작하므로, 목적지를
+  // 명시적으로 가리켜야 한다.
+  it("목적지(⚙️ 설정 패널)를 명시하고, 사라진 '아래 입력란'을 가리키지 않는다", async () => {
+    await writeFile(settingsPath(), JSON.stringify({}));
+    const step = figmaTokenStep();
+    expect(step.hint ?? "").toMatch(/설정/);
+    expect(step.hint ?? "").not.toMatch(/아래 입력란/);
+  });
 });

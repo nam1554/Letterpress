@@ -25,7 +25,7 @@ export const FIGMA_EDM_SKILL_DIR = path.join(process.cwd(), "skills", "figma-edm
 
 /** The conversion instructions shared by every backend. */
 export function buildEdmPrompt(task: AgentTask): string {
-  const skillIntro = `Read ${FIGMA_EDM_SKILL_DIR}/SKILL.md and ${FIGMA_EDM_SKILL_DIR}/references/workflow.md, then follow that pipeline exactly (the bundled scripts are in ${FIGMA_EDM_SKILL_DIR}/scripts/)`;
+  const skillIntro = `Read ${FIGMA_EDM_SKILL_DIR}/SKILL.md and ${FIGMA_EDM_SKILL_DIR}/references/workflow.md, then follow that pipeline exactly (the bundled scripts are in ${FIGMA_EDM_SKILL_DIR}/scripts/, read-only reference — if a script needs a change, copy it into your working directory first and edit the copy)`;
 
   if (task.edit) return buildEditPrompt(task, skillIntro);
 
