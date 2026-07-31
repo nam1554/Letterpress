@@ -1412,11 +1412,14 @@ git commit -m "feat: 백엔드 실전 검증 확정 — verification 값 고정
 |---|---|---|---|---|---|---|---|---|---|
 | claude-code | 2026-07-30 | ✅ | PASS | 98.12% | 15분 | 113~122KB | 12 | 380자 | verified |
 | codex | 2026-07-31 | ✅ | PASS | 93.51% | 3.3분 | 187.4KB | 9 | 530자 | verified |
-| antigravity | | | | | | | | | |
+| antigravity | 2026-07-31 | ✅ | PASS | 93.05% | 3.1분 | 187KB | 13 | 351자 | verified |
 
 **Antigravity 쿼터 관찰 (Task 2):**
 
-- 완주 여부:
-- 소요 시간:
-- 실행 후 데스크톱 앱 사용 가능 여부:
-- `--print-timeout` 형식:
+- 완주 여부: ✅ 완주. Google AI Pro에서 1회 변환 310k 토큰, 한도 경고 없음
+- 소요 시간: 3분 4초 (`--print-timeout` 40m는 과잉이나 무해)
+- `--print-timeout` 형식: Go 스타일 duration (`5m0s`가 기본값) → `${분}m` 유효
+- Figma 접근: **MCP 경로 없음. REST 토큰(`FIGMA_TOKEN`)이 유일한 경로**
+- **workDir: `--add-dir <workDir>` 필수.** 없으면 agy가 서브에이전트 태스크를
+  자기 스크래치(`~/.gemini/antigravity-cli/scratch/`)에서 돌려 산출물이 그쪽에 생기고,
+  게이트는 빈 workDir을 보고 무조건 실패한다.
