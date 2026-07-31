@@ -88,6 +88,10 @@ no auth, single user, filesystem is the database.
   `getBackendSetup`'s roster — skip this and the backend ships with no
   install/auth/Figma-access diagnosis) · `app/components/BackendSetup.tsx`'s
   `SHORT_NAME` (notification text falls back to the raw id without it) ·
+  `app/lib/first-run.ts` — BOTH `STEPS` and `SUBSCRIPTION_PICKS`; tests fail
+  if either is missed, because a teammate holding that subscription would
+  otherwise find neither an option nor a procedure · `figmaActions()` in
+  `lib/jobs/failure.ts` when the backend's Figma path differs from the others ·
   a `<id>.smoke.test.ts` · the README backend list, install steps, env-var
   table, structure map and smoke-test section. Parsers are exported pure
   functions with tests in `parsers.test.ts`.
@@ -121,6 +125,45 @@ no auth, single user, filesystem is the database.
   "연동 테스트" spawns the real CLI with a tiny prompt (`runBackendTest`,
   in-flight deduped, 2-min cap). Home form warns when the selected backend
   isn't ready. `lib/health.ts` keeps only the required-path checks.
+- **Onboarding & failure guidance** — the two places a teammate gets stuck, both
+  backed by pure modules with tests so a new backend can't ship without them:
+  - `app/lib/first-run.ts` (`firstRunSteps`, `SUBSCRIPTION_PICKS`) →
+    `app/components/FirstRun.tsx`. The guide is **per backend**, because the
+    Figma path genuinely differs (connector OAuth vs. REST token). The previous
+    version was three hard-coded Claude-Code lines, which showed a ChatGPT- or
+    Google-subscription teammate the wrong procedure. `first-run.test.ts`
+    cross-checks both exports against `listProviders()` in either direction —
+    a missing entry means that subscription has no visible option at all.
+    Picks are labelled by **subscription** ("ChatGPT"), not CLI ("Codex CLI");
+    that is what a teammate knows they pay for, and a test enforces it.
+  - `lib/jobs/failure.ts` (`diagnoseFailure`) → `app/jobs/[id]/FailureHelp.tsx`.
+    Classifies a failed job's summary into quota / auth / figma / timeout /
+    gate / cancelled / cli-missing / unknown and offers the next action —
+    including a one-click retry on a *different* backend, which is where the
+    three-subscription design actually pays off (quota is the most common
+    failure and switching fixes it outright). Only two patterns are measured
+    (codex quota, antigravity Figma — both fixed as string constants in
+    `failure.test.ts`); the rest are defensive and fall through to `unknown`,
+    which points at the diagnostics bundle rather than inventing a cause.
+  Traps found by measuring, each now covered:
+  - **Never match a bare `figma`**: the deliverable is named `*_figma.html`,
+    so `EACCES … aisurfer_figma.html` classified as "Figma 접근 실패". The
+    pattern requires an adjacent keyword (`access|token|mcp|auth|login`).
+  - **Figma beats auth** when a summary matches both ("Figma authentication
+    failed") — the actionable answer is that backend's Figma path, not
+    "log into the CLI".
+  - **Mantine's global reset sets `list-style: none`.** A plain `<ul>` renders
+    with no bullets at all; set `listStyle` explicitly. (Measured:
+    `ulListStyle="none"`, `liDisplay="list-item"` — the display was never the
+    problem.)
+  - **The first-run guide must not be gated on the *selected* backend's
+    readiness.** It was, and picking a ready subscription inside the guide made
+    the whole guide vanish — the interaction that the section invites destroyed
+    it. Gate on "any non-mock backend still needs setup" instead.
+  - Copy in these modules is rendered as **plain text, not markdown** — a
+    backtick shows up literally. Tests assert no backticks; commands belong in
+    the `command` field, which renders via `app/components/CommandChip.tsx`
+    (shared with the 🔌 panel so the two never drift apart).
 - **Lifecycle**: `lib/jobs/runner.ts` spawns providers with an AbortController
   (timeout + cancel), `store.ts` reconciles stale running jobs on read after a
   server restart. SSE route replays events then relays live ones, deduped by

@@ -22,6 +22,7 @@ import { notifications } from "@mantine/notifications";
 import SettingsPanel from "./components/SettingsPanel";
 import BackendSetup, { type BackendInfo } from "./components/BackendSetup";
 import DiagnosticsLink from "./components/DiagnosticsLink";
+import FirstRun from "./components/FirstRun";
 import AppHeader from "./components/AppHeader";
 import Section from "./components/Section";
 import StatusDot from "./components/StatusDot";
@@ -208,6 +209,11 @@ export default function Home() {
   const requiredFails = health?.filter((c) => !c.ok) ?? [];
   const selectedBackend = backends?.find((b) => b.id === provider);
   const notReady = Boolean(selectedBackend && !selectedBackend.ready);
+  // 첫 실행 안내를 띄울지 — 아직 손볼 백엔드가 하나라도 남아 있으면 띄운다.
+  // 선택한 백엔드의 준비 여부(notReady)로 판단하면 안 된다: 안내 안에서 구독을
+  // 고르는 순간 조건이 뒤집혀 안내가 통째로 사라진다 — 안내를 부르는 상호작용이
+  // 안내를 없애는 셈이라 막다른 길이 된다. mock은 항상 준비돼 있으므로 뺀다.
+  const anyBackendNeedsSetup = Boolean(backends?.some((b) => b.id !== "mock" && !b.ready));
   const selectedProvider = providers.find((p) => p.id === provider);
   const unverified = selectedProvider?.verification === "unverified";
 
@@ -343,31 +349,10 @@ export default function Home() {
         )}
 
         {/* 처음 받은 사람이 "이걸 어떻게 하라는거야"가 되지 않도록 —
-            아직 작업이 없고 환경도 안 갖춰졌을 때만 보인다. */}
-        {jobs.length === 0 && (requiredFails.length > 0 || notReady) && (
-          <Section title="처음이신가요? 순서는 이렇습니다" testId="first-run">
-            <Stack gap={10} maw={PROSE_WIDTH}>
-              <Text size="sm">
-                <b>1.</b> 터미널에서 Claude Code CLI를 설치하고 <code>claude</code>를 한 번
-                실행해 로그인합니다 — 명령은 아래 <b>백엔드 연동</b>에서 복사할 수 있어요.
-              </Text>
-              <Text size="sm">
-                <b>2.</b> <code>claude</code> 대화에서 Figma 링크가 읽히는지 확인합니다
-                (claude.ai Figma 커넥터 연결). 무료 Figma 시트라면 <b>설정</b>에 Figma 토큰을
-                넣어도 됩니다.
-              </Text>
-              <Text size="sm">
-                <b>3.</b> 위 두 가지가 초록불이 되면 Figma 디자인 링크를 붙여넣고 실행하세요.
-                변환은 10~20분 걸립니다.
-              </Text>
-              <Text size="xs" c="dimmed">
-                지금 당장 흐름만 보고 싶다면 아래 <b>샘플로 체험해보기</b>를 누르세요 — 환경
-                없이도 결과물 다운로드까지 그대로 볼 수 있습니다. 어디서 막히든,{" "}
-                <b>문제 신고용 파일 내려받기</b>를 눌러 받은 파일을 담당자에게 보내주시면
-                됩니다 — 무엇이 문제인지 직접 알아낼 필요 없습니다.
-              </Text>
-            </Stack>
-          </Section>
+            아직 작업이 없고 환경도 안 갖춰졌을 때만 보인다.
+            안내 내용은 고른 백엔드에 따라 달라진다 (Figma 접근 경로가 다르다). */}
+        {jobs.length === 0 && (requiredFails.length > 0 || anyBackendNeedsSetup) && (
+          <FirstRun backendId={provider} backends={backends} onPick={setProviderChoice} />
         )}
 
         <Section title="새 변환" mt="xl">

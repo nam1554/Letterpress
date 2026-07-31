@@ -6,8 +6,6 @@ import {
   Anchor,
   Badge,
   Button,
-  Code,
-  CopyButton,
   Group,
   Loader,
   Paper,
@@ -17,6 +15,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { sendJson } from "../lib/request";
+import CommandChip from "./CommandChip";
 import Section from "./Section";
 import { IconCheck, IconPlug, IconQuestion, IconX } from "./icons";
 
@@ -103,21 +102,6 @@ function VerificationBadge({
     >
       {badge}
     </Tooltip>
-  );
-}
-
-function CommandChip({ command }: { command: string }) {
-  return (
-    <Group gap={6} mt={4} wrap="nowrap">
-      <Code style={{ fontSize: 11, overflowX: "auto" }}>{command}</Code>
-      <CopyButton value={command}>
-        {({ copied, copy }) => (
-          <Button size="compact-xs" variant="subtle" onClick={copy}>
-            {copied ? "복사됨" : "복사"}
-          </Button>
-        )}
-      </CopyButton>
-    </Group>
   );
 }
 

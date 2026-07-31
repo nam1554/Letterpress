@@ -15,6 +15,7 @@ import Section from "../../components/Section";
 import StatusDot from "../../components/StatusDot";
 import { IconBell, IconBellOff, IconDownload } from "../../components/icons";
 import ArtifactList, { type Artifact } from "./ArtifactList";
+import FailureHelp from "./FailureHelp";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
 import VerifyReport, { type VerifySummary } from "./VerifyReport";
@@ -309,6 +310,9 @@ export default function JobPage() {
             <DiagnosticsLink jobId={job.id} />
           </Group>
         )}
+
+        {/* 실패한 잡의 첫 질문은 "왜"다 — 로그보다 위에 둔다. */}
+        {job?.status === "failed" && <FailureHelp job={job} />}
 
         <Section
           title="진행 로그"
