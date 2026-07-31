@@ -11,7 +11,6 @@ import {
   Group,
   Loader,
   Paper,
-  PasswordInput,
   Stack,
   Text,
 } from "@mantine/core";
@@ -42,7 +41,6 @@ interface TestResult {
 
 const SHORT_NAME: Record<string, string> = {
   "claude-code": "Claude",
-  gemini: "Gemini",
   codex: "Codex",
 };
 
@@ -82,58 +80,6 @@ function CommandChip({ command }: { command: string }) {
           </Button>
         )}
       </CopyButton>
-    </Group>
-  );
-}
-
-/** Gemini API 키 입력 — 카드 안에서 바로 저장·검증한다. */
-function GeminiKeyInput({ keySet, onSaved }: { keySet: boolean; onSaved: () => void }) {
-  const [value, setValue] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    if (!value.trim()) return;
-    setSaving(true);
-    try {
-      const r = await sendJson<{ warning?: string }>("/api/settings", "PUT", {
-        geminiApiKey: value.trim(),
-      });
-      if (!r.ok) {
-        notifications.show({ message: r.error, color: "red" });
-        return;
-      }
-      const data = r.data;
-      setValue("");
-      notifications.show({
-        message: data.warning
-          ? `키를 저장했습니다 — ${data.warning}`
-          : "Gemini API 키를 검증하고 저장했습니다.",
-        color: data.warning ? "yellow" : "teal",
-      });
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Group gap="xs" mt="sm" wrap="nowrap">
-      <PasswordInput
-        data-testid="gemini-key-input"
-        size="xs"
-        w={220}
-        value={value}
-        onChange={(e) => setValue(e.currentTarget.value)}
-        placeholder={keySet ? "변경하려면 새 키 입력" : "AIza… (aistudio.google.com/apikey)"}
-      />
-      <Button size="compact-sm" variant="light" onClick={save} loading={saving} disabled={!value.trim()}>
-        키 저장
-      </Button>
-      {keySet && !value && (
-        <Text size="xs" c="green">
-          설정됨
-        </Text>
-      )}
     </Group>
   );
 }
@@ -266,12 +212,6 @@ export default function BackendSetup({
                     </Group>
                   ))}
                 </Stack>
-                {b.id === "gemini" && (
-                  <GeminiKeyInput
-                    keySet={b.steps.some((s) => s.name === "API 키" && s.ok === true)}
-                    onSaved={() => onRefresh(true)}
-                  />
-                )}
                 {result && (
                   <Alert
                     mt="sm"

@@ -10,7 +10,6 @@ import { getSettings } from "./settings";
 const execFileAsync = promisify(execFile);
 
 const CLAUDE_BIN = () => process.env.CLAUDE_BIN ?? "claude";
-const GEMINI_BIN = () => process.env.GEMINI_BIN ?? "gemini";
 const CODEX_BIN = () => process.env.CODEX_BIN ?? "codex";
 
 // ---------------------------------------------------------------------------
@@ -35,15 +34,6 @@ export function figmaMcpFromCodexList(out: string): McpStatus {
   const line = findFigmaLine(out);
   if (!line) return "missing";
   return /\benabled\b/i.test(line) ? "connected" : "registered";
-}
-
-/** `gemini mcp list`: "✗ figma: https://mcp.figma.com/mcp (http) - Disconnected" */
-export function figmaMcpFromGeminiList(out: string): McpStatus {
-  const line = findFigmaLine(out);
-  if (!line) return "missing";
-  if (/[✔✓]/.test(line)) return "connected";
-  // 심볼이 없는 포맷 대비: "Disconnected"를 지운 뒤 "Connected"가 남는지 확인
-  return /\bconnected\b/i.test(line.replace(/disconnected/gi, "")) ? "connected" : "registered";
 }
 
 // ---------------------------------------------------------------------------
@@ -171,36 +161,6 @@ async function claudeSetup(): Promise<BackendSetup> {
   return finish("claude-code", steps);
 }
 
-async function geminiSetup(): Promise<BackendSetup> {
-  const cli = await cliVersion(GEMINI_BIN());
-  const keyOk = Boolean(getSettings().geminiApiKey || process.env.GEMINI_API_KEY);
-  const list = cli.ok ? await mcpList(GEMINI_BIN(), 20_000) : null;
-  const mcp = list === null ? null : figmaMcpFromGeminiList(list);
-
-  const steps: SetupStep[] = [
-    {
-      name: "CLI 설치",
-      ok: cli.ok,
-      detail: cli.ok ? `v${cli.detail}` : "미설치",
-      command: cli.ok ? undefined : "npm i -g @google/gemini-cli",
-    },
-    {
-      name: "API 키",
-      ok: keyOk,
-      detail: keyOk ? "설정됨" : "미설정",
-      hint: keyOk
-        ? undefined
-        : "aistudio.google.com/apikey 에서 키를 발급해 아래 입력란에 저장하세요 (무료 로그인 티어는 중단됨).",
-    },
-    figmaAccessStep(
-      mcp,
-      "gemini mcp add --transport http figma https://mcp.figma.com/mcp",
-      "터미널에서 `gemini` 실행 후 /mcp 로 figma 재인증 — 또는 설정에 Figma 토큰을 입력하면 REST 폴백으로 동작합니다.",
-    ),
-  ];
-  return finish("gemini", steps);
-}
-
 async function codexSetup(): Promise<BackendSetup> {
   const cli = await cliVersion(CODEX_BIN());
   let login: SetupStep;
@@ -264,7 +224,7 @@ export async function getBackendSetup(force = false): Promise<BackendSetup[]> {
 
   const run = (async () => {
     const backends = [
-      ...(await Promise.all([claudeSetup(), geminiSetup(), codexSetup()])),
+      ...(await Promise.all([claudeSetup(), codexSetup()])),
       finish("mock", [
         { name: "준비", ok: true, detail: "항상 사용 가능 — 토큰 소모 없이 UI 플로우 확인" },
       ]),
@@ -356,16 +316,3 @@ export async function validateFigmaToken(token: string): Promise<KeyCheck> {
   }
 }
 
-export async function validateGeminiKey(key: string): Promise<KeyCheck> {
-  try {
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", {
-      headers: { "x-goog-api-key": key },
-      signal: AbortSignal.timeout(8_000),
-      cache: "no-store",
-    });
-    if (res.ok) return "ok";
-    return res.status === 400 || res.status === 401 || res.status === 403 ? "invalid" : "network";
-  } catch {
-    return "network";
-  }
-}

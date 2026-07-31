@@ -34,7 +34,7 @@ export interface AgentResult {
 }
 
 /**
- * One agent backend (Claude Code, mock, future: Codex/Gemini...).
+ * One agent backend (Claude Code, Codex, mock, ...).
  * Contract: run the task in task.workDir, stream progress via onEvent,
  * leave downloadable artifacts in task.workDir/output/.
  */

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  figmaMcpFromClaudeList,
-  figmaMcpFromCodexList,
-  figmaMcpFromGeminiList,
-} from "./setup";
+import { figmaMcpFromClaudeList, figmaMcpFromCodexList } from "./setup";
 
 // 실측 출력 (2026-07-29, 각 CLI `mcp list`) 기반 — 포맷이 바뀌면 여기서 잡는다.
 
@@ -50,29 +46,5 @@ describe("figmaMcpFromCodexList", () => {
 
   it("reports missing without a figma row", () => {
     expect(figmaMcpFromCodexList("Name  Url  Status\nother  https://x  enabled")).toBe("missing");
-  });
-});
-
-describe("figmaMcpFromGeminiList", () => {
-  it("detects disconnected vs connected", () => {
-    expect(
-      figmaMcpFromGeminiList(
-        "Configured MCP servers:\n\n✗ figma: https://mcp.figma.com/mcp (http) - Disconnected",
-      ),
-    ).toBe("registered");
-    expect(
-      figmaMcpFromGeminiList("✓ figma: https://mcp.figma.com/mcp (http) - Connected"),
-    ).toBe("connected");
-    // 심볼 없는 포맷도 "Disconnected"에 속지 않아야 한다
-    expect(figmaMcpFromGeminiList("figma: https://mcp.figma.com/mcp - Connected")).toBe(
-      "connected",
-    );
-    expect(figmaMcpFromGeminiList("figma: https://mcp.figma.com/mcp - Disconnected")).toBe(
-      "registered",
-    );
-  });
-
-  it("reports missing when unregistered", () => {
-    expect(figmaMcpFromGeminiList("Configured MCP servers:\n(none)")).toBe("missing");
   });
 });

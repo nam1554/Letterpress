@@ -10,7 +10,7 @@ beforeAll(async () => {
   process.env.MHM_SETTINGS_FILE = path.join(dir, "settings.json");
   await writeFile(
     process.env.MHM_SETTINGS_FILE,
-    JSON.stringify({ figmaToken: "figd_SUPER_SECRET_TOKEN_1234", geminiApiKey: "AIzaSyFAKEKEY000" }),
+    JSON.stringify({ figmaToken: "figd_SUPER_SECRET_TOKEN_1234" }),
   );
 });
 
@@ -26,7 +26,6 @@ describe("진단 번들 — 비밀값", () => {
     const masked = maskedSettings();
     const raw = JSON.stringify(masked);
     expect(raw).not.toContain("figd_SUPER_SECRET_TOKEN_1234");
-    expect(raw).not.toContain("AIzaSyFAKEKEY000");
     expect(String(masked.figmaToken)).toContain("설정됨");
     // 비밀이 아닌 설정은 그대로 보여야 진단에 쓸모가 있다.
     expect(masked.maxConcurrentJobs).toBeDefined();
@@ -60,7 +59,7 @@ describe("진단 번들 — 잡 파일 경로", () => {
     const job = {
       id: "abc12345",
       summary:
-        "gemini 실패: GET https://generativelanguage.googleapis.com/v1?key=AIzaSyTESTKEY1234567 401",
+        "백엔드 실패: GET https://generativelanguage.googleapis.com/v1?key=AIzaSyTESTKEY1234567 401",
     };
     const out = scrubForBundle(JSON.stringify(job));
     expect(out).not.toContain("AIzaSyTESTKEY1234567");

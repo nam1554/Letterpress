@@ -101,7 +101,7 @@ describe("runner + quality gate (mock provider)", () => {
   it("does not send a failure notification when the user cancels", async () => {
     const job = await createJob("https://www.figma.com/design/abc/", "mock");
     const realRun = mockProvider.run;
-    // 실제 백엔드(claude-code·codex·gemini)는 중단 시 예외를 던지지 않고
+    // 실제 백엔드(claude-code·codex)는 중단 시 예외를 던지지 않고
     // {ok:false}로 끝난다 — 취소 판정을 catch에만 두면 여기서 알림이 나간다.
     mockProvider.run = async () => {
       cancelJob(job.id);

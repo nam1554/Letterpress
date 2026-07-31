@@ -16,15 +16,15 @@ const execFileAsync = promisify(execFile);
  * 문제 신고용 진단 번들 — 사용자가 폴더를 뒤지지 않고 버튼 하나로 받아
  * 그대로 전달할 수 있는 파일 한 개를 만든다.
  *
- * 원칙: 담을 것은 넉넉히, 비밀은 절대로. 설정에는 Figma 토큰과 Gemini API 키가
- * 들어 있고, 로그에 그 값이 찍혀 있을 수도 있다. 값 자체를 문자열 치환으로
- * 지운 뒤에만 번들에 넣는다.
+ * 원칙: 담을 것은 넉넉히, 비밀은 절대로. 설정에는 Figma 토큰이 들어 있고,
+ * 로그에 그 값이 찍혀 있을 수도 있다. 값 자체를 문자열 치환으로 지운 뒤에만
+ * 번들에 넣는다.
  */
 
 /** 설정에 저장된 비밀값들 — 번들 어디에서든 이 문자열은 지운다. */
 function secrets(): string[] {
-  const { figmaToken, geminiApiKey } = getSettings();
-  return [figmaToken, geminiApiKey].filter((s): s is string => Boolean(s) && s.length >= 8);
+  const { figmaToken } = getSettings();
+  return [figmaToken].filter((s): s is string => Boolean(s) && s.length >= 8);
 }
 
 /**

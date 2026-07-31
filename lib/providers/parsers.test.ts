@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { claudeEventsFromLine } from "./claude-code";
 import { codexEventsFromLine } from "./codex";
-import { createGeminiLineMapper } from "./gemini";
-import type { AgentEvent } from "./types";
 
 describe("claude stream-json parser", () => {
   it("maps init / text / tool_use / result lines", () => {
@@ -78,52 +76,5 @@ describe("codex exec --json parser", () => {
     ).toEqual([]);
     expect(codexEventsFromLine({ type: "turn.completed" })).toEqual([]);
     expect(codexEventsFromLine({})).toEqual([]);
-  });
-});
-
-describe("gemini tolerant line mapper", () => {
-  function collect() {
-    const events: AgentEvent[] = [];
-    const mapper = createGeminiLineMapper((e) => events.push(e));
-    return { events, mapper };
-  }
-
-  it("buffers assistant chunks and skips user echo", () => {
-    const { events, mapper } = collect();
-    mapper.handle({ type: "message", role: "user", content: "프롬프트 에코" });
-    mapper.handle({ type: "message", role: "assistant", content: "첫 ", delta: true });
-    mapper.handle({ type: "message", role: "assistant", content: "줄\n둘째 " });
-    expect(events.map((e) => e.text)).toEqual(["첫 줄"]);
-    const { finalResponse } = mapper.finish();
-    expect(events.map((e) => e.text)).toEqual(["첫 줄", "둘째"]);
-    // result.response가 없으면 마지막 assistant 텍스트가 최종 응답
-    expect(finalResponse).toBe("줄\n둘째");
-  });
-
-  it("maps real v0.53 schema: init / result success / result error", () => {
-    const { events, mapper } = collect();
-    mapper.handle({ type: "init" });
-    mapper.handle({ type: "message", role: "assistant", content: "OK" });
-    mapper.handle({ type: "result", status: "success" });
-    const { finalResponse, errorText } = mapper.finish();
-    expect(events.some((e) => e.type === "status")).toBe(true);
-    expect(finalResponse).toBe("OK");
-    expect(errorText).toBe("");
-
-    const second = collect();
-    second.mapper.handle({ type: "result", status: "error", error: { message: "quota" } });
-    expect(second.mapper.finish().errorText).toBe("quota");
-  });
-
-  it("captures final response and error", () => {
-    const { events, mapper } = collect();
-    mapper.handle({ type: "tool_call", tool_name: "run_shell", status: "ok" });
-    mapper.handle({ type: "result", response: "다 됐습니다" });
-    mapper.handle({ type: "error", error: { message: "rate limit" } });
-    const { finalResponse, errorText } = mapper.finish();
-    expect(finalResponse).toBe("다 됐습니다");
-    expect(errorText).toBe("rate limit");
-    expect(events.some((e) => e.type === "tool" && e.text.includes("run_shell"))).toBe(true);
-    expect(events.some((e) => e.type === "error")).toBe(true);
   });
 });

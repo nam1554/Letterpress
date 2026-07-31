@@ -5,7 +5,7 @@
 Figma eDM 디자인 링크를 붙여넣으면 **AI 에이전트가 헤드리스로 이메일 HTML을
 생성**하고, 브라우저에서 결과물(HTML + images/)을 zip으로 다운로드하는 **로컬
 전용** 도구입니다. 서비스 배포용이 아닙니다. 백엔드는 Claude Code(기본) ·
-Gemini CLI · Codex CLI · Mock 중 선택할 수 있습니다.
+Codex CLI · Mock 중 선택할 수 있습니다.
 
 생성 파이프라인은 이 저장소에 포함된 `figma-edm` 스킬(`skills/figma-edm`,
 픽셀 검증 포함)을 그대로 사용하며, 산출물은 실무 발송 패키지 형태(700px 테이블 레이아웃, `images/`
@@ -102,26 +102,13 @@ pnpm build && pnpm start
 2. 프로바이더 선택 후 "HTML 만들기"
    - **Claude Code (local CLI)** — 기본. `claude` CLI 로그인 + claude.ai Figma
      커넥터 연결 필요. (헤드리스에서 Figma MCP가 빠지면 로그에 FATAL 표시)
-   - **Gemini CLI (API 키)** — `npm i -g @google/gemini-cli` 후
-     aistudio.google.com/apikey 에서 키를 발급해 🔌 백엔드 연동 카드에 입력
-     (저장 시 즉시 검증됩니다). (⚠️ 구글이 개인 무료 로그인 티어를 중단해
-     로그인 방식은 더 이상 동작하지 않습니다 — 2026-07 확인. 모델은 용량이
-     안정적인 `gemini-flash-latest` 기본, `GEMINI_MODEL`로 변경 가능.) Figma
-     접근은 `gemini mcp add --transport http figma https://mcp.figma.com/mcp`
-     등록 또는 Figma 토큰 REST 폴백.
    - **Codex CLI (ChatGPT 구독)** — `npm i -g @openai/codex`, `codex login`.
      Figma 접근은 `codex mcp add figma --url https://mcp.figma.com/mcp` (등록 시
      브라우저 OAuth).
    - **Mock** — 토큰 소모 없이 UI/다운로드 플로우 확인용 샘플 산출물
 
-   Gemini/Codex는 figma-edm 스킬 파일을 프롬프트로 읽어 따라가는 **실험적**
+   Codex는 figma-edm 스킬 파일을 프롬프트로 읽어 따라가는 **실험적**
    경로입니다 — 픽셀 검증 PASS 도달 품질은 Claude Code 기준으로 검증돼 있습니다.
-
-   > ⚠️ **Gemini 데이터 취급 주의**: 개인 구글 계정 무료 티어는 프롬프트·코드가
-   > 구글 모델 개선에 활용될 수 있습니다. 회사 eDM 디자인/카피를 다루므로,
-   > Gemini를 쓸 경우 데이터 수집 옵트아웃을 켜거나 학습에 사용되지 않는 경로
-   > (Workspace 계정·API 키·유료 플랜)를 사용하세요. 기본값인 Claude Code만
-   > 써도 무방합니다.
 3. 작업 페이지에서 실시간 로그(SSE) 확인 → 완료 후 미리보기 / 개별 다운로드 /
    전체 zip. 실행 중 취소, 완료 후 다시 실행·삭제 가능
 4. **발송 준비** (완료된 작업에서):
@@ -154,7 +141,7 @@ pnpm build && pnpm start
 > 또한 REST 폴백 경로는 **실전 검증 기록이 없습니다** — 품질 수치(PASS 97%대)는
 > 모두 Figma MCP 경로 기준입니다.
 
-Figma 토큰과 Gemini API 키는 **저장하는 순간 실제 API로 검증**되므로, 오타를
+Figma 토큰은 **저장하는 순간 실제 API로 검증**되므로, 오타를
 잡 실패가 아니라 저장 시점에 알 수 있습니다. 백엔드별 연동 상태 진단·키
 입력·연동 테스트는 **🔌 백엔드 연동 패널**에서 합니다. 준비되지 않은 백엔드를
 선택하면 폼에서 미리 경고합니다.
@@ -168,7 +155,7 @@ Figma 토큰과 Gemini API 키는 **저장하는 순간 실제 API로 검증**�
 | `MAX_CONCURRENT_JOBS` | `2` | 동시 실행 잡 수 제한 |
 | `JOB_TIMEOUT_MS` | `2700000` (45분) | 잡 하드 타임아웃 |
 | `FIGMA_TOKEN` | - | Figma REST API 폴백 토큰 |
-| `CLAUDE_BIN` / `GEMINI_BIN` / `CODEX_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
+| `CLAUDE_BIN` / `CODEX_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
 
 </details>
 
@@ -191,8 +178,6 @@ Figma URL과 작업 요약·로그 본문은 포함되니, 외부에 보낼 때�
 |---|---|
 | 로그에 `FATAL: Figma MCP ...` | 헤드리스 세션에서 Figma MCP 미연결 — 🔌 백엔드 연동 패널의 "Figma 접근" 단계 안내대로 재연결 |
 | `claude 실행 실패: spawn claude ENOENT` | CLI 미설치 또는 PATH 문제 — `which claude` 확인, 필요 시 `CLAUDE_BIN=/절대/경로` env 지정 |
-| Gemini 로그인 화면에서 `IneligibleTierError` | 구글이 무료 로그인 티어를 중단(2026-07) — 로그인 대신 API 키를 🔌 백엔드 연동 카드에 입력 |
-| Gemini 503 "model is overloaded" | 무료 키에서 pro 모델 용량 제한 — 기본값(`gemini-flash-latest`)을 그대로 쓰거나 시간대를 바꿔 재시도 |
 | 런처 창에 "25253번으로 시작합니다" | 정상입니다 — 기본 포트를 다른 프로그램이 써서 옆 포트로 자동 전환한 것 (브라우저도 그 주소로 열립니다) |
 | 시작하기.command가 설치/빌드에서 멈춤 | 폴더에 생기는 `시작-기록.log`를 관리자에게 보내주세요 (실패 원인이 그대로 담깁니다) |
 | 앱은 켜지는데 뭔가 안 됨 | **"문제 신고용 파일 내려받기"**(작업 히스토리 오른쪽)로 압축 파일을 받아 담당자에게 전달 |
@@ -205,7 +190,6 @@ Figma URL과 작업 요약·로그 본문은 포함되니, 외부에 보낼 때�
 ```
 lib/providers/types.ts         AgentProvider 인터페이스 — 백엔드 계약
 lib/providers/claude-code.ts   claude -p stream-json (기본 백엔드)
-lib/providers/gemini.ts        gemini -p stream-json (API 키)
 lib/providers/codex.ts         codex exec --json (ChatGPT 구독)
 lib/providers/mock.ts          샘플 산출물 (개발/검증용)
 lib/providers/jsonl-cli.ts     공용 spawn 러너 (프로세스 그룹 정리 포함)
@@ -221,7 +205,7 @@ data/jobs/<id>/work/output/    다운로드 대상 산출물 (git 제외)
 
 새 백엔드 추가 = `lib/providers/`에 `AgentProvider` 구현 파일 1개 +
 `registry.ts` 등록 1줄. 기본 백엔드는 ⚙️ 설정 패널(또는 `AGENT_PROVIDER`
-env)로 지정합니다 (`claude-code` | `gemini` | `codex` | `mock`).
+env)로 지정합니다 (`claude-code` | `codex` | `mock`).
 
 ## 테스트
 
@@ -230,7 +214,6 @@ pnpm vitest run     # 유닛 테스트 (URL/파서/잡 스토어/품질 게이�
 
 # 실제 CLI spawn 스모크 (각 백엔드, 토큰 소량 소모 — 옵트인)
 RUN_CLAUDE_SMOKE=1 pnpm vitest run lib/providers/claude-code.smoke.test.ts
-RUN_GEMINI_SMOKE=1 pnpm vitest run lib/providers/gemini.smoke.test.ts
 RUN_CODEX_SMOKE=1  pnpm vitest run lib/providers/codex.smoke.test.ts
 ```
 

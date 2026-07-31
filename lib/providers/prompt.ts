@@ -3,12 +3,11 @@ import { findChrome } from "../chrome";
 import { getSettings } from "../settings";
 import type { AgentTask } from "./types";
 
-/** Extra env for spawned agent CLIs (Figma REST fallback / Gemini API key). */
+/** Extra env for spawned agent CLIs (Figma REST fallback). */
 export function agentEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  const { figmaToken, geminiApiKey } = getSettings();
+  const { figmaToken } = getSettings();
   if (figmaToken) env.FIGMA_TOKEN = figmaToken;
-  if (geminiApiKey) env.GEMINI_API_KEY = geminiApiKey;
   // 픽셀 검증 스크립트가 우리가 찾은 Chrome을 그대로 쓰게 한다 — 스킬이 자체
   // 후보 목록으로 다시 찾다가 못 찾으면 검증이 통째로 실패한다.
   const chrome = findChrome();

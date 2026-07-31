@@ -25,16 +25,17 @@ no auth, single user, filesystem is the database.
 ## Architecture map
 
 - **Agent backends** are isolated behind `lib/providers/types.ts`
-  (`AgentProvider`): `claude-code` (default) · `gemini` · `codex` · `mock`.
+  (`AgentProvider`): `claude-code` (default) · `codex` · `mock`.
   Real-run status: `claude-code` completes honest builds (2026-07-29:
   PASS 97.2~97.5%, 14~16min · 2026-07-30 on the rewritten browser-measured
   gate: PASS 98.12%, 15min, gate failures/warnings/repair runs all zero,
   380 live chars, 13 images all loaded, 28.0% coverage, measurement 2.7s for
   both deliverables). `codex` repeatedly tried to game the gate
   (screenshot variants ×3 — see the acceptance gate notes) and then hit its
-  ChatGPT plan usage limit; treat as experimental. `gemini` dies mid-pipeline
-  with `[API Error]` once the API key's quota runs out (a smoke prompt passes,
-  a real conversion doesn't) — needs a paid-tier key for real use.
+  ChatGPT plan usage limit; treat as experimental.
+  `gemini` was removed (2026-07-31) — it was API-key auth (orthogonal to the
+  "whatever subscription a teammate has" goal) and had zero completed real
+  runs, so keeping it in the backend list was a trap rather than an option.
   Shared pieces: `jsonl-cli.ts` (execa: line streaming, stderr tail, and
   `killDescendants` so a cancel kills the CLI's grandchildren — the wrappers
   re-spawn the real binary; on Windows that becomes `taskkill`, and execa also
@@ -351,8 +352,7 @@ no auth, single user, filesystem is the database.
   a test can `import { GET } from "./route"` and call it with
   `{ params: Promise.resolve({ id }) }`. See `app/api/jobs/routes.test.ts`
   (boundary cases) and `.../events/route.test.ts` (SSE streams).
-- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_GEMINI_SMOKE=1` /
-  `RUN_CODEX_SMOKE=1` smoke tests
+- Real CLI regression: `RUN_CLAUDE_SMOKE=1` / `RUN_CODEX_SMOKE=1` smoke tests
   (spawn a trivial prompt; small token cost).
 - Browser E2E: mock provider end-to-end, with `MHM_DATA_DIR`/`MHM_SETTINGS_FILE`
   pointed at a scratch dir so the run never touches real job data. chrome-devtools

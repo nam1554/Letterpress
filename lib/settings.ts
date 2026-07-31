@@ -14,8 +14,6 @@ export interface Settings {
   figmaToken: string;
   /** CDN 교체본 URL 템플릿 ({file}/{name}/{ext}) — 팀에서 재사용. */
   cdnTemplate: string;
-  /** Gemini API 키 — 무료 Code Assist 티어 중단(2026-07 확인) 이후의 인증 경로. */
-  geminiApiKey: string;
   /**
    * claude CLI에 --model로 넘길 모델 (예: "haiku"). 빈 값 = CLI 기본.
    * 검증 없이 저장 — 잘못된 값은 CLI가 즉시 에러를 내 잡 실패로 표시된다.
@@ -34,7 +32,6 @@ interface Stored {
   jobTimeoutMinutes?: number;
   figmaToken?: string;
   cdnTemplate?: string;
-  geminiApiKey?: string;
   claudeModel?: string;
   notifyOnFinish?: boolean;
 }
@@ -63,7 +60,6 @@ export function getSettings(): Settings {
     ),
     figmaToken: s.figmaToken ?? process.env.FIGMA_TOKEN ?? "",
     cdnTemplate: s.cdnTemplate ?? "",
-    geminiApiKey: s.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
     claudeModel: s.claudeModel ?? process.env.CLAUDE_MODEL ?? "",
     notifyOnFinish: s.notifyOnFinish ?? true,
   };
@@ -80,7 +76,6 @@ export function saveSettings(patch: Partial<Stored>): Settings {
   }
   if (patch.figmaToken !== undefined) next.figmaToken = patch.figmaToken.trim();
   if (patch.cdnTemplate !== undefined) next.cdnTemplate = patch.cdnTemplate.trim();
-  if (patch.geminiApiKey !== undefined) next.geminiApiKey = patch.geminiApiKey.trim();
   if (patch.claudeModel !== undefined) next.claudeModel = patch.claudeModel.trim();
   if (patch.notifyOnFinish !== undefined) next.notifyOnFinish = patch.notifyOnFinish;
 
