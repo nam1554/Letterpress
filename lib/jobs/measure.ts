@@ -34,6 +34,43 @@ import { findChrome } from "../chrome";
 
 export const DESKTOP_WIDTH = 700;
 
+/**
+ * 브라우저 세션을 한 번에 하나만 띄운다.
+ *
+ * 왜: 이 함수는 호출마다 Chrome을 새로 띄우는데, 호출자를 아무도 직렬화하지
+ * 않았다. 동시 실행 한도가 잡 여러 개를 허용하므로 그것들이 비슷한 시각에
+ * 끝나면(+ 게이트 미충족 시 자동 보수 후 재측정까지) 노트북에서 Chrome
+ * 인스턴스가 겹쳐 뜬다.
+ *
+ * 그냥 느려지는 문제가 아니다. 자원 경쟁으로 **launch가 실패하면** 아래
+ * catch가 그것을 "판정 불가"로 돌려주고, 게이트는 그걸 경고로 낮춘 뒤
+ * **반-우회 검사 3종을 통째로 건너뛴다.** 즉 머신이 잠깐 붐볐다는 이유로
+ * 스크린샷 빌드가 통과할 수 있다. 상한을 두는 편이 훨씬 싸다 — 실측
+ * 측정 시간은 산출물 2개에 2.7초라 직렬화 비용이 거의 없다.
+ *
+ * **이것은 `acceptance.test.ts` 플레이크의 해결책이 아니다.** 그렇게 짐작하고
+ * 고쳤다가 확인해 보니 브라우저를 띄우는 테스트 파일은 그 하나뿐이고 케이스도
+ * 순차 실행이라, 애초에 동시 launch가 없었다. 그 플레이크는 스위트 전체의
+ * CPU·메모리 압박에서 오는 것이므로 여기서 고칠 수 없다. 여기서 막는 것은
+ * **런타임** 경쟁이다 — 동시 실행 한도가 허용한 잡들이 비슷한 시각에 끝날 때.
+ *
+ * 큐는 프로세스 안에서만 유효하다. 앱은 단일 서버 프로세스로 돌기 때문에
+ * 그것으로 충분하다(vitest는 파일마다 워커가 달라 공유되지 않는다).
+ */
+let browserQueue: Promise<unknown> = Promise.resolve();
+
+export function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  // 앞 작업의 성공·실패 어느 쪽이든 이어서 실행한다.
+  const run = browserQueue.then(fn, fn);
+  // 큐 자체는 절대 reject 상태로 남기지 않는다 — 남기면 이후 전부 그 오류를
+  // 물려받는다.
+  browserQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 export interface MeasuredImage {
   src: string;
   /** 실제 렌더된 표시 크기 (px). */
@@ -55,7 +92,12 @@ export interface Measured {
  * 한다. `render-failed`를 경고로 넘기면 load를 막는 스크립트 한 줄로 반-우회
  * 검사를 전부 끌 수 있다.
  */
-export type MeasureFailure = "no-chrome" | "render-failed" | "aborted";
+/**
+ * `no-chrome`은 **실행 파일을 못 찾은 것**, `launch-failed`는 찾았는데 **띄우지
+ * 못한 것**이다. 둘 다 판정 불가지만 담당자가 할 일이 다르다 — 앞은 설치,
+ * 뒤는 자원·프로필 문제다.
+ */
+export type MeasureFailure = "no-chrome" | "launch-failed" | "render-failed" | "aborted";
 
 export type Measurement =
   | ({ ok: true } & Measured)
@@ -270,6 +312,20 @@ export async function measureHtmlFiles(
   const chrome = findChrome();
   if (!chrome) return files.map(() => ({ ok: false, reason: "no-chrome" }));
 
+  // 브라우저를 띄우는 구간 전체를 직렬화한다. 순서를 기다리는 동안 취소될 수
+  // 있으므로 슬롯을 잡은 뒤 한 번 더 확인한다.
+  return runExclusive(async () => {
+    if (signal?.aborted) return files.map(aborted);
+    return openAndMeasure(files, chrome, signal);
+  });
+}
+
+async function openAndMeasure(
+  files: string[],
+  chrome: string,
+  signal: AbortSignal | undefined,
+): Promise<Measurement[]> {
+  const aborted = (): Measurement => ({ ok: false, reason: "aborted" });
   const timeout = navTimeoutMs();
   let browser: Browser | undefined;
   // 취소되면 브라우저를 즉시 닫는다 — 잡의 종료 상태가 측정 끝날 때까지
@@ -324,8 +380,12 @@ export async function measureHtmlFiles(
     return out;
   } catch (err) {
     // 브라우저 자체를 못 띄웠다 — 산출물 불량이 아니라 환경 문제(판정 불가).
+    // no-chrome이 아니라 launch-failed다: 여기 오려면 findChrome()이 이미
+    // 경로를 찾은 뒤이므로 "Chrome을 찾지 못함"은 거짓말이고, 진단 파일을
+    // 받은 담당자가 설치를 안내하다 진짜 원인(자원 부족·프로필 잠김 등)을
+    // 놓친다.
     if (signal?.aborted) return files.map(aborted);
-    return files.map(() => ({ ok: false, reason: "no-chrome", detail: errorLine(err) }));
+    return files.map(() => ({ ok: false, reason: "launch-failed", detail: errorLine(err) }));
   } finally {
     signal?.removeEventListener("abort", onAbort);
     await browser?.close().catch(() => {});

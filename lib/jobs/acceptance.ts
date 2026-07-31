@@ -185,12 +185,17 @@ export async function checkAcceptance(
             `산출물은 브라우저에서 그대로 렌더돼야 합니다. 로딩을 막는 스크립트나 깨진 마크업이 없는지 확인하세요.`,
         );
       } else {
-        // Chrome 부재·잡 취소 — 판정 불가는 실패로 다루지 않는다.
+        // Chrome 부재·띄우기 실패·잡 취소 — 판정 불가는 실패로 다루지 않는다.
         // 검증 증거물 검사가 이미 Chrome 부재를 별도로 잡는다.
-        warnings.push(
-          `${file}의 라이브 텍스트·이미지 검사를 건너뜁니다 ` +
-            `(${measured.reason === "aborted" ? "실행이 중단됨" : "Chrome을 찾지 못함"}).`,
-        );
+        // 이유를 뭉뚱그리면 안 된다: "찾지 못함"은 설치 문제이고 "띄우지 못함"은
+        // 자원·프로필 문제라 담당자가 할 일이 정반대다.
+        const why =
+          measured.reason === "aborted"
+            ? "실행이 중단됨"
+            : measured.reason === "launch-failed"
+              ? `Chrome은 있으나 실행하지 못함${measured.detail ? `: ${measured.detail}` : ""}`
+              : "Chrome을 찾지 못함";
+        warnings.push(`${file}의 라이브 텍스트·이미지 검사를 건너뜁니다 (${why}).`);
       }
       continue;
     }

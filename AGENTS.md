@@ -356,11 +356,32 @@ no auth, single user, filesystem is the database.
   - **Known flake:** `lib/jobs/acceptance.test.ts` can fail intermittently
     when the full `vitest run` suite executes concurrently with other test
     files — it launches real headless Chrome instances, which compete for
-    browser resources with whatever else is running at the same time. Run in
+    resources with whatever else is running at the same time. Run in
     isolation it is reliable: 29/29 passing in 73.44s (confirmed 2026-07-31,
     reproduced across all three tasks of this branch). If the full suite
     shows a failure here, re-run this file alone before treating it as a
     real regression.
+    The cause is **suite-wide CPU/memory pressure, not concurrent Chrome
+    launches** — measured 2026-08-01 while adding `runExclusive`: this is the
+    only test file that launches a browser, and its cases run sequentially,
+    so there was never more than one Chrome at a time inside it. Serializing
+    launches therefore does not fix this flake; don't "fix" it again by that
+    route.
+- **Browser launches are serialized at runtime** (`runExclusive` in
+  `measure.ts`). Nothing serialized the callers before: the concurrency cap
+  lets several jobs run, and when they finish around the same time — plus the
+  gate's automatic repair re-measure — Chrome instances stack up. That matters
+  beyond speed, because a launch that fails under contention comes back as
+  "판정 불가", which the gate downgrades to a WARNING and **skips all three
+  anti-gaming checks**: a busy machine could pass a screenshot build. The queue
+  is per-process, which is enough (the app is one server process).
+  A failed launch is now `launch-failed`, not `no-chrome` — reaching that catch
+  means `findChrome()` already returned a path, so "Chrome을 찾지 못함" was a
+  lie that sends whoever reads the diagnostics bundle off to reinstall Chrome
+  instead of looking at resources or a locked profile. `runExclusive` is
+  exported and unit-tested in `measure-serialize.test.ts` (ordering, overlap,
+  and that a rejected job does not poison the queue for later ones) — testing
+  it through real browsers would mean causing the very contention being fixed.
 - **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
