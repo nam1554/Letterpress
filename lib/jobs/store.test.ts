@@ -47,6 +47,21 @@ describe("job store lifecycle", () => {
     expect(await getJob(job.id)).toBeNull();
   });
 
+  it("serializes concurrent functional patches so none is lost", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    // updateJob은 읽기→병합→쓰기다 — 직렬화가 없으면 동시 호출들이 같은
+    // 스냅샷에서 출발해 마지막 쓰기만 살아남는다(lost update).
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        updateJob(job.id, (j) => ({
+          manualEdits: { ...j.manualEdits, [`file${i}.html`]: i },
+        })),
+      ),
+    );
+    const edits = (await getJob(job.id))?.manualEdits ?? {};
+    expect(Object.keys(edits).length).toBe(10);
+  });
+
   it("refuses to delete a job with a live controller", async () => {
     const job = await createJob("https://www.figma.com/design/abc/", "mock");
     liveControllers.set(job.id, new AbortController());
