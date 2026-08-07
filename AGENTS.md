@@ -380,7 +380,9 @@ no auth, single user, filesystem is the database.
     there is nothing for the gate to have broken. Roster changes (gemini
     removed, codex/antigravity `verification` flipped to `verified`) moved
     zero gate verdicts — the gate only reads filesystem evidence, not the
-    provider list.
+    provider list. Re-run again 2026-08-07 after the stability/structure
+    refactor passes (startJob atomic cap, updateJob serialization,
+    withKeyedLock extraction, setup split): all 11 verdicts identical, 21s.
   - **Known flake:** `lib/jobs/acceptance.test.ts` can fail intermittently
     when the full `vitest run` suite executes concurrently with other test
     files — it launches real headless Chrome instances, which compete for
