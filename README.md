@@ -250,7 +250,9 @@ lib/providers/mock.ts          샘플 산출물 (개발/검증용)
 lib/providers/jsonl-cli.ts     공용 spawn 러너 (프로세스 그룹 정리 포함)
 lib/providers/prompt.ts        공용 eDM 프롬프트 + Figma REST 폴백 절
 lib/providers/registry.ts      백엔드 등록/기본값 선택
-lib/setup.ts               백엔드 연동 진단 · 연동 테스트 · 키 검증
+lib/setup.ts               백엔드 연동 진단의 공개 표면 (재수출 파사드)
+lib/setup/                 진단 구현 — parsers(mcp list 파서) · backends(백엔드별
+                           진단+캐시) · test-run(연동 테스트) · validate(키 검증)
 lib/jobs/                  파일시스템 잡 스토어 + 실행 러너
 lib/jobs/failure.ts        실패 원인 분류 + 다음 행동 (한도/로그인/Figma/…)
 app/lib/first-run.ts       구독별 첫 실행 절차 + 구독 선택지
@@ -261,7 +263,7 @@ data/jobs/<id>/work/output/    다운로드 대상 산출물 (git 제외)
 ```
 
 새 백엔드 추가는 "파일 1개 + 등록 1줄"보다 손이 더 갑니다 — `AgentProvider`
-구현과 `registry.ts` 등록 외에 `lib/setup.ts`에 진단 로직을 추가하고 그
+구현과 `registry.ts` 등록 외에 `lib/setup/backends.ts`에 진단 로직을 추가하고 그
 로스터에도 등록해야 하며, 이걸 빠뜨리면 그 백엔드는 홈 화면에 "준비 안 됨"
 경고조차 뜨지 않는 채로 나갑니다 (실제로 한 번 그렇게 나간 적 있음).
 `app/lib/first-run.ts`의 준비 절차와 구독 선택지도 함께 채워야 합니다 —
