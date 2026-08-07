@@ -159,11 +159,15 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
           : err instanceof Error
             ? err.message
             : String(err);
+      // 종료 기록 쓰기 자체가 실패해도(디스크 가득 참·권한) 이벤트와 정리는
+      // 계속한다 — 여기서 다시 던지면 SSE 구독자는 종료를 영영 못 듣고 이
+      // 비동기 블록은 unhandled rejection으로 끝난다. 파일에 남은 running은
+      // 재시작 후 reconcile이 정리한다.
       await updateJob(job.id, {
         status: "failed",
         finishedAt: Date.now(),
         summary: message,
-      });
+      }).catch(() => {});
       emit({ ts: Date.now(), type: "error", text: `실패: ${message}` });
       // 사용자가 직접 멈춘 잡은 알리지 않는다 — "변환 실패" 알림이 뜨면
       // 무인 실행을 신뢰하라고 넣은 신호가 오히려 오염된다.

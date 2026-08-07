@@ -22,7 +22,16 @@ afterAll(async () => {
 import { cancelJob, startJob } from "./runner";
 import { mockProvider } from "../providers/mock";
 import { abortAllForShutdown, liveControllers } from "./live";
-import { createEditJob, createJob, getJob, listArtifacts, updateJob, type Job } from "./store";
+import type { AgentEvent } from "../providers/types";
+import {
+  createEditJob,
+  createJob,
+  getJob,
+  listArtifacts,
+  subscribe,
+  updateJob,
+  type Job,
+} from "./store";
 
 async function waitTerminal(id: string, timeoutMs = 15_000): Promise<Job> {
   const start = Date.now();
@@ -77,6 +86,36 @@ describe("runner + quality gate (mock provider)", () => {
 
     await chmod(path.join(dir, job.id), 0o700);
   });
+
+  it.skipIf(asRoot)("emits a terminal event even when the final persist fails", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    const realRun = mockProvider.run;
+    // 실행 도중 디스크가 나빠져(가득 참·권한) 종료 기록 쓰기가 실패하는 상황.
+    mockProvider.run = async () => {
+      await chmod(path.join(dir, job.id), 0o500);
+      return { ok: false, summary: "CLI가 죽었습니다." };
+    };
+    const events: AgentEvent[] = [];
+    const unsub = subscribe(job.id, (e) => void events.push(e));
+    try {
+      // promptOverride: 게이트(브라우저 측정)를 건너뛴다 — 여기서 재는 것은
+      // 종료 기록 경로뿐이다.
+      await startJob(job, { promptOverride: "smoke" });
+      // 종료 이벤트가 구독자(SSE)에게 나가지 않으면 열려 있던 잡 화면은
+      // "실행 중"에 영영 멈추고, 러너의 비동기 블록은 rejection으로 끝난다.
+      await vi.waitFor(
+        () => {
+          expect(events.some((e) => e.type === "error" && e.text.startsWith("실패"))).toBe(true);
+        },
+        { timeout: 10_000 },
+      );
+      expect(liveControllers.has(job.id)).toBe(false);
+    } finally {
+      unsub();
+      mockProvider.run = realRun;
+      await chmod(path.join(dir, job.id), 0o700);
+    }
+  }, 20_000);
 
   it("fails an edit job that reuses the source's verification instead of re-running it", async () => {
     const source = await createJob("https://www.figma.com/design/abc/", "mock");
