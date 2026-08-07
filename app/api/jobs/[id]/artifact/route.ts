@@ -4,7 +4,8 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readBody } from "@/lib/api-body";
-import { getJob, invalidateJobSize, resolveArtifact, updateJob, workDir } from "@/lib/jobs/store";
+import { requireJob } from "@/lib/api-job";
+import { invalidateJobSize, resolveArtifact, updateJob, workDir } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +43,9 @@ function withJobLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
  */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const job = await getJob(id);
-  if (!job) return NextResponse.json({ error: "작업을 찾을 수 없습니다." }, { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
+  const job = j.job;
   if (job.status === "queued" || job.status === "running") {
     return NextResponse.json(
       { error: "실행 중인 작업의 산출물은 수정할 수 없습니다." },

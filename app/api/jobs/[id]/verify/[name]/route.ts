@@ -1,7 +1,8 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import path from "node:path";
-import { getJob, workDir } from "@/lib/jobs/store";
+import { requireJob } from "@/lib/api-job";
+import { workDir } from "@/lib/jobs/store";
 import { isVerifyFile } from "@/lib/verify";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; name: string }> },
 ) {
   const { id, name } = await params;
-  if (!(await getJob(id))) return new Response("not found", { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
   if (!isVerifyFile(name)) return new Response("invalid file", { status: 400 });
 
   const full = path.join(workDir(id), name);

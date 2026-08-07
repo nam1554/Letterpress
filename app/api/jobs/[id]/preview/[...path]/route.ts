@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
-import { getJob, resolveArtifact } from "@/lib/jobs/store";
+import { requireJob } from "@/lib/api-job";
+import { resolveArtifact } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; path: string[] }> },
 ) {
   const { id, path: parts } = await params;
-  if (!(await getJob(id))) return new Response("not found", { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
 
   // Next가 이미 퍼센트 디코딩해 넘긴다. 한 번 더 디코딩하면 이름에 '%'가 든
   // 파일이 도달 불가능해지고, '100%.png' 같은 이름은 URIError로 500이 된다.
