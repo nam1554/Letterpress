@@ -2,17 +2,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { requireJob } from "@/lib/api-job";
 import { resolveArtifact } from "@/lib/jobs/store";
-
-
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".css": "text/css",
-  ".svg": "image/svg+xml",
-};
+import { contentTypeFor } from "@/lib/mime";
 
 /**
  * Path-based inline preview: /api/jobs/:id/preview/edm_figma.html
@@ -35,9 +25,8 @@ export async function GET(
   if (!existsSync(full) || !statSync(full).isFile()) {
     return new Response("file not found", { status: 404 });
   }
-  const ext = full.slice(full.lastIndexOf(".")).toLowerCase();
   const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
   return new Response(stream, {
-    headers: { "Content-Type": MIME[ext] ?? "application/octet-stream" },
+    headers: { "Content-Type": contentTypeFor(full) },
   });
 }

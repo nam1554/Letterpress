@@ -4,16 +4,8 @@ import { ZipArchive } from "archiver";
 import { NextRequest } from "next/server";
 import { requireJob } from "@/lib/api-job";
 import { listArtifacts, outputDir, resolveArtifact } from "@/lib/jobs/store";
+import { contentTypeFor } from "@/lib/mime";
 
-
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".css": "text/css",
-};
 
 /**
  * GET /api/jobs/:id/download          → zip of everything in output/
@@ -35,13 +27,12 @@ export async function GET(
     if (!existsSync(full) || !statSync(full).isFile()) {
       return new Response("file not found", { status: 404 });
     }
-    const ext = full.slice(full.lastIndexOf(".")).toLowerCase();
     const inline = req.nextUrl.searchParams.get("inline") === "1";
     const name = file.split("/").pop() ?? "file";
     const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
     return new Response(stream, {
       headers: {
-        "Content-Type": MIME[ext] ?? "application/octet-stream",
+        "Content-Type": contentTypeFor(full),
         // RFC 5987 filename* — filename="…"에 percent-encoding을 넣으면
         // 브라우저가 디코딩하지 않아 한글 이름이 %ED%95%9C… 그대로 저장된다.
         "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(name)}`,
