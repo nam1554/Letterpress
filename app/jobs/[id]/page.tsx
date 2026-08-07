@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Anchor, Button, Container, Group, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -22,7 +22,17 @@ import SendPrep from "./SendPrep";
 import VerifyReport from "./VerifyReport";
 import { useJobStream } from "./use-job-stream";
 
+// cacheComponents가 프리렌더하는 셸에서 useParams()는 Suspense 경계 안에
+// 있어야 한다 (뷰어 페이지와 같은 구조).
 export default function JobPage() {
+  return (
+    <Suspense>
+      <JobPageInner />
+    </Suspense>
+  );
+}
+
+function JobPageInner() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { job, events, artifacts, verifyFiles, refresh } = useJobStream(id);

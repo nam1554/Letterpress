@@ -3,7 +3,6 @@ import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import { deleteJob, getJob } from "@/lib/jobs/store";
 
-export const dynamic = "force-dynamic";
 
 const body = z.object({ ids: z.array(z.string()).min(1).max(200) });
 

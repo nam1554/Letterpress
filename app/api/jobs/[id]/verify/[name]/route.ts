@@ -5,7 +5,6 @@ import { requireJob } from "@/lib/api-job";
 import { workDir } from "@/lib/jobs/store";
 import { isVerifyFile } from "@/lib/verify";
 
-export const dynamic = "force-dynamic";
 
 /** GET /api/jobs/:id/verify/:name — 픽셀 검증 이미지 서빙 (allowlist). */
 export async function GET(

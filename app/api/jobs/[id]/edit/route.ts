@@ -5,7 +5,6 @@ import { requireJob } from "@/lib/api-job";
 import { ConcurrencyLimitError, startJob } from "@/lib/jobs/runner";
 import { createEditJob, deleteJob, listArtifacts } from "@/lib/jobs/store";
 
-export const dynamic = "force-dynamic";
 
 const editBody = z.object({
   instruction: z

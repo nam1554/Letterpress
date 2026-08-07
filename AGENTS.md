@@ -536,6 +536,27 @@ no auth, single user, filesystem is the database.
   only when the template actually uses that rule — inventing keys for other
   template shapes would teach wrong upload names) as a copyable CommandChip.
 
+## Next.js 16.3 (2026-08-07 업그레이드 결정)
+
+- `cacheComponents: true` + `partialPrefetching: true`를 켰다 — 다음 메이저의
+  기본값을 미리 채택(16.3 블로그). 이 모델에서는:
+  - 라우트 세그먼트 설정 `export const dynamic`이 **비호환**(빌드 에러) —
+    19개 라우트의 `force-dynamic`을 제거했다. 핸들러는 이 모델에서 기본이
+    동적이며, 실측으로 확인함(잡 생성 직후 GET /api/jobs에 즉시 반영 =
+    숨은 캐시 없음, SSE·게이트 파이프라인 정상).
+  - 클라이언트 페이지의 `useParams()`/`useSearchParams()`는 **Suspense 경계
+    안**에 있어야 프리렌더가 통과한다 — 두 잡 페이지 모두 `<Suspense>`로
+    감싼 구조다. 새 페이지를 추가할 때 같은 규칙이 적용된다.
+- TypeScript 7은 **보류**: `pnpm exec tsc --noEmit`이 0.56초로 통과하지만
+  typescript-eslint가 TS 7.0을 지원하지 않아 eslint가 로드조차 실패한다
+  (typescript-eslint#10940). 별칭 이중 설치 우회는 온보딩 함정이라 채택하지
+  않았다 — 지원되면 재시도.
+- 나머지 16.3 항목: dev 메모리 축출·빌드 디스크 캐시·SSR 노드 스트림·
+  prefetch 인라이닝은 기본 적용(설정 불필요), AGENTS.md 상단의 버전 문서
+  블록은 `next dev`가 관리한다. offline/root params/glob/`catchError`/
+  Playwright `instant()`는 이 앱에 해당 없음, React Compiler(Rust)는
+  실험 플래그라 보류.
+
 ## Verification habits
 
 - `pnpm vitest run` (unit), `pnpm typecheck`, `pnpm lint`, `pnpm build`.

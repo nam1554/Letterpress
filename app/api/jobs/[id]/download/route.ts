@@ -5,7 +5,6 @@ import { NextRequest } from "next/server";
 import { requireJob } from "@/lib/api-job";
 import { listArtifacts, outputDir, resolveArtifact } from "@/lib/jobs/store";
 
-export const dynamic = "force-dynamic";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

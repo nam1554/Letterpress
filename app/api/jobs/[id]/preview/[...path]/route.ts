@@ -3,7 +3,6 @@ import { Readable } from "node:stream";
 import { requireJob } from "@/lib/api-job";
 import { resolveArtifact } from "@/lib/jobs/store";
 
-export const dynamic = "force-dynamic";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

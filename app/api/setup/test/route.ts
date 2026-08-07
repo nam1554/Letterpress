@@ -4,7 +4,6 @@ import { readBody } from "@/lib/api-body";
 import { listProviders } from "@/lib/providers/registry";
 import { runBackendTest } from "@/lib/setup";
 
-export const dynamic = "force-dynamic";
 
 /** 선택한 백엔드로 초소형 프롬프트를 실제 스폰해 왕복을 확인한다 (최대 2분). */
 export async function POST(req: NextRequest) {

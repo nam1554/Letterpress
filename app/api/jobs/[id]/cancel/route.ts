@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireJob } from "@/lib/api-job";
 import { cancelJob } from "@/lib/jobs/runner";
 
-export const dynamic = "force-dynamic";
 
 export async function POST(
   _req: Request,

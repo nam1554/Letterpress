@@ -3,7 +3,6 @@ import { requireJob } from "@/lib/api-job";
 import { deleteJob, listArtifacts } from "@/lib/jobs/store";
 import { listVerifyFiles } from "@/lib/verify";
 
-export const dynamic = "force-dynamic";
 
 export async function GET(
   _req: Request,

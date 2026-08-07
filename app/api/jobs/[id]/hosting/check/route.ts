@@ -7,7 +7,6 @@ import { requireJob } from "@/lib/api-job";
 import { checkHostedUrls, hostedEntries, type ProbeFetcher } from "@/lib/hosting-check";
 import { outputDir } from "@/lib/jobs/store";
 
-export const dynamic = "force-dynamic";
 
 const MANIFEST = z.object({
   template: z.string(),

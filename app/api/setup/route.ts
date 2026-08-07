@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendSetup } from "@/lib/setup";
 
-export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const force = req.nextUrl.searchParams.get("force") === "1";

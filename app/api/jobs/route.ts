@@ -6,7 +6,6 @@ import { ConcurrencyLimitError, startJob } from "@/lib/jobs/runner";
 import { createJob, deleteJob, jobDirSize, listJobs } from "@/lib/jobs/store";
 import { defaultProviderId, getProvider, listProviders } from "@/lib/providers/registry";
 
-export const dynamic = "force-dynamic";
 
 export async function GET() {
   const jobs = await listJobs();

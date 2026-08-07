@@ -14,7 +14,6 @@ import { requireJob } from "@/lib/api-job";
 import { invalidateJobSize, listArtifacts, outputDir } from "@/lib/jobs/store";
 import { saveSettings } from "@/lib/settings";
 
-export const dynamic = "force-dynamic";
 
 /**
  * POST /api/jobs/:id/hosting {template}
