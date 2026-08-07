@@ -26,6 +26,13 @@ export interface StartOptions {
  */
 export async function startJob(job: Job, opts: StartOptions = {}): Promise<void> {
   const { promptOverride, resume } = opts;
+  // 같은 잡의 이중 실행 차단 — resume 더블클릭 같은 동시 요청이 통과하면 CLI
+  // 두 개가 한 workDir에서 돌고, 두 번째 controller가 첫 번째의 맵 엔트리를
+  // 덮어써 먼저 끝난 쪽의 finally가 남은 쪽 엔트리까지 지운다: 실행 중인데
+  // 컨트롤러가 없으니 reconcile이 실패로 오판하고, 취소도 닿지 않는다.
+  if (liveControllers.has(job.id)) {
+    throw new Error("이미 실행 중인 작업입니다.");
+  }
   // 이 시도가 시작된 시각 — 품질 게이트가 이전 실행의 검증 결과를 이번 증거로
   // 인정하지 않도록 하는 기준점.
   const startedAt = Date.now();

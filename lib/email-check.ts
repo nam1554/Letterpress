@@ -61,7 +61,12 @@ export function checkEmailHtml(html: string): EmailCheck[] {
       : { name: "프리헤더", level: "warn", detail: "숨김 프리헤더가 없습니다 — 받은편지함 미리보기 문구를 제어할 수 없습니다." },
   );
 
-  const relativeImgs = [...html.matchAll(/src=["']images\//g)].length;
+  // hosting.ts의 applyCdnTemplate이 치환하는 패턴과 같은 범위를 본다 —
+  // 대소문자·공백 관용과 background=/url() 참조를 빼면, CDN 치환 대상인데
+  // 이 검사에는 "상대경로 없음"으로 나오는 파일이 생긴다.
+  const relativeImgs =
+    [...html.matchAll(/(?:src|background)\s*=\s*["']images\//gi)].length +
+    [...html.matchAll(/url\(\s*['"]?images\//gi)].length;
   checks.push(
     relativeImgs > 0
       ? { name: "이미지 경로", level: "warn", detail: `상대경로 이미지 ${relativeImgs}건 — 발송 전 CDN 교체본을 만들거나 base64 내장본을 쓰세요.` }

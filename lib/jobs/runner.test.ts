@@ -181,6 +181,19 @@ describe("runner + quality gate (mock provider)", () => {
     }
   }, 20_000);
 
+  it("refuses to start a job that is already executing", async () => {
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    await startJob(job);
+    try {
+      // resume 더블클릭 같은 동시 요청 — 통과하면 CLI 두 개가 같은 workDir에서
+      // 돌고, 두 번째 controller가 첫 번째의 맵 엔트리를 덮어쓴다.
+      await expect(startJob(job)).rejects.toThrow("이미 실행 중");
+      expect(liveControllers.has(job.id)).toBe(true);
+    } finally {
+      await waitTerminal(job.id);
+    }
+  }, 20_000);
+
   it("aborts every live job on shutdown", () => {
     const controller = new AbortController();
     liveControllers.set("deadbeef", controller);
