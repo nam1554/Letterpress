@@ -134,6 +134,21 @@ describe("checkEmailHtml", () => {
     expect(byName["프리헤더"]).toBe("warn");
   });
 
+  it("does not mistake a stylesheet display:none for a preheader", () => {
+    // 반응형 변형은 요소 숨김용 display:none을 <style>에 갖는다 — 이것이
+    // 프리헤더로 오인되면 프리헤더 없는 파일이 거짓 통과한다 (실측: 73423ff3).
+    const responsiveNoPreheader =
+      `<style>@media(max-width:480px){.fsep{display:none!important}}</style>` +
+      `<img src="https://cdn.x/a.png" alt="a">`;
+    const check = checkEmailHtml(responsiveNoPreheader).find((c) => c.name === "프리헤더");
+    expect(check?.level).toBe("warn");
+
+    // 실제 프리헤더 관용구(인라인 style)는 통과해야 한다.
+    const withPreheader =
+      `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">미리보기 문구</div>`;
+    expect(checkEmailHtml(withPreheader).find((c) => c.name === "프리헤더")?.level).toBe("ok");
+  });
+
   it("counts the same relative-image shapes the CDN swap rewrites", () => {
     // applyCdnTemplate이 치환하는 대소문자·공백·background=/url() 관용 —
     // 치환 대상인데 검사에는 안 잡히면 "상대경로 없음"이 거짓말이 된다.

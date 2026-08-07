@@ -53,8 +53,12 @@ export function checkEmailHtml(html: string): EmailCheck[] {
       : { name: "비보안 링크", level: "ok", detail: "모두 https" },
   );
 
+  // 프리헤더 관용구는 **인라인 style 속성**의 display:none이다 (실측: 정직한
+  // 빌드 전부 `<div style="display:none;max-height:0;…">문구`). <style> 블록까지
+  // 매치하면 반응형 변형의 요소 숨김 규칙(.fsep{display:none!important})이
+  // 프리헤더로 오인돼, 프리헤더 없는 파일이 거짓 통과한다 (실측: 73423ff3).
   const hasPreheader =
-    /display\s*:\s*none[^>]*>/i.test(html) || /preheader/i.test(html);
+    /style\s*=\s*["'][^"']*display\s*:\s*none/i.test(html) || /preheader/i.test(html);
   checks.push(
     hasPreheader
       ? { name: "프리헤더", level: "ok", detail: "숨김 프리헤더 영역이 있습니다." }
