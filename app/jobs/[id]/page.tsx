@@ -9,6 +9,7 @@ import { figmaLabel, formatElapsed } from "../../lib/format";
 import { PAGE_WIDTH, PROSE_WIDTH } from "../../lib/dimensions";
 import { isActive } from "../../lib/status";
 import { sendJson } from "../../lib/request";
+import { useArmedConfirm } from "../../lib/use-armed-confirm";
 import AppHeader from "../../components/AppHeader";
 import DiagnosticsLink from "../../components/DiagnosticsLink";
 import Section from "../../components/Section";
@@ -26,7 +27,7 @@ export default function JobPage() {
   const router = useRouter();
   const { job, events, artifacts, verifyFiles, refresh } = useJobStream(id);
   const [now, setNow] = useState(() => Date.now());
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { fire: fireDelete, isArmed: deleteArmed } = useArmedConfirm();
   const [editText, setEditText] = useState("");
   const [editing, setEditing] = useState(false);
   const [resuming, setResuming] = useState(false);
@@ -139,14 +140,10 @@ export default function JobPage() {
   }
 
   async function remove() {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
+    if (!fireDelete()) return;
     const r = await sendJson(`/api/jobs/${id}`, "DELETE");
     if (!r.ok) {
       notifications.show({ message: r.error, color: "red" });
-      setConfirmDelete(false);
       return;
     }
     router.push("/");
@@ -248,7 +245,7 @@ export default function JobPage() {
                   size="compact-sm"
                   onClick={remove}
                 >
-                  {confirmDelete ? "정말 삭제할까요?" : "삭제"}
+                  {deleteArmed() ? "정말 삭제할까요?" : "삭제"}
                 </Button>
               </>
             )}

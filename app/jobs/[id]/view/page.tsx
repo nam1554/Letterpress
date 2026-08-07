@@ -14,6 +14,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { isActive } from "../../../lib/status";
 import { requestJson, sendJson } from "../../../lib/request";
+import { useArmedConfirm } from "../../../lib/use-armed-confirm";
 import type { Job } from "@/lib/jobs/store";
 import EditPanel, { type PanelTarget } from "./EditPanel";
 import { EDIT_STYLE_ID, SELECTED_ATTR, serializeEditedDocument } from "./serialize";
@@ -53,7 +54,8 @@ function Viewer() {
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [confirmRestore, setConfirmRestore] = useState(false);
+  // "정말 되돌릴까요?" 무장 — 유예(4s) 자동 해제는 훅이 맡는다.
+  const { fire: fireRestore, isArmed: restoreArmed, disarm: disarmRestore } = useArmedConfirm();
   const [target, setTarget] = useState<PanelTarget | null>(null);
   // 선택된 요소가 바뀔 때마다 증가 — EditPanel의 key로 써서 강제 리마운트한다
   // (uncontrolled <input type="color" defaultValue>는 마운트 시에만 값을 반영하므로,
@@ -85,20 +87,11 @@ function Viewer() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
-  // "정말 되돌릴까요?" 무장 상태는 유예 시간(4s) 안에 두 번째 클릭이 없으면 풀린다 —
-  // 한참 뒤의 클릭이 확인 없이 바로 실행되는 것을 막는다.
-  useEffect(() => {
-    if (!confirmRestore) return;
-    const t = setTimeout(() => setConfirmRestore(false), 4000);
-    return () => clearTimeout(t);
-  }, [confirmRestore]);
-
   // 파일이 바뀌거나 편집 모드가 전환되면 이전 되돌리기 확인 상태는 무효 — 그대로 두면
   // 다른 파일/모드로 넘어간 뒤의 클릭이 예상 못한 즉시 실행으로 이어질 수 있다.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setConfirmRestore(false);
-  }, [file, editing]);
+    disarmRestore();
+  }, [file, editing, disarmRestore]);
 
   const onInput = useCallback(() => setDirty(true), [setDirty]);
 
@@ -219,11 +212,7 @@ function Viewer() {
     ) {
       return;
     }
-    if (!confirmRestore) {
-      setConfirmRestore(true);
-      return;
-    }
-    setConfirmRestore(false);
+    if (!fireRestore()) return;
     const r = await sendJson(`/api/jobs/${id}/artifact`, "PUT", { file, restore: true });
     if (!r.ok) {
       notifications.show({ message: r.error, color: "red" });
@@ -294,7 +283,7 @@ function Viewer() {
               size="compact-sm"
               onClick={restore}
             >
-              {confirmRestore ? "정말 되돌릴까요?" : "원본으로 되돌리기"}
+              {restoreArmed() ? "정말 되돌릴까요?" : "원본으로 되돌리기"}
             </Button>
           )}
           <CopyHtmlButton src={src} />

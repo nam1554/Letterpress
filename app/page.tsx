@@ -38,6 +38,7 @@ import { figmaLabel, formatBytes, relativeTime } from "./lib/format";
 import { PAGE_WIDTH, PROSE_WIDTH } from "./lib/dimensions";
 import { providerOptionLabel } from "./lib/provider-select";
 import { sendJson } from "./lib/request";
+import { useArmedConfirm } from "./lib/use-armed-confirm";
 
 /** GET /api/jobs의 잡 행 — 스토어 잡 + 라우트가 붙이는 디스크 사용량. */
 type Job = StoredJob & { diskBytes?: number };
@@ -63,13 +64,13 @@ export default function Home() {
   const [providerChoice, setProviderChoice] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
+  // 2단계 확인들 — 유예(4s) 자동 해제는 훅이 맡는다. 관심사마다 인스턴스를
+  // 분리해 서로의 무장을 건드리지 않는다.
+  const rowConfirm = useArmedConfirm(); // 행 삭제 (키 = 잡 id)
+  const clearConfirm = useArmedConfirm(); // 완료된 작업 전체 삭제
+  const bulkConfirm = useArmedConfirm(); // 선택 삭제 (키 = 보이는 선택 시그니처)
+  const unreadyConfirm = useArmedConfirm(); // 준비 안 된 백엔드로 실행
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // 삭제 확인이 걸린 대상 목록(id 조인) — null이면 확인 전.
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  // 준비 안 된 백엔드로 실행하기 전 한 번 더 확인.
-  const [confirmUnready, setConfirmUnready] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
 
@@ -154,20 +155,12 @@ export default function Home() {
     e.preventDefault();
     if (!provider) return;
     // 준비 안 된 백엔드로 실행하면 10~20분을 기다린 끝에 실패한다 — 한 번 더 묻는다.
-    if (notReady && !confirmUnready) {
-      setConfirmUnready(true);
-      return;
-    }
-    setConfirmUnready(false);
+    if (notReady && !unreadyConfirm.fire()) return;
     await createAndGo(figmaUrl, provider);
   }
 
   async function removeJob(id: string) {
-    if (confirmId !== id) {
-      setConfirmId(id);
-      return;
-    }
-    setConfirmId(null);
+    if (!rowConfirm.fire(id)) return;
     const r = await sendJson(`/api/jobs/${id}`, "DELETE");
     if (r.ok) {
       notifications.show({ message: "작업을 삭제했습니다.", color: "gray" });
@@ -176,11 +169,7 @@ export default function Home() {
   }
 
   async function clearHistory() {
-    if (!confirmClear) {
-      setConfirmClear(true);
-      return;
-    }
-    setConfirmClear(false);
+    if (!clearConfirm.fire()) return;
     const r = await sendJson<{ deleted: number }>("/api/jobs", "DELETE");
     if (r.ok) {
       notifications.show({
@@ -217,8 +206,9 @@ export default function Home() {
   // 실제로 지울 대상은 "화면에 보이는 선택"뿐이다 — 필터·검색으로 감춰진 잡이나
   // 이미 사라진 잡까지 지우면 사용자가 못 본 결과물이 복구 불가능하게 날아간다.
   const selectedIds = visibleJobs.filter((j) => selected.has(j.id)).map((j) => j.id);
-  // 확인은 "지금 화면의 그 목록"에만 유효하다 — 확인 후 필터를 바꾸면 다시 묻는다.
-  const deleteArmed = confirmDelete !== null && confirmDelete === selectedIds.join(",");
+  // 확인은 "지금 화면의 그 목록"에만 유효하다 — 확인 후 필터를 바꾸면 다시 묻는다
+  // (무장 키가 선택 시그니처라, 목록이 바뀐 뒤의 클릭은 실행이 아니라 새 무장이 된다).
+  const deleteArmed = bulkConfirm.isArmed(selectedIds.join(","));
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -235,11 +225,7 @@ export default function Home() {
 
   async function deleteSelected() {
     if (selectedIds.length === 0) return;
-    if (!deleteArmed) {
-      setConfirmDelete(selectedIds.join(","));
-      return;
-    }
-    setConfirmDelete(null);
+    if (!bulkConfirm.fire(selectedIds.join(","))) return;
     const r = await sendJson<{ results: Array<{ id: string; ok: boolean }> }>(
       "/api/jobs/bulk-delete",
       "POST",
@@ -398,7 +384,7 @@ export default function Home() {
                 color={notReady ? "yellow" : undefined}
               >
                 {notReady
-                  ? confirmUnready
+                  ? unreadyConfirm.isArmed()
                     ? "실패해도 실행"
                     : "준비 안 됨 — 그래도 실행?"
                   : "HTML 만들기"}
@@ -478,7 +464,7 @@ export default function Home() {
                   onClick={clearHistory}
                   data-testid="clear-history"
                 >
-                  {confirmClear ? "정말 모두 삭제?" : "완료된 작업 삭제"}
+                  {clearConfirm.isArmed() ? "정말 모두 삭제?" : "완료된 작업 삭제"}
                 </Anchor>
               )}
               <DiagnosticsLink />
@@ -637,7 +623,7 @@ export default function Home() {
                       c="dimmed"
                       onClick={() => removeJob(job.id)}
                     >
-                      {confirmId === job.id ? "정말?" : "삭제"}
+                      {rowConfirm.isArmed(job.id) ? "정말?" : "삭제"}
                     </Anchor>
                   )}
                 </Group>
