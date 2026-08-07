@@ -28,36 +28,21 @@ import Section from "./components/Section";
 import StatusDot from "./components/StatusDot";
 import { IconAlert, IconCheck } from "./components/icons";
 import { parseFigmaUrl } from "@/lib/figma";
+// 서버 타입 그대로 (import type — 런타임 코드는 번들에 안 딸려온다). 사본은
+// 필드가 늘 때(전례: manualEdits) 이쪽만 조용히 낡는다.
+import type { HealthCheck } from "@/lib/health";
+import type { Job as StoredJob } from "@/lib/jobs/store";
+import type { ProviderInfo } from "@/lib/providers/registry";
 import { fetcher } from "./lib/fetcher";
 import { figmaLabel, formatBytes, relativeTime } from "./lib/format";
 import { PAGE_WIDTH, PROSE_WIDTH } from "./lib/dimensions";
 import { providerOptionLabel } from "./lib/provider-select";
 import { sendJson } from "./lib/request";
 
-interface Job {
-  id: string;
-  figmaUrl: string;
-  title?: string;
-  provider: string;
-  status: string;
-  createdAt: number;
-  summary?: string;
-  diskBytes?: number;
-}
+/** GET /api/jobs의 잡 행 — 스토어 잡 + 라우트가 붙이는 디스크 사용량. */
+type Job = StoredJob & { diskBytes?: number };
 
 type StatusFilter = "all" | "running" | "succeeded" | "failed";
-interface ProviderInfo {
-  id: string;
-  label: string;
-  verification: "verified" | "unverified" | "sample";
-  verificationNote: string;
-}
-interface HealthCheck {
-  name: string;
-  ok: boolean;
-  detail: string;
-  hint?: string;
-}
 interface JobsResponse {
   jobs: Job[];
   providers: ProviderInfo[];

@@ -11,13 +11,7 @@ import { PROSE_WIDTH } from "../../lib/dimensions";
 import { fetcher } from "../../lib/fetcher";
 import { sendJson } from "../../lib/request";
 import { diagnoseFailure } from "@/lib/jobs/failure";
-
-interface BackendInfo {
-  id: string;
-  label: string;
-  ready: boolean;
-  verification: "verified" | "unverified" | "sample";
-}
+import type { BackendSetup as BackendInfo } from "@/lib/setup";
 
 /**
  * 실패한 잡에 원인과 다음 행동을 붙여 준다.

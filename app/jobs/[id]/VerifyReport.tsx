@@ -2,12 +2,9 @@
 
 import { Anchor, Badge, Group, Image, Stack, Text } from "@mantine/core";
 import Section from "../../components/Section";
-
-export interface VerifySummary {
-  result: "PASS" | "FAIL";
-  overall?: number;
-  heightDelta?: number;
-}
+// 게이트가 기록하는 타입 그대로 (import type — 런타임 코드는 안 딸려온다).
+import type { VerifySummary } from "@/lib/jobs/acceptance";
+export type { VerifySummary };
 
 const LABELS: Record<string, string> = {
   side_by_side: "Figma ↔ 렌더 비교",

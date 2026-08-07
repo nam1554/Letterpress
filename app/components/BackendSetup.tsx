@@ -19,21 +19,11 @@ import CommandChip from "./CommandChip";
 import Section from "./Section";
 import { IconCheck, IconPlug, IconQuestion, IconX } from "./icons";
 
-export interface SetupStep {
-  name: string;
-  ok: boolean | null;
-  detail: string;
-  hint?: string;
-  command?: string;
-}
-export interface BackendInfo {
-  id: string;
-  label: string;
-  ready: boolean;
-  verification: "verified" | "unverified" | "sample";
-  verificationNote: string;
-  steps: SetupStep[];
-}
+// 서버 진단(lib/setup.ts)의 타입을 그대로 쓴다 — 사본을 들고 있으면 필드가
+// 추가될 때(전례: manualEdits) 이쪽만 조용히 낡는다. import type은 빌드에서
+// 지워지므로 서버 모듈의 런타임 코드는 클라이언트 번들에 들어오지 않는다.
+import type { BackendSetup as BackendInfo, SetupStep } from "@/lib/setup";
+export type { BackendInfo, SetupStep };
 
 interface TestResult {
   ok: boolean;

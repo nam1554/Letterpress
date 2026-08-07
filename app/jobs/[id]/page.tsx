@@ -18,22 +18,10 @@ import ArtifactList, { type Artifact } from "./ArtifactList";
 import FailureHelp from "./FailureHelp";
 import LogViewer, { type AgentEvent } from "./LogViewer";
 import SendPrep from "./SendPrep";
-import VerifyReport, { type VerifySummary } from "./VerifyReport";
-
-interface Job {
-  id: string;
-  figmaUrl: string;
-  title?: string;
-  provider: string;
-  status: string;
-  createdAt: number;
-  finishedAt?: number;
-  summary?: string;
-  verify?: VerifySummary;
-  editOf?: string;
-  instruction?: string;
-  manualEdits?: Record<string, number>;
-}
+import VerifyReport from "./VerifyReport";
+// 서버 스토어의 잡 타입 그대로 — 사본은 필드가 늘 때(전례: manualEdits) 조용히
+// 낡는다. import type은 빌드에서 지워져 서버 코드가 번들에 들어오지 않는다.
+import type { Job } from "@/lib/jobs/store";
 
 interface JobDetail {
   job: Job;

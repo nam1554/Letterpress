@@ -4,13 +4,8 @@ import { useEffect, useRef } from "react";
 import { Text } from "@mantine/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { formatLogLine, type LogSegment } from "../../lib/log-format";
-
-export interface AgentEvent {
-  ts: number;
-  type: string;
-  text: string;
-  seq?: number;
-}
+import type { AgentEvent } from "@/lib/providers/types";
+export type { AgentEvent };
 
 /**
  * 웜 터미널 서피스에 맞춘 로그 색. 테마의 저채도 어스톤 팔레트에서 다크 서피스용
