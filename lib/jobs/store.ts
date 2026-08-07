@@ -72,8 +72,15 @@ async function persist(job: Job): Promise<void> {
   // Atomic write: a reader must never see a half-written job.json.
   // Unique tmp name: concurrent writers must not rename each other's file away.
   const tmp = `${jobFile(job.id)}.${randomUUID().slice(0, 8)}.tmp`;
-  await writeFile(tmp, JSON.stringify(job, null, 2));
-  await rename(tmp, jobFile(job.id));
+  try {
+    await writeFile(tmp, JSON.stringify(job, null, 2));
+    await rename(tmp, jobFile(job.id));
+  } catch (err) {
+    // ENOSPC 등은 파일을 부분적으로 만든 뒤 실패할 수 있다 — 잔재를 남기면
+    // 실패할 때마다 잡 디렉터리에 tmp가 하나씩 쌓인다.
+    await rm(tmp, { force: true }).catch(() => {});
+    throw err;
+  }
 }
 
 /**
@@ -153,7 +160,16 @@ async function reconcile(job: Job): Promise<Job> {
       finishedAt: Date.now(),
       summary: "서버가 재시작되어 실행이 중단되었습니다. 다시 실행해 주세요.",
     };
-    await persist(failed);
+    try {
+      await persist(failed);
+    } catch {
+      // 디스크 쓰기가 안 되는 동안에도 판정(러너 없음 = 실패)은 유효하다.
+      // 여기서 던지면 getJob이 null을 돌려줘, 멀쩡히 읽히는 잡이 목록·상세에서
+      // 통째로 사라진다. 이벤트 기록은 생략한다 — job.json이 running인 채라
+      // 다음 읽기가 다시 여기로 오는데, 그때마다 에러 줄이 쌓이면 안 된다.
+      // persist가 성공하는 읽기(디스크 복구 후)가 기록까지 마친다.
+      return failed;
+    }
     appendEvent(job.id, {
       ts: Date.now(),
       type: "error",
