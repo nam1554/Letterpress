@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireJob } from "@/lib/api-job";
 import { cancelJob } from "@/lib/jobs/runner";
 
-
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },

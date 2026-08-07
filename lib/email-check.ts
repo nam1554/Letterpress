@@ -57,8 +57,10 @@ export function checkEmailHtml(html: string): EmailCheck[] {
   // 빌드 전부 `<div style="display:none;max-height:0;…">문구`). <style> 블록까지
   // 매치하면 반응형 변형의 요소 숨김 규칙(.fsep{display:none!important})이
   // 프리헤더로 오인돼, 프리헤더 없는 파일이 거짓 통과한다 (실측: 73423ff3).
+  // 매치는 여는 따옴표 기준 — [^"']처럼 두 따옴표를 다 끊으면 값 안의 폰트명
+  // 인용부호(font-family:'Pretendard')를 못 건너 진짜 프리헤더를 놓친다.
   const hasPreheader =
-    /style\s*=\s*["'][^"']*display\s*:\s*none/i.test(html) || /preheader/i.test(html);
+    /style\s*=\s*("[^"]*|'[^']*)display\s*:\s*none/i.test(html) || /preheader/i.test(html);
   checks.push(
     hasPreheader
       ? { name: "프리헤더", level: "ok", detail: "숨김 프리헤더 영역이 있습니다." }

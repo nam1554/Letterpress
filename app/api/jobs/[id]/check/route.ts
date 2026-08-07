@@ -4,7 +4,6 @@ import { requireJob } from "@/lib/api-job";
 import { checkEmailHtml } from "@/lib/email-check";
 import { resolveArtifact } from "@/lib/jobs/store";
 
-
 /** GET /api/jobs/:id/check?file=rel — HTML 산출물의 발송 전 정적 검사. */
 export async function GET(
   req: NextRequest,

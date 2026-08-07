@@ -5,7 +5,6 @@ import { getSettings, saveSettings } from "@/lib/settings";
 import { listProviders } from "@/lib/providers/registry";
 import { validateFigmaToken } from "@/lib/setup";
 
-
 // 토큰/키는 원문을 응답에 싣지 않는다 — UI는 설정 여부만 알면 된다.
 function masked() {
   const s = getSettings();

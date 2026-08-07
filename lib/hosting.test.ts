@@ -147,6 +147,12 @@ describe("checkEmailHtml", () => {
     const withPreheader =
       `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">미리보기 문구</div>`;
     expect(checkEmailHtml(withPreheader).find((c) => c.name === "프리헤더")?.level).toBe("ok");
+
+    // display:none 앞에 인용부호 폰트명이 있어도 매치해야 한다 — 두 따옴표를
+    // 모두 끊는 문자 클래스는 여기서 진짜 프리헤더를 놓친다 (리뷰 지적).
+    const fontFirst =
+      `<div style="font-family:'Pretendard',sans-serif;display:none;max-height:0;">문구</div>`;
+    expect(checkEmailHtml(fontFirst).find((c) => c.name === "프리헤더")?.level).toBe("ok");
   });
 
   it("counts the same relative-image shapes the CDN swap rewrites", () => {

@@ -2,7 +2,6 @@ import { requireJob } from "@/lib/api-job";
 import { getJob, readEvents, STALE_GRACE_MS, subscribe } from "@/lib/jobs/store";
 import type { AgentEvent } from "@/lib/providers/types";
 
-
 const encoder = new TextEncoder();
 const sse = (event: string, data: unknown) =>
   encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);

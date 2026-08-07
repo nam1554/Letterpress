@@ -7,7 +7,6 @@ import { requireJob } from "@/lib/api-job";
 import { checkHostedUrls, hostedEntries, type ProbeFetcher } from "@/lib/hosting-check";
 import { outputDir } from "@/lib/jobs/store";
 
-
 const MANIFEST = z.object({
   template: z.string(),
   folder: z.string(),

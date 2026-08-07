@@ -3,7 +3,6 @@ import { requireJob } from "@/lib/api-job";
 import { deleteJob, listArtifacts } from "@/lib/jobs/store";
 import { listVerifyFiles } from "@/lib/verify";
 
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },

@@ -9,7 +9,6 @@ import { hmrGlobal } from "@/lib/hmr-global";
 import { withKeyedLock } from "@/lib/serialize";
 import { invalidateJobSize, resolveArtifact, updateJob, workDir } from "@/lib/jobs/store";
 
-
 const schema = z.union([
   z.object({ file: z.string().min(1), html: z.string().min(1) }),
   z.object({ file: z.string().min(1), restore: z.literal(true) }),

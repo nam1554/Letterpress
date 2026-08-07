@@ -3,7 +3,6 @@ import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import { deleteJob, getJob } from "@/lib/jobs/store";
 
-
 const body = z.object({ ids: z.array(z.string()).min(1).max(200) });
 
 /** 선택 삭제 — 잡별 성공/거부를 개별 반환해 부분 실패가 전체를 막지 않는다. */

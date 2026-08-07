@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runHealthChecks } from "@/lib/health";
 
-
 export async function GET(req: NextRequest) {
   const force = req.nextUrl.searchParams.get("force") === "1";
   const checks = await runHealthChecks(force);

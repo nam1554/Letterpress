@@ -6,7 +6,6 @@ import { requireJob } from "@/lib/api-job";
 import { listArtifacts, outputDir, resolveArtifact } from "@/lib/jobs/store";
 import { contentTypeFor } from "@/lib/mime";
 
-
 /**
  * GET /api/jobs/:id/download          → zip of everything in output/
  * GET /api/jobs/:id/download?file=rel → single artifact (inline for preview with &inline=1)

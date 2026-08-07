@@ -155,7 +155,14 @@ export default function Home() {
     e.preventDefault();
     if (!provider) return;
     // 준비 안 된 백엔드로 실행하면 10~20분을 기다린 끝에 실패한다 — 한 번 더 묻는다.
-    if (notReady && !unreadyConfirm.fire()) return;
+    // 무장 키 = 백엔드 id: 다른 백엔드에서 무장한 확인이 이 백엔드의 실행을
+    // 승인하면 안 된다. 준비된 백엔드 제출은 남은 무장을 명시적으로 푼다 —
+    // 예전 코드의 "제출 시 무조건 리셋"과 같은 의미 (리뷰에서 잡힌 회귀).
+    if (notReady) {
+      if (!unreadyConfirm.fire(provider)) return;
+    } else {
+      unreadyConfirm.disarm();
+    }
     await createAndGo(figmaUrl, provider);
   }
 
@@ -384,7 +391,7 @@ export default function Home() {
                 color={notReady ? "yellow" : undefined}
               >
                 {notReady
-                  ? unreadyConfirm.isArmed()
+                  ? unreadyConfirm.isArmed(provider ?? undefined)
                     ? "실패해도 실행"
                     : "준비 안 됨 — 그래도 실행?"
                   : "HTML 만들기"}

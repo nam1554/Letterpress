@@ -6,7 +6,6 @@ import { NextRequest } from "next/server";
 import { bundleTexts, scrubForBundle } from "@/lib/diagnostics/bundle";
 import { getJob, listArtifacts, listJobs, workDir } from "@/lib/jobs/store";
 
-
 /**
  * GET /api/diagnostics[?job=<id>] → 문제 신고용 zip 한 개.
  *

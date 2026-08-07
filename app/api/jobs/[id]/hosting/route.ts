@@ -14,7 +14,6 @@ import { requireJob } from "@/lib/api-job";
 import { invalidateJobSize, listArtifacts, outputDir } from "@/lib/jobs/store";
 import { saveSettings } from "@/lib/settings";
 
-
 /**
  * POST /api/jobs/:id/hosting {template}
  * 루트의 각 HTML 산출물에서 상대경로 이미지를 CDN URL로 치환한 교체본을
