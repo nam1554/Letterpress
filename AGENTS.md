@@ -171,6 +171,12 @@ no auth, single user, filesystem is the database.
   - `startJob` rolls back the controller + timer if start-up throws. A leaked
     controller inflates `runningJobCount()` forever, so the concurrency cap
     rejects every later job and `deleteJob` refuses that job for good.
+  - `startJob` throws if the job already has a live controller (2026-08-07) —
+    a resume double-click otherwise runs two CLIs in one workDir, and the
+    second controller overwrites the first's map entry so whichever run
+    finishes first deletes the survivor's entry: a running job with no
+    controller, which reconcile then misreports as failed while the CLI keeps
+    burning tokens. The resume route turns that throw into a 409.
   - `appendEvent` is best-effort: a disk error or a throwing subscriber (a
     closed SSE stream) must never kill the running job. `readEvents` skips a
     corrupt line rather than discarding the whole log.
