@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -30,8 +30,9 @@ import { GET as checkRoute } from "./[id]/check/route";
 import { GET as downloadRoute } from "./[id]/download/route";
 import { GET as previewRoute } from "./[id]/preview/[...path]/route";
 import { GET as verifyRoute } from "./[id]/verify/[name]/route";
+import { PUT as artifactRoute } from "./[id]/artifact/route";
 import { liveControllers } from "@/lib/jobs/live";
-import { createJob, outputDir, updateJob, workDir } from "@/lib/jobs/store";
+import { createJob, getJob, outputDir, updateJob, workDir } from "@/lib/jobs/store";
 import { getSettings } from "@/lib/settings";
 
 const FIGMA_URL = "https://www.figma.com/design/abc123/My-Campaign";
@@ -237,5 +238,69 @@ describe("POST /api/jobs/:id/hosting", () => {
     const bad = await hostingRoute(post({ template: tpl, folder: "폴더 이름/" }), ctx(job.id));
     expect(bad.status).toBe(400);
     expect((await bad.json()).error).toContain("폴더명");
+  });
+});
+
+describe("PUT /api/jobs/:id/artifact", () => {
+  const put = (body: unknown) =>
+    new NextRequest("http://localhost/api", { method: "PUT", body: JSON.stringify(body) });
+  const ORIGINAL = "<html><body>원본</body></html>";
+
+  async function succeededJobWithHtml() {
+    const job = await createJob(FIGMA_URL, "mock");
+    await updateJob(job.id, { status: "succeeded" });
+    await writeFile(path.join(outputDir(job.id), "edm_figma.html"), ORIGINAL);
+    return job;
+  }
+
+  it("경로 탈출·비HTML·하위 경로를 거부한다", async () => {
+    const job = await succeededJobWithHtml();
+    for (const file of ["../job.json", "images/logo.png", "hosted/edm_figma.html", "note.txt", "a\\b.html"]) {
+      const res = await artifactRoute(put({ file, html: "<html></html>" }), ctx(job.id));
+      expect(res.status, file).toBe(400);
+    }
+  });
+
+  it("실행 중인 잡은 409", async () => {
+    const job = await createJob(FIGMA_URL, "mock"); // queued 상태 유지
+    const res = await artifactRoute(put({ file: "edm_figma.html", html: "<html></html>" }), ctx(job.id));
+    expect(res.status).toBe(409);
+  });
+
+  it("없는 산출물은 404", async () => {
+    const job = await succeededJobWithHtml();
+    const res = await artifactRoute(put({ file: "missing.html", html: "<html></html>" }), ctx(job.id));
+    expect(res.status).toBe(404);
+  });
+
+  it("저장은 덮어쓰고, 백업은 첫 저장에만 만들고, manualEdits를 기록한다", async () => {
+    const job = await succeededJobWithHtml();
+    const backup = path.join(workDir(job.id), "edit-backup", "edm_figma.html");
+
+    const res1 = await artifactRoute(put({ file: "edm_figma.html", html: "<html><body>v2</body></html>" }), ctx(job.id));
+    expect(res1.status).toBe(200);
+    expect(await readFile(path.join(outputDir(job.id), "edm_figma.html"), "utf8")).toContain("v2");
+    expect(await readFile(backup, "utf8")).toBe(ORIGINAL);
+    expect((await getJob(job.id))?.manualEdits?.["edm_figma.html"]).toBeTypeOf("number");
+
+    // 두 번째 저장 — 백업은 여전히 최초 원본
+    await artifactRoute(put({ file: "edm_figma.html", html: "<html><body>v3</body></html>" }), ctx(job.id));
+    expect(await readFile(backup, "utf8")).toBe(ORIGINAL);
+  });
+
+  it("restore는 원본을 되돌리고 manualEdits 엔트리를 지운다", async () => {
+    const job = await succeededJobWithHtml();
+    await artifactRoute(put({ file: "edm_figma.html", html: "<html><body>수정</body></html>" }), ctx(job.id));
+
+    const res = await artifactRoute(put({ file: "edm_figma.html", restore: true }), ctx(job.id));
+    expect(res.status).toBe(200);
+    expect(await readFile(path.join(outputDir(job.id), "edm_figma.html"), "utf8")).toBe(ORIGINAL);
+    expect((await getJob(job.id))?.manualEdits?.["edm_figma.html"]).toBeUndefined();
+  });
+
+  it("백업이 없는 파일의 restore는 404", async () => {
+    const job = await succeededJobWithHtml();
+    const res = await artifactRoute(put({ file: "edm_figma.html", restore: true }), ctx(job.id));
+    expect(res.status).toBe(404);
   });
 });
