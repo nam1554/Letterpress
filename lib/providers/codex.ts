@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { exitReason, runJsonlCli } from "./jsonl-cli";
+import { concludeJsonlRun, runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
@@ -111,23 +111,12 @@ export const codexProvider: AgentProvider = {
       onText: (raw) => onEvent({ ts: Date.now(), type: "log", text: raw }),
     });
 
-    if (result.kind === "aborted") return { ok: false, summary: "사용자가 취소했습니다." };
-    if (result.kind === "spawn-error") {
-      const message = result.error?.message ?? "unknown";
-      onEvent({ ts: Date.now(), type: "error", text: `codex 실행 실패: ${message}` });
-      return {
-        ok: false,
-        summary: `codex CLI를 실행할 수 없습니다: ${message} (npm i -g @openai/codex, codex login)`,
-      };
-    }
-
-    const fatal = lastMessage.trim().startsWith("FATAL:");
-    const ok = result.code === 0 && !fatal && !errorText;
-    return {
-      ok,
-      summary: ok
-        ? lastMessage || "완료"
-        : errorText || lastMessage || result.stderrTail || exitReason(result),
-    };
+    return concludeJsonlRun(result, {
+      bin: "codex",
+      installHint: "(npm i -g @openai/codex, codex login)",
+      finalText: lastMessage,
+      errorText,
+      onEvent,
+    });
   },
 };

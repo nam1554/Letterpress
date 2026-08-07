@@ -5,17 +5,9 @@ import { Anchor, Collapse, Group, Loader, Stack, Text } from "@mantine/core";
 import { formatSize } from "../../lib/format";
 import { requestJson } from "../../lib/request";
 import { IconAlert, IconCheck, IconX } from "../../components/icons";
-
-export interface Artifact {
-  rel: string;
-  size: number;
-}
-
-interface EmailCheck {
-  name: string;
-  level: "ok" | "warn" | "fail";
-  detail: string;
-}
+import type { EmailCheck } from "@/lib/email-check";
+import type { Artifact } from "@/lib/jobs/store";
+export type { Artifact };
 
 /** 검사 결과 아이콘 — 이모지 대신 인라인 SVG, 색은 테마 상태색을 따른다. */
 function CheckIcon({ level }: { level: EmailCheck["level"] }) {

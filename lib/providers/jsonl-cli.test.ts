@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runJsonlCli } from "./jsonl-cli";
+import { concludeJsonlRun, type JsonlCliResult, runJsonlCli } from "./jsonl-cli";
+import type { AgentEvent } from "./types";
 
 let dir: string;
 
@@ -109,6 +110,67 @@ describe("runJsonlCli", () => {
     await new Promise((res) => setTimeout(res, 300));
     expect(await readFile(marker, "utf8")).toBe(first);
   }, 15_000);
+});
+
+describe("concludeJsonlRun — 세 프로바이더 공통 종결 판정", () => {
+  const closed = (code: number | null, stderrTail = ""): JsonlCliResult => ({
+    kind: "closed",
+    code,
+    stderrTail,
+  });
+  const conclude = (result: JsonlCliResult, opts: Partial<Parameters<typeof concludeJsonlRun>[1]>) => {
+    const events: AgentEvent[] = [];
+    const r = concludeJsonlRun(result, {
+      bin: "testcli",
+      finalText: "",
+      onEvent: (e) => void events.push(e),
+      ...opts,
+    });
+    return { ...r, events };
+  };
+
+  it("취소는 프로바이더 공통 문구로 끝난다", () => {
+    const r = conclude({ kind: "aborted", stderrTail: "" }, {});
+    expect(r).toMatchObject({ ok: false, summary: "사용자가 취소했습니다." });
+  });
+
+  it("spawn 실패는 에러 이벤트 + 설치 안내가 붙은 요약", () => {
+    const r = conclude(
+      { kind: "spawn-error", error: new Error("ENOENT"), stderrTail: "" },
+      { bin: "agy", title: "Antigravity", installHint: "(설치 안내)" },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.summary).toBe("Antigravity CLI를 실행할 수 없습니다: ENOENT (설치 안내)");
+    expect(r.events).toEqual([
+      expect.objectContaining({ type: "error", text: "agy 실행 실패: ENOENT" }),
+    ]);
+  });
+
+  it("FATAL 접두어(앞 공백 포함)는 exit 0이어도 실패", () => {
+    const r = conclude(closed(0), { finalText: "  FATAL: Figma access is not available" });
+    expect(r.ok).toBe(false);
+    expect(r.summary).toContain("FATAL:");
+  });
+
+  it("errorText가 있으면 실패이고 요약 1순위", () => {
+    const r = conclude(closed(0), { finalText: "최종 응답", errorText: "스트림 에러" });
+    expect(r).toMatchObject({ ok: false, summary: "스트림 에러" });
+  });
+
+  it("sawSuccess=false면 exit 0이어도 실패 (claude의 result 이벤트 부재)", () => {
+    const r = conclude(closed(0, "stderr 꼬리"), { sawSuccess: false });
+    expect(r).toMatchObject({ ok: false, summary: "stderr 꼬리" });
+  });
+
+  it("파싱 텍스트가 하나도 없으면 exitReason까지 폴백", () => {
+    const r = conclude(closed(3), {});
+    expect(r).toMatchObject({ ok: false, summary: "종료 코드 3" });
+  });
+
+  it("성공은 최종 응답을, 응답이 비면 '완료'를 요약으로", () => {
+    expect(conclude(closed(0), { finalText: "다 됐습니다" }).summary).toBe("다 됐습니다");
+    expect(conclude(closed(0), {})).toMatchObject({ ok: true, summary: "완료" });
+  });
 });
 
 describe("신호 종료", () => {

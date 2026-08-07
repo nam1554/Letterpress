@@ -14,6 +14,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { isActive } from "../../../lib/status";
 import { requestJson, sendJson } from "../../../lib/request";
+import type { Job } from "@/lib/jobs/store";
 import EditPanel, { type PanelTarget } from "./EditPanel";
 import { EDIT_STYLE_ID, SELECTED_ATTR, serializeEditedDocument } from "./serialize";
 
@@ -42,10 +43,7 @@ function CopyHtmlButton({ src }: { src: string }) {
   );
 }
 
-interface JobInfo {
-  status: string;
-  manualEdits?: Record<string, number>;
-}
+type JobInfo = Pick<Job, "status" | "manualEdits">;
 
 function Viewer() {
   const { id } = useParams<{ id: string }>();

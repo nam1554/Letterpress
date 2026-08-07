@@ -177,6 +177,27 @@ no auth, single user, filesystem is the database.
     finishes first deletes the survivor's entry: a running job with no
     controller, which reconcile then misreports as failed while the CLI keeps
     burning tokens. The resume route turns that throw into a 409.
+  - The concurrency cap is judged ONLY inside `startJob` (2026-08-07), in the
+    same synchronous section that registers the controller — route-level
+    pre-checks had an await window that let concurrent requests exceed the
+    cap by one. Rejections are typed (`AlreadyRunningError` → 409,
+    `ConcurrencyLimitError` → 429); the create/edit routes delete the job
+    they failed to start so no ghost `queued` row is left behind.
+  - `updateJob` serializes per job and accepts a functional patch
+    (`updateJob(id, job => patch)`) — it is read-merge-write, so without
+    this, concurrent callers overwrite each other's fields (lost update).
+    Any patch derived from current job state (`manualEdits` …) MUST be
+    functional; computing it from a job read outside the call reintroduces
+    the race. The artifact route's own lock now guards only the file-level
+    backup TOCTOU.
+  - The three JSONL providers end through `concludeJsonlRun` in
+    `jsonl-cli.ts` (cancel/spawn-failure wording, FATAL-prefix check, the
+    errorText → finalText → stderrTail → exitReason fallback chain). Don't
+    reintroduce per-provider copies — they drift, which is why this exists.
+  - Client components import API payload types from lib with `import type`
+    (erased at build; server runtime code never enters the bundle) instead
+    of re-declaring them — a local copy silently goes stale when the server
+    type grows a field.
   - `appendEvent` is best-effort: a disk error or a throwing subscriber (a
     closed SSE stream) must never kill the running job. `readEvents` skips a
     corrupt line rather than discarding the whole log.

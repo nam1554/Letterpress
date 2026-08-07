@@ -20,7 +20,7 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-import { cancelJob, startJob } from "./runner";
+import { cancelJob, ConcurrencyLimitError, startJob } from "./runner";
 import { mockProvider } from "../providers/mock";
 import { abortAllForShutdown, liveControllers } from "./live";
 import type { AgentEvent } from "../providers/types";
@@ -90,7 +90,7 @@ describe("runner + quality gate (mock provider)", () => {
     await chmod(path.join(dir, job.id), 0o500);
 
     await expect(startJob(job)).rejects.toThrow();
-    // 누수되면 runningJobCount()가 영구히 부풀어 동시 실행 한도가 모든 신규
+    // 누수되면 liveControllers가 영구히 부풀어 동시 실행 한도가 모든 신규
     // 작업을 막고, deleteJob도 계속 거부된다.
     expect(liveControllers.has(job.id)).toBe(false);
 
@@ -193,6 +193,22 @@ describe("runner + quality gate (mock provider)", () => {
       await waitTerminal(job.id);
     }
   }, 20_000);
+
+  it("enforces the concurrency cap atomically at start", async () => {
+    // 라우트가 아니라 startJob이 판정한다 — 검사와 controller 등록 사이에
+    // await가 없어, 동시 요청이 한도를 1개 초과하던 창이 사라진다.
+    const max = 2; // getSettings() 기본값
+    for (let i = 0; i < max; i++) {
+      liveControllers.set(`cafe000${i}`, new AbortController());
+    }
+    const job = await createJob("https://www.figma.com/design/abc/", "mock");
+    try {
+      await expect(startJob(job)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+      expect(liveControllers.has(job.id)).toBe(false);
+    } finally {
+      for (let i = 0; i < max; i++) liveControllers.delete(`cafe000${i}`);
+    }
+  });
 
   it("aborts every live job on shutdown", () => {
     const controller = new AbortController();

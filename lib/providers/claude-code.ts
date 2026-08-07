@@ -1,5 +1,5 @@
 import { getSettings } from "../settings";
-import { exitReason, runJsonlCli } from "./jsonl-cli";
+import { concludeJsonlRun, runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
@@ -87,20 +87,11 @@ export const claudeCodeProvider: AgentProvider = {
       onText: (raw) => onEvent({ ts: Date.now(), type: "log", text: raw }),
     });
 
-    if (result.kind === "aborted") return { ok: false, summary: "사용자가 취소했습니다." };
-    if (result.kind === "spawn-error") {
-      const message = result.error?.message ?? "unknown";
-      onEvent({ ts: Date.now(), type: "error", text: `claude 실행 실패: ${message}` });
-      return { ok: false, summary: `claude CLI를 실행할 수 없습니다: ${message}` };
-    }
-
-    const fatal = resultText.startsWith("FATAL:");
-    const ok = result.code === 0 && sawSuccess && !fatal;
-    return {
-      ok,
-      summary: ok
-        ? resultText || "완료"
-        : resultText || result.stderrTail || exitReason(result),
-    };
+    return concludeJsonlRun(result, {
+      bin: "claude",
+      finalText: resultText,
+      sawSuccess,
+      onEvent,
+    });
   },
 };

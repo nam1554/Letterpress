@@ -45,17 +45,21 @@ interface JobsGlobal {
   reconciling: Map<string, Promise<Job>>;
   /** 잡별 다음 이벤트 시퀀스 (프로세스 시작 시 파일 라인 수로 초기화). */
   seqs: Map<string, number>;
+  /** 잡별 updateJob 직렬화 큐 — read-modify-write의 lost update 방지. */
+  updates: Map<string, Promise<unknown>>;
 }
 const g = globalThis as unknown as { __jobsGlobal?: JobsGlobal };
 const live: JobsGlobal = (g.__jobsGlobal ??= {
   listeners: new Map(),
   reconciling: new Map(),
   seqs: new Map(),
+  updates: new Map(),
 });
 // fields added (or reshaped) after first deploys of this global — HMR keeps the
 // old object, so check the shape rather than only the presence.
 if (!(live.reconciling instanceof Map)) live.reconciling = new Map();
 live.seqs ??= new Map();
+live.updates ??= new Map();
 
 // Job ids are 8-char hex from createJob. Anything else (e.g. an URL-encoded
 // "../" smuggled into a route param) must never reach a filesystem path.
@@ -201,12 +205,39 @@ export async function getJob(id: string): Promise<Job | null> {
   }
 }
 
-export async function updateJob(id: string, patch: Partial<Job>): Promise<Job | null> {
-  const job = await getJob(id);
-  if (!job) return null;
-  const next = { ...job, ...patch };
-  await persist(next);
-  return next;
+/**
+ * 같은 잡의 갱신을 순서대로 실행한다. updateJob은 읽기→병합→쓰기라 직렬화
+ * 없이는 동시 호출이 서로의 패치를 덮는다(lost update) — 호출처 규율이 아니라
+ * 여기서 구조적으로 막는다. 실패해도 다음 대기자를 막지 않고, 마지막 대기자가
+ * 끝나면 엔트리를 비운다.
+ */
+function withUpdateLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const prev = live.updates.get(id) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => {});
+  live.updates.set(id, tail);
+  void tail.finally(() => {
+    if (live.updates.get(id) === tail) live.updates.delete(id);
+  });
+  return run;
+}
+
+/**
+ * 잡을 갱신한다. patch는 객체 또는 현재 잡을 받는 함수 — **현재 값에서
+ * 파생되는 패치(manualEdits 등)는 반드시 함수형으로** 넘겨야 한다. 밖에서
+ * 읽어 둔 잡으로 계산하면 락 안에서 다시 읽는 이 함수의 보호를 받지 못한다.
+ */
+export async function updateJob(
+  id: string,
+  patch: Partial<Job> | ((job: Job) => Partial<Job>),
+): Promise<Job | null> {
+  return withUpdateLock(id, async () => {
+    const job = await getJob(id);
+    if (!job) return null;
+    const next = { ...job, ...(typeof patch === "function" ? patch(job) : patch) };
+    await persist(next);
+    return next;
+  });
 }
 
 export async function listJobs(): Promise<Job[]> {
@@ -344,6 +375,7 @@ export async function deleteJob(id: string): Promise<boolean> {
   live.reconciling.delete(id);
   live.listeners.delete(id);
   live.seqs.delete(id);
+  live.updates.delete(id);
   dirSizeCache.delete(id);
   return true;
 }

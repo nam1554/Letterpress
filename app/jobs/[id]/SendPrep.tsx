@@ -10,25 +10,11 @@ import CommandChip from "../../components/CommandChip";
 import Section from "../../components/Section";
 import { PROSE_WIDTH } from "../../lib/dimensions";
 
+import type { HostingCheckSummary as CheckSummary } from "@/lib/hosting-check";
+
 interface HostingResult {
   created: Array<{ rel: string; replaced: number }>;
   warning?: string;
-}
-
-interface UrlCheck {
-  file: string;
-  url: string;
-  uploadKey: string | null;
-  state: "live" | "missing" | "unreachable";
-  status: number | null;
-}
-
-interface CheckSummary {
-  checks: UrlCheck[];
-  live: number;
-  missing: number;
-  unreachable: number;
-  allUnreachable: boolean;
 }
 
 // 클라이언트 미리보기용 — 서버의 renderCdnUrl과 같은 치환 규칙 (lib/hosting.ts)
