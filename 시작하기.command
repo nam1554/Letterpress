@@ -92,16 +92,27 @@ else
   guide_node_download
 fi
 
-# 이미 떠 있으면 브라우저만 연다 (/api/health 로 우리 앱인지 확인).
-if curl -sf --max-time 8 "$URL/api/health" >/dev/null 2>&1; then
-  say "이미 실행 중입니다 — 브라우저를 엽니다: $URL"
-  [ -z "${MHM_NO_OPEN:-}" ] && open "$URL"
-  exit 0
-fi
+port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+# --max-time 8: health 첫 호출은 Chrome 탐색(lsregister) 때문에 2초를 넘을 수
+# 있다 — 짧게 잡으면 멀쩡히 떠 있는 앱을 못 알아보고 둘째 인스턴스를 띄운다.
+app_at() { curl -sf --max-time 8 "http://localhost:${1}/api/health" >/dev/null 2>&1; }
+
+# 이미 떠 있으면 브라우저만 연다 (/api/health 로 우리 앱인지 확인). 이전 실행이
+# 포트 충돌로 옆 포트(25253~25262)로 비켜갔을 수 있으므로 그 범위까지 본다 —
+# 기본 포트만 확인하면 재더블클릭이 같은 data/ 위에 두 번째 인스턴스를 띄운다
+# (실측: 25253의 앱을 무시하고 25254에 하나 더 시작했다).
+for candidate in "$PORT" {25253..25262}; do
+  port_busy "$candidate" || continue
+  if app_at "$candidate"; then
+    URL="http://localhost:${candidate}"
+    say "이미 실행 중입니다 — 브라우저를 엽니다: $URL"
+    [ -z "${MHM_NO_OPEN:-}" ] && open "$URL"
+    exit 0
+  fi
+done
 
 # 그래도 겹치면 바로 옆 포트로 비켜간다 — 터미널에서 PORT=... 를 붙여
 # 실행하라고 안내해봐야 비개발자에겐 막다른 길이다.
-port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 if port_busy "$PORT"; then
   FREE_PORT=""
   for candidate in {25253..25262}; do
