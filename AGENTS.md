@@ -398,6 +398,14 @@ no auth, single user, filesystem is the database.
   relaxes nothing in the gate: verify badges show pre-edit results. Style ops
   are element-level inline styles, not selection-range execCommand (panel
   clicks steal iframe focus and make range commands unreliable).
+  Saves/restores are serialized per job (in-process queue on globalThis):
+  without it the existsSync→copyFile backup step is a TOCTOU that can snapshot
+  edited content as the "original", and concurrent saves compute manualEdits
+  from stale job reads and lose each other's entries. The backup is
+  attempt-scoped, not workDir-scoped: `createEditJob` strips the copied
+  `edit-backup/` and resume clears `manualEdits` + `edit-backup/` — leaving
+  either behind lets a restore overwrite freshly generated deliverables with
+  another attempt's "original".
 - **Model tuning**: settings `claudeModel` → `claude --model` (e.g. "haiku").
   The prompt bounds weak-model iteration: a band failing verify twice must be
   replaced with a flat section image instead of endless CSS tweaking.

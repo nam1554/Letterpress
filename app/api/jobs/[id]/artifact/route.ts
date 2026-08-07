@@ -13,6 +13,26 @@ const schema = z.union([
   z.object({ file: z.string().min(1), restore: z.literal(true) }),
 ]);
 
+// 같은 잡의 저장/복원은 직렬화한다. 백업 존재 검사와 복사 사이에 다른 저장이
+// 끼면 이미 수정된 내용이 "원본"으로 백업되고(TOCTOU), manualEdits를 핸들러
+// 진입 시점의 잡 스냅샷으로 계산하면 동시 요청이 서로의 엔트리를 덮는다.
+// 앱은 단일 서버 프로세스라 프로세스 내 큐로 충분하다. globalThis에 두는 이유는
+// store.ts의 live 상태와 같다 — dev HMR 모듈 리로드가 큐를 쪼개면 안 된다.
+const g = globalThis as unknown as { __artifactLocks?: Map<string, Promise<unknown>> };
+const locks = (g.__artifactLocks ??= new Map());
+
+function withJobLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const prev = locks.get(id) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  // 실패도 다음 대기자를 막지 않는다; 마지막 대기자가 끝나면 엔트리를 비운다.
+  const tail = run.catch(() => {});
+  locks.set(id, tail);
+  void tail.finally(() => {
+    if (locks.get(id) === tail) locks.delete(id);
+  });
+  return run;
+}
+
 /**
  * PUT /api/jobs/:id/artifact — 뷰어 인라인 편집의 저장/복원.
  * output 최상위 .html만 허용: hosted/ 는 재생성 시 덮이고, images/ 는 대상이 아니다.
@@ -45,38 +65,44 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!full) return NextResponse.json({ error: "잘못된 경로입니다." }, { status: 400 });
 
   const backupFile = path.join(workDir(id), "edit-backup", file);
+  const body = r.data;
 
-  if ("restore" in r.data) {
+  return withJobLock(id, async () => {
+    if ("restore" in body) {
+      if (!existsSync(backupFile)) {
+        return NextResponse.json({ error: "되돌릴 원본 백업이 없습니다." }, { status: 404 });
+      }
+      await copyFile(backupFile, full);
+      // manualEdits는 락 안에서 다시 읽는다 — 진입 시점 스냅샷으로 계산하면
+      // 직전에 끝난 다른 요청의 엔트리를 덮는다.
+      const manualEdits = { ...(await getJob(id))?.manualEdits };
+      delete manualEdits[file];
+      await updateJob(id, {
+        manualEdits: Object.keys(manualEdits).length > 0 ? manualEdits : undefined,
+      });
+      invalidateJobSize(id);
+      return NextResponse.json({ restored: true });
+    }
+
+    if (!existsSync(full)) {
+      return NextResponse.json({ error: "존재하지 않는 산출물입니다." }, { status: 404 });
+    }
     if (!existsSync(backupFile)) {
-      return NextResponse.json({ error: "되돌릴 원본 백업이 없습니다." }, { status: 404 });
+      // 백업 실패 시 저장 중단 — 원본 보존이 저장보다 우선한다.
+      try {
+        await mkdir(path.dirname(backupFile), { recursive: true });
+        await copyFile(full, backupFile);
+      } catch {
+        return NextResponse.json(
+          { error: "원본 백업에 실패해 저장을 중단했습니다. 디스크 상태를 확인해 주세요." },
+          { status: 500 },
+        );
+      }
     }
-    await copyFile(backupFile, full);
-    const manualEdits = { ...job.manualEdits };
-    delete manualEdits[file];
-    await updateJob(id, {
-      manualEdits: Object.keys(manualEdits).length > 0 ? manualEdits : undefined,
-    });
+    await writeFile(full, body.html);
+    const manualEdits = { ...(await getJob(id))?.manualEdits, [file]: Date.now() };
+    await updateJob(id, { manualEdits });
     invalidateJobSize(id);
-    return NextResponse.json({ restored: true });
-  }
-
-  if (!existsSync(full)) {
-    return NextResponse.json({ error: "존재하지 않는 산출물입니다." }, { status: 404 });
-  }
-  if (!existsSync(backupFile)) {
-    // 백업 실패 시 저장 중단 — 원본 보존이 저장보다 우선한다.
-    try {
-      await mkdir(path.dirname(backupFile), { recursive: true });
-      await copyFile(full, backupFile);
-    } catch {
-      return NextResponse.json(
-        { error: "원본 백업에 실패해 저장을 중단했습니다. 디스크 상태를 확인해 주세요." },
-        { status: 500 },
-      );
-    }
-  }
-  await writeFile(full, r.data.html);
-  await updateJob(id, { manualEdits: { ...job.manualEdits, [file]: Date.now() } });
-  invalidateJobSize(id);
-  return NextResponse.json({ saved: true });
+    return NextResponse.json({ saved: true });
+  });
 }

@@ -14,11 +14,8 @@ export function serializeEditedDocument(doc: Document): string {
   for (const el of root.querySelectorAll(`[${SELECTED_ATTR}]`)) el.removeAttribute(SELECTED_ATTR);
   root.querySelector("body")?.removeAttribute("contenteditable");
 
-  const dt = doc.doctype;
-  const doctype = dt
-    ? `<!doctype ${dt.name}${dt.publicId ? ` PUBLIC "${dt.publicId}"` : ""}${
-        dt.systemId ? `${dt.publicId ? "" : " SYSTEM"} "${dt.systemId}"` : ""
-      }>`
-    : "";
+  // figma-edm 산출물은 항상 <!doctype html> — PUBLIC/SYSTEM 재구성은 이 앱이
+  // 편집하는 어떤 문서에도 해당 없는 미검증 일반화라서 두지 않는다.
+  const doctype = doc.doctype ? `<!doctype ${doc.doctype.name}>` : "";
   return `${doctype}\n${root.outerHTML}`;
 }

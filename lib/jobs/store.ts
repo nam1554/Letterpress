@@ -133,6 +133,10 @@ export async function createEditJob(source: Job, instruction: string): Promise<J
   };
   await mkdir(jobDir(job.id), { recursive: true });
   await cp(workDir(source.id), workDir(job.id), { recursive: true });
+  // 수동 편집 백업은 원본 잡의 것이다. 따라오면 새 잡의 첫 수동 저장이 "백업이
+  // 이미 있다"고 판단해 자기 원본을 백업하지 않고, 복원이 원본 잡의 옛 내용으로
+  // 이 잡의 산출물을 덮는다.
+  await rm(path.join(workDir(job.id), "edit-backup"), { recursive: true, force: true });
   await persist(job);
   return job;
 }
