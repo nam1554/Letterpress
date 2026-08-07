@@ -165,9 +165,15 @@ function Viewer() {
   }
 
   const src = `/api/jobs/${id}/preview/${file}${frameNonce ? `?v=${frameNonce}` : ""}`;
-  // 편집 가능 = output 최상위 .html + 잡이 실행 중이 아님 (저장 API 허용 규칙과 동일).
+  // 편집 가능 = output 최상위 .html + 잡이 실행 중이 아님 (저장 API 허용 규칙과
+  // 동일 — Windows의 listArtifacts는 하위 경로를 \ 로 잇는다, 저쪽만 검사하면
+  // 서버가 400으로 거부할 파일에 편집 UI가 뜬다).
   const editable =
-    file.endsWith(".html") && !file.includes("/") && job !== null && !isActive(job.status);
+    file.endsWith(".html") &&
+    !file.includes("/") &&
+    !file.includes("\\") &&
+    job !== null &&
+    !isActive(job.status);
   const hasBackup = Boolean(job?.manualEdits?.[file]);
 
   function reloadFrame() {

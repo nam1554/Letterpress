@@ -1,4 +1,5 @@
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -62,7 +63,14 @@ describe("runner + quality gate (mock provider)", () => {
       status: "failed",
       finishedAt: Date.now(),
       summary: "제한 시간(45분)을 초과해 중단되었습니다.",
+      // 실패 잡을 뷰어에서 수동 편집해 둔 상황 — resume이 산출물을 다시
+      // 생성하므로 편집 기록·백업이 남으면 새 산출물에 "수동 수정됨"이 계속
+      // 뜨고, 복원이 실패 시절 내용으로 되돌린다.
+      manualEdits: { "edm_figma.html": Date.now() },
     });
+    const backupDir = path.join(dir, job.id, "work", "edit-backup");
+    await mkdir(backupDir, { recursive: true });
+    await writeFile(path.join(backupDir, "edm_figma.html"), "<html>실패 시절 내용</html>");
 
     await startJob((await getJob(job.id))!, { resume: true });
     const done = await waitTerminal(job.id);
@@ -70,6 +78,8 @@ describe("runner + quality gate (mock provider)", () => {
     expect(done.status).toBe("succeeded");
     expect(done.summary).not.toContain("제한 시간");
     expect(done.verify?.result).toBe("PASS");
+    expect(done.manualEdits).toBeUndefined();
+    expect(existsSync(backupDir)).toBe(false);
   }, 20_000);
 
   // root는 퍼미션을 무시하므로 쓰기 실패를 만들 수 없다.

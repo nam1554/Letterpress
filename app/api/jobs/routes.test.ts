@@ -32,7 +32,7 @@ import { GET as previewRoute } from "./[id]/preview/[...path]/route";
 import { GET as verifyRoute } from "./[id]/verify/[name]/route";
 import { PUT as artifactRoute } from "./[id]/artifact/route";
 import { liveControllers } from "@/lib/jobs/live";
-import { createJob, getJob, outputDir, updateJob, workDir } from "@/lib/jobs/store";
+import { createEditJob, createJob, getJob, outputDir, updateJob, workDir } from "@/lib/jobs/store";
 import { getSettings } from "@/lib/settings";
 
 const FIGMA_URL = "https://www.figma.com/design/abc123/My-Campaign";
@@ -302,5 +302,47 @@ describe("PUT /api/jobs/:id/artifact", () => {
     const job = await succeededJobWithHtml();
     const res = await artifactRoute(put({ file: "edm_figma.html", restore: true }), ctx(job.id));
     expect(res.status).toBe(404);
+  });
+
+  it("동시 저장이 서로의 manualEdits 엔트리를 지우지 않는다", async () => {
+    const job = await succeededJobWithHtml();
+    await writeFile(path.join(outputDir(job.id), "edm_responsive.html"), ORIGINAL);
+
+    // 두 탭에서 파일 하나씩 동시에 저장 — 진입 시점 잡 스냅샷으로 manualEdits를
+    // 계산하면 나중 요청이 앞 요청의 엔트리를 덮어, 수정 표시와 복원 버튼이
+    // 조용히 사라진다.
+    const [a, b] = await Promise.all([
+      artifactRoute(put({ file: "edm_figma.html", html: "<html><body>a</body></html>" }), ctx(job.id)),
+      artifactRoute(put({ file: "edm_responsive.html", html: "<html><body>b</body></html>" }), ctx(job.id)),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const edits = (await getJob(job.id))?.manualEdits ?? {};
+    expect(Object.keys(edits).sort()).toEqual(["edm_figma.html", "edm_responsive.html"]);
+  });
+
+  it("같은 파일의 겹친 저장에서도 백업은 진짜 원본이다", async () => {
+    const job = await succeededJobWithHtml();
+    const backup = path.join(workDir(job.id), "edit-backup", "edm_figma.html");
+
+    // 저장 더블클릭 — 직렬화가 없으면 existsSync 검사와 copyFile 사이에 다른
+    // 저장의 writeFile이 끼어, 수정본이 "원본"으로 백업될 수 있다.
+    await Promise.all([
+      artifactRoute(put({ file: "edm_figma.html", html: "<html><body>v2</body></html>" }), ctx(job.id)),
+      artifactRoute(put({ file: "edm_figma.html", html: "<html><body>v3</body></html>" }), ctx(job.id)),
+    ]);
+    expect(await readFile(backup, "utf8")).toBe(ORIGINAL);
+  });
+
+  it("부분 수정 잡은 원본 잡의 edit-backup을 물려받지 않는다", async () => {
+    const job = await succeededJobWithHtml();
+    await artifactRoute(put({ file: "edm_figma.html", html: "<html><body>수정</body></html>" }), ctx(job.id));
+
+    // work/ 전체 복사에 백업이 섞이면, 새 잡의 첫 수동 저장이 자기 원본을
+    // 백업하지 않고 복원이 원본 잡의 옛 내용으로 이 잡의 산출물을 덮는다.
+    const edit = await createEditJob((await getJob(job.id))!, "헤드라인을 바꿔줘");
+    expect(existsSync(path.join(workDir(edit.id), "edit-backup"))).toBe(false);
+    // 산출물 자체는 그대로 복사되어야 한다.
+    expect(existsSync(path.join(outputDir(edit.id), "edm_figma.html"))).toBe(true);
   });
 });

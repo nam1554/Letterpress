@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import { getProvider } from "../providers/registry";
 import { getSettings } from "../settings";
 import type { AgentEvent, AgentTask } from "../providers/types";
@@ -46,11 +48,22 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
   const emit = (e: AgentEvent) => appendEvent(job.id, e);
 
   try {
-    // resume은 실패 잡을 되살리므로 이전 종료 기록을 지운다.
+    // resume은 실패 잡을 되살리므로 이전 종료 기록을 지운다. 수동 편집의
+    // 기록·백업도 함께 지운다 — 이번 실행이 산출물을 다시 생성하므로, 남겨두면
+    // 새 산출물에 "수동 수정됨"이 계속 뜨고 복원이 실패 시절 내용으로 되돌린다.
+    if (resume) {
+      await rm(path.join(workDir(job.id), "edit-backup"), { recursive: true, force: true });
+    }
     await updateJob(
       job.id,
       resume
-        ? { status: "running", finishedAt: undefined, summary: undefined, verify: undefined }
+        ? {
+            status: "running",
+            finishedAt: undefined,
+            summary: undefined,
+            verify: undefined,
+            manualEdits: undefined,
+          }
         : { status: "running" },
     );
   } catch (err) {

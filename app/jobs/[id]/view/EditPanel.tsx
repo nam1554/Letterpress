@@ -1,19 +1,13 @@
 "use client";
 
 import { Button, Group, Paper, Text } from "@mantine/core";
+import { rgbToHex } from "./color";
 
 export interface PanelTarget {
   el: HTMLElement;
   /** 스크롤 컨테이너 기준 절대 좌표 (요소 좌상단). */
   left: number;
   top: number;
-}
-
-/** "rgb(1, 2, 3)" → "#010203" — <input type="color">는 hex만 받는다. */
-export function rgbToHex(rgb: string): string {
-  const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!m) return "#000000";
-  return `#${m.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**
@@ -75,7 +69,7 @@ export default function EditPanel({
           글자
           <input
             type="color"
-            defaultValue={computed ? rgbToHex(computed.color) : "#000000"}
+            defaultValue={(computed && rgbToHex(computed.color)) ?? "#000000"}
             onChange={(e) => {
               // eslint-disable-next-line react-hooks/immutability
               el.style.color = e.currentTarget.value;
@@ -87,7 +81,9 @@ export default function EditPanel({
           배경
           <input
             type="color"
-            defaultValue={computed ? rgbToHex(computed.backgroundColor) : "#ffffff"}
+            // 투명 배경은 흰색으로 보여준다 — 잘못 확정해도 eDM 배경과 사실상
+            // 동일하고, 검정처럼 파괴적으로 저장되지 않는다.
+            defaultValue={(computed && rgbToHex(computed.backgroundColor)) ?? "#ffffff"}
             onChange={(e) => {
               // eslint-disable-next-line react-hooks/immutability
               el.style.backgroundColor = e.currentTarget.value;
