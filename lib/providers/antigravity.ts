@@ -1,5 +1,5 @@
 import { getSettings } from "../settings";
-import { exitReason, runJsonlCli } from "./jsonl-cli";
+import { concludeJsonlRun, runJsonlCli } from "./jsonl-cli";
 import { agentEnv, buildEdmPrompt } from "./prompt";
 import type { AgentEvent, AgentProvider, AgentResult } from "./types";
 
@@ -174,25 +174,16 @@ export const antigravityProvider: AgentProvider = {
 
     const { finalResponse, errorText } = mapper.finish();
 
-    if (result.kind === "aborted") return { ok: false, summary: "사용자가 취소했습니다." };
-    if (result.kind === "spawn-error") {
-      const message = result.error?.message ?? "unknown";
-      onEvent({ ts: Date.now(), type: "error", text: `agy 실행 실패: ${message}` });
-      return {
-        ok: false,
-        summary: `Antigravity CLI를 실행할 수 없습니다: ${message} (antigravity.google.com/download 설치 후 \`agy\`를 한 번 실행해 로그인하세요)`,
-      };
-    }
-
-    // 실측: 프롬프트가 FATAL을 찍어도 agy의 status는 SUCCESS다.
-    // 다른 프로바이더와 같이 최종 응답의 접두어로 판정한다.
-    const fatal = finalResponse.trim().startsWith("FATAL:");
-    const ok = result.code === 0 && !fatal && !errorText;
-    return {
-      ok,
-      summary: ok
-        ? finalResponse || "완료"
-        : errorText || finalResponse || result.stderrTail || exitReason(result),
-    };
+    // 실측: 프롬프트가 FATAL을 찍어도 agy의 status는 SUCCESS다 — FATAL 접두어
+    // 판정은 다른 프로바이더와 함께 concludeJsonlRun이 맡는다.
+    return concludeJsonlRun(result, {
+      bin: "agy",
+      title: "Antigravity",
+      installHint:
+        "(antigravity.google.com/download 설치 후 `agy`를 한 번 실행해 로그인하세요)",
+      finalText: finalResponse,
+      errorText,
+      onEvent,
+    });
   },
 };
