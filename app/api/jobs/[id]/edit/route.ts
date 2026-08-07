@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readBody } from "@/lib/api-body";
+import { requireJob } from "@/lib/api-job";
 import { ConcurrencyLimitError, startJob } from "@/lib/jobs/runner";
-import { createEditJob, deleteJob, getJob, listArtifacts } from "@/lib/jobs/store";
+import { createEditJob, deleteJob, listArtifacts } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,9 @@ export async function POST(
   const r = await readBody(req, editBody);
   if (!r.ok) return r.res;
 
-  const source = await getJob(id);
-  if (!source) return NextResponse.json({ error: "작업을 찾을 수 없습니다." }, { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
+  const source = j.job;
   if (source.status === "running" || source.status === "queued") {
     return NextResponse.json(
       { error: "실행 중인 작업은 수정할 수 없습니다. 완료를 기다리세요." },

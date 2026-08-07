@@ -10,7 +10,8 @@ import {
   swapEmbeddedFontsForCdn,
   templateNeedsFolder,
 } from "@/lib/hosting";
-import { getJob, invalidateJobSize, listArtifacts, outputDir } from "@/lib/jobs/store";
+import { requireJob } from "@/lib/api-job";
+import { invalidateJobSize, listArtifacts, outputDir } from "@/lib/jobs/store";
 import { saveSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -25,8 +26,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const job = await getJob(id);
-  if (!job) return NextResponse.json({ error: "작업을 찾을 수 없습니다." }, { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
 
   const r = await readBody(
     req,

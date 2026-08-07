@@ -2,7 +2,8 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { PassThrough, Readable } from "node:stream";
 import { ZipArchive } from "archiver";
 import { NextRequest } from "next/server";
-import { getJob, listArtifacts, outputDir, resolveArtifact } from "@/lib/jobs/store";
+import { requireJob } from "@/lib/api-job";
+import { listArtifacts, outputDir, resolveArtifact } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const job = await getJob(id);
-  if (!job) return new Response("not found", { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
 
   const file = req.nextUrl.searchParams.get("file");
   if (file) {

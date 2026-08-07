@@ -84,9 +84,10 @@ no auth, single user, filesystem is the database.
   that claim was wrong and cost a diagnosis-less backend once (fixed
   2026-07-31). The real list, so the next backend doesn't skip any of it:
   `lib/providers/<id>.ts` (the `AgentProvider` impl) · a `registry.ts` entry ·
-  `lib/setup.ts` (`<id>Setup()` implemented AND registered in
+  `lib/setup/backends.ts` (`<id>Setup()` implemented AND registered in
   `getBackendSetup`'s roster — skip this and the backend ships with no
-  install/auth/Figma-access diagnosis) · `app/components/BackendSetup.tsx`'s
+  install/auth/Figma-access diagnosis; `lib/setup.ts` is only the re-export
+  façade) · `app/components/BackendSetup.tsx`'s
   `SHORT_NAME` (notification text falls back to the raw id without it) ·
   `app/lib/first-run.ts` — BOTH `STEPS` and `SUBSCRIPTION_PICKS`; tests fail
   if either is missed, because a teammate holding that subscription would

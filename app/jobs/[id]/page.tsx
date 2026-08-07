@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Anchor, Button, Container, Group, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -8,34 +8,23 @@ import { Streamdown } from "streamdown";
 import { figmaLabel, formatElapsed } from "../../lib/format";
 import { PAGE_WIDTH, PROSE_WIDTH } from "../../lib/dimensions";
 import { isActive } from "../../lib/status";
-import { requestJson, sendJson } from "../../lib/request";
+import { sendJson } from "../../lib/request";
 import AppHeader from "../../components/AppHeader";
 import DiagnosticsLink from "../../components/DiagnosticsLink";
 import Section from "../../components/Section";
 import StatusDot from "../../components/StatusDot";
 import { IconBell, IconBellOff, IconDownload } from "../../components/icons";
-import ArtifactList, { type Artifact } from "./ArtifactList";
+import ArtifactList from "./ArtifactList";
 import FailureHelp from "./FailureHelp";
-import LogViewer, { type AgentEvent } from "./LogViewer";
+import LogViewer from "./LogViewer";
 import SendPrep from "./SendPrep";
 import VerifyReport from "./VerifyReport";
-// 서버 스토어의 잡 타입 그대로 — 사본은 필드가 늘 때(전례: manualEdits) 조용히
-// 낡는다. import type은 빌드에서 지워져 서버 코드가 번들에 들어오지 않는다.
-import type { Job } from "@/lib/jobs/store";
-
-interface JobDetail {
-  job: Job;
-  artifacts: Artifact[];
-  verifyFiles?: string[];
-}
+import { useJobStream } from "./use-job-stream";
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [job, setJob] = useState<Job | null>(null);
-  const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [verifyFiles, setVerifyFiles] = useState<string[]>([]);
+  const { job, events, artifacts, verifyFiles, refresh } = useJobStream(id);
   const [now, setNow] = useState(() => Date.now());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editText, setEditText] = useState("");
@@ -54,45 +43,6 @@ export default function JobPage() {
         Notification.permission === "granted",
     );
   }, []);
-
-  const refresh = useCallback(async () => {
-    if (!id) return;
-    // SSE 오류 핸들러에서도 불린다 — 서버가 죽어 fetch가 거부되면 여기서
-    // 던지는 대신 조용히 다음 시도를 기다린다.
-    const r = await requestJson<JobDetail>(`/api/jobs/${id}`);
-    if (!r.ok) return;
-    setJob(r.data.job);
-    setArtifacts(r.data.artifacts);
-    setVerifyFiles(r.data.verifyFiles ?? []);
-  }, [id]);
-
-  useEffect(() => {
-    if (!id) return;
-    // refresh는 async — setState는 fetch 완료 후 콜백에서 일어난다 (lint false positive)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
-
-    const es = new EventSource(`/api/jobs/${id}/events`);
-    // 재연결 시 서버가 히스토리를 다시 리플레이하므로 중복 방지를 위해 비운다.
-    es.onopen = () => setEvents([]);
-    es.addEventListener("agent", (e) => {
-      setEvents((prev) => [...prev, JSON.parse((e as MessageEvent).data)]);
-    });
-    es.addEventListener("state", (e) => {
-      const next = JSON.parse((e as MessageEvent).data) as Job | null;
-      if (next) {
-        setJob(next);
-        if (next.status === "succeeded" || next.status === "failed") {
-          void refresh();
-          es.close();
-        }
-      }
-    });
-    es.onerror = () => {
-      void refresh();
-    };
-    return () => es.close();
-  }, [id, refresh]);
 
   // 완료/실패 시 브라우저 알림 (옵트인).
   useEffect(() => {

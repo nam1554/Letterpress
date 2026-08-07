@@ -1,3 +1,4 @@
+import { requireJob } from "@/lib/api-job";
 import { getJob, readEvents, STALE_GRACE_MS, subscribe } from "@/lib/jobs/store";
 import type { AgentEvent } from "@/lib/providers/types";
 
@@ -16,8 +17,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const job = await getJob(id);
-  if (!job) return new Response("not found", { status: 404 });
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
 
   // start()가 끝나기 전에 스트림이 취소될 수 있어 cancel()에서도 닿아야 한다.
   let unsubscribe = () => {};

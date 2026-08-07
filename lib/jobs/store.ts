@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { hmrGlobal } from "../hmr-global";
 import type { AgentEvent } from "../providers/types";
 import type { VerifySummary } from "./acceptance";
 import { liveControllers } from "./live";
@@ -48,13 +49,12 @@ interface JobsGlobal {
   /** 잡별 updateJob 직렬화 큐 — read-modify-write의 lost update 방지. */
   updates: Map<string, Promise<unknown>>;
 }
-const g = globalThis as unknown as { __jobsGlobal?: JobsGlobal };
-const live: JobsGlobal = (g.__jobsGlobal ??= {
+const live: JobsGlobal = hmrGlobal("__jobsGlobal", () => ({
   listeners: new Map(),
   reconciling: new Map(),
   seqs: new Map(),
   updates: new Map(),
-});
+}));
 // fields added (or reshaped) after first deploys of this global — HMR keeps the
 // old object, so check the shape rather than only the presence.
 if (!(live.reconciling instanceof Map)) live.reconciling = new Map();

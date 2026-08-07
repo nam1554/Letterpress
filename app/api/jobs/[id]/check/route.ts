@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { NextRequest, NextResponse } from "next/server";
+import { requireJob } from "@/lib/api-job";
 import { checkEmailHtml } from "@/lib/email-check";
-import { getJob, resolveArtifact } from "@/lib/jobs/store";
+import { resolveArtifact } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!(await getJob(id))) {
-    return NextResponse.json({ error: "작업을 찾을 수 없습니다." }, { status: 404 });
-  }
+  const j = await requireJob(id);
+  if (!j.ok) return j.res;
   const file = req.nextUrl.searchParams.get("file") ?? "";
   const full = file.endsWith(".html") ? resolveArtifact(id, file) : null;
   if (!full) return NextResponse.json({ error: "유효한 HTML 산출물이 아닙니다." }, { status: 400 });
