@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hmrGlobal } from "../hmr-global";
+import { withKeyedLock } from "../serialize";
 import type { AgentEvent } from "../providers/types";
 import type { VerifySummary } from "./acceptance";
 import { liveControllers } from "./live";
@@ -206,32 +207,17 @@ export async function getJob(id: string): Promise<Job | null> {
 }
 
 /**
- * 같은 잡의 갱신을 순서대로 실행한다. updateJob은 읽기→병합→쓰기라 직렬화
- * 없이는 동시 호출이 서로의 패치를 덮는다(lost update) — 호출처 규율이 아니라
- * 여기서 구조적으로 막는다. 실패해도 다음 대기자를 막지 않고, 마지막 대기자가
- * 끝나면 엔트리를 비운다.
- */
-function withUpdateLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
-  const prev = live.updates.get(id) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  const tail = run.catch(() => {});
-  live.updates.set(id, tail);
-  void tail.finally(() => {
-    if (live.updates.get(id) === tail) live.updates.delete(id);
-  });
-  return run;
-}
-
-/**
  * 잡을 갱신한다. patch는 객체 또는 현재 잡을 받는 함수 — **현재 값에서
  * 파생되는 패치(manualEdits 등)는 반드시 함수형으로** 넘겨야 한다. 밖에서
  * 읽어 둔 잡으로 계산하면 락 안에서 다시 읽는 이 함수의 보호를 받지 못한다.
+ * 잡별 직렬화(withKeyedLock)로 read-modify-write의 lost update를 구조적으로
+ * 막는다 — 호출처 규율에 맡기지 않는다.
  */
 export async function updateJob(
   id: string,
   patch: Partial<Job> | ((job: Job) => Partial<Job>),
 ): Promise<Job | null> {
-  return withUpdateLock(id, async () => {
+  return withKeyedLock(live.updates, id, async () => {
     const job = await getJob(id);
     if (!job) return null;
     const next = { ...job, ...(typeof patch === "function" ? patch(job) : patch) };

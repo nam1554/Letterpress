@@ -6,6 +6,7 @@ import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import { requireJob } from "@/lib/api-job";
 import { hmrGlobal } from "@/lib/hmr-global";
+import { withKeyedLock } from "@/lib/serialize";
 import { invalidateJobSize, resolveArtifact, updateJob, workDir } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
@@ -23,17 +24,7 @@ const schema = z.union([
 // 리로드가 큐를 쪼개면 안 된다.
 const locks = hmrGlobal("__artifactLocks", () => new Map<string, Promise<unknown>>());
 
-function withJobLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
-  const prev = locks.get(id) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  // 실패도 다음 대기자를 막지 않는다; 마지막 대기자가 끝나면 엔트리를 비운다.
-  const tail = run.catch(() => {});
-  locks.set(id, tail);
-  void tail.finally(() => {
-    if (locks.get(id) === tail) locks.delete(id);
-  });
-  return run;
-}
+const withJobLock = <T,>(id: string, fn: () => Promise<T>) => withKeyedLock(locks, id, fn);
 
 /**
  * PUT /api/jobs/:id/artifact — 뷰어 인라인 편집의 저장/복원.
