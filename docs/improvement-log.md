@@ -168,3 +168,7 @@ tsc·lint 클린, 빌드 성공(경고 1건은 위 백로그의 판단 근거 �
 - 바퀴 2: 진단 번들 실측(edit 잡 35605870 대상 zip 전체 경로) — 빈손.
   실토큰(45자) 설정 상태에서 토큰 형태 스캔 전 파일 0건, settings 마스킹
   정상, edit 잡의 job/verify/events/artifacts 포함 확인.
+- 바퀴 3: 발송 준비 E2E 실측(mock 잡 → CDN 치환 → manifest → 실 CDN 업로드
+  확인) — 빈손. 치환 1건/파일 정확, manifest 기록 정상, 실 CDN 404가
+  missing으로 정확 분류(unreachable 오진 없음), 업로드 키 규칙 일치.
+  2연속 빈손 → 간격 1시간으로 확대.
