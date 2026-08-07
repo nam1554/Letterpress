@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readBody } from "@/lib/api-body";
-import { runningJobCount, startJob } from "@/lib/jobs/runner";
-import { createEditJob, getJob, listArtifacts } from "@/lib/jobs/store";
-import { getSettings } from "@/lib/settings";
+import { ConcurrencyLimitError, startJob } from "@/lib/jobs/runner";
+import { createEditJob, deleteJob, getJob, listArtifacts } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -42,17 +41,17 @@ export async function POST(
     );
   }
 
-  const maxConcurrent = getSettings().maxConcurrentJobs;
-  if (runningJobCount() >= maxConcurrent) {
-    return NextResponse.json(
-      {
-        error: `동시에 실행할 수 있는 작업은 ${maxConcurrent}개입니다. 실행 중인 작업이 끝나거나 취소된 뒤 다시 시도하세요.`,
-      },
-      { status: 429 },
-    );
-  }
-
+  // 동시 실행 한도는 startJob이 원자적으로 판정한다 (POST /api/jobs와 동일).
   const job = await createEditJob(source, r.data.instruction);
-  await startJob(job);
+  try {
+    await startJob(job);
+  } catch (err) {
+    if (err instanceof ConcurrencyLimitError) {
+      // 시작하지 못한 복사본 잡을 남기면 목록에 유령 queued가 쌓인다.
+      await deleteJob(job.id);
+      return NextResponse.json({ error: err.message }, { status: 429 });
+    }
+    throw err;
+  }
   return NextResponse.json({ job }, { status: 201 });
 }

@@ -105,8 +105,12 @@ describe("POST /api/jobs", () => {
     for (let i = 0; i < getSettings().maxConcurrentJobs; i++) {
       liveControllers.set(`busy${i}`, new AbortController());
     }
+    const before = (await (await listJobsRoute()).json()).jobs.length;
     const res = await createJobRoute(post({ figmaUrl: FIGMA_URL, provider: "mock" }));
     expect(res.status).toBe(429);
+    // 한도 판정이 startJob으로 옮겨졌으므로 잡이 먼저 만들어졌다 폐기된다 —
+    // 유령 queued가 목록에 남으면 안 된다.
+    expect((await (await listJobsRoute()).json()).jobs.length).toBe(before);
   });
 });
 

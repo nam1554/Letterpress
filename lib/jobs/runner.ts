@@ -8,6 +8,22 @@ import { liveControllers } from "./live";
 import { notifyJobFinished } from "./notify";
 import { appendEvent, updateJob, workDir, type Job } from "./store";
 
+/** startJob 거부: 같은 잡이 이미 실행 중 — 라우트는 409로 매핑한다. */
+export class AlreadyRunningError extends Error {
+  constructor() {
+    super("이미 실행 중인 작업입니다.");
+  }
+}
+
+/** startJob 거부: 동시 실행 한도 초과 — 라우트는 429로 매핑한다. */
+export class ConcurrencyLimitError extends Error {
+  constructor(max: number) {
+    super(
+      `동시에 실행할 수 있는 작업은 ${max}개입니다. 실행 중인 작업이 끝나거나 취소된 뒤 다시 시도하세요.`,
+    );
+  }
+}
+
 export interface StartOptions {
   /** Dev/smoke-test escape hatch — eDM 프롬프트를 통째로 대체. */
   promptOverride?: string;
@@ -31,14 +47,23 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
   // 덮어써 먼저 끝난 쪽의 finally가 남은 쪽 엔트리까지 지운다: 실행 중인데
   // 컨트롤러가 없으니 reconcile이 실패로 오판하고, 취소도 닿지 않는다.
   if (liveControllers.has(job.id)) {
-    throw new Error("이미 실행 중인 작업입니다.");
+    throw new AlreadyRunningError();
   }
   // 이 시도가 시작된 시각 — 품질 게이트가 이전 실행의 검증 결과를 이번 증거로
   // 인정하지 않도록 하는 기준점.
   const startedAt = Date.now();
   // 설정 읽기 실패는 전역 상태를 만들기 전에 터져야 한다.
   // A runaway agent must not run forever. Full pipeline is typically 10-25 min.
-  const timeoutMinutes = getSettings().jobTimeoutMinutes;
+  const settings = getSettings();
+  const timeoutMinutes = settings.jobTimeoutMinutes;
+
+  // 동시 실행 한도는 여기서만 판정한다 — 각 잡이 10~25분짜리 CLI 에이전트 실행
+  // 이라 상한이 필요하고, 라우트에서 검사하면 검사와 시작 사이의 await 동안
+  // 동시 요청이 한도를 초과한다. 이 지점부터 아래 controller 등록까지는 await가
+  // 없어 검사+등록이 원자적이다.
+  if (liveControllers.size >= settings.maxConcurrentJobs) {
+    throw new ConcurrencyLimitError(settings.maxConcurrentJobs);
+  }
 
   const controller = new AbortController();
   liveControllers.set(job.id, controller);
@@ -75,7 +100,7 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
     );
   } catch (err) {
     // 시작에 실패했으면 프로세스 전역 상태를 되돌린다. 남겨두면 타이머가 계속
-    // 살아 있고, runningJobCount()가 영구히 부풀어 동시 실행 한도가 이후 모든
+    // 살아 있고, liveControllers가 영구히 부풀어 동시 실행 한도가 이후 모든
     // 작업을 거부하며, deleteJob도 이 잡을 영영 지우지 못한다.
     clearTimeout(timer);
     liveControllers.delete(job.id);
@@ -197,11 +222,6 @@ export async function startJob(job: Job, opts: StartOptions = {}): Promise<void>
       liveControllers.delete(job.id);
     }
   })();
-}
-
-/** Number of jobs currently executing in this process. */
-export function runningJobCount(): number {
-  return liveControllers.size;
 }
 
 export function cancelJob(id: string): boolean {
