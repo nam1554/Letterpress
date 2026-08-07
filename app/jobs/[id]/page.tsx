@@ -32,6 +32,7 @@ interface Job {
   verify?: VerifySummary;
   editOf?: string;
   instruction?: string;
+  manualEdits?: Record<string, number>;
 }
 
 interface JobDetail {
@@ -336,6 +337,13 @@ export default function JobPage() {
               <Streamdown>{job.summary}</Streamdown>
             </div>
           </Section>
+        )}
+
+        {job?.manualEdits && Object.keys(job.manualEdits).length > 0 && (
+          <Text size="xs" c="yellow" mt="md" data-testid="manual-edit-note">
+            수동 수정됨: {Object.keys(job.manualEdits).join(", ")} — 아래 픽셀 검증 결과는 수정 전
+            기준이며, 다른 산출물 파일과 어긋날 수 있습니다.
+          </Text>
         )}
 
         {!running && <VerifyReport jobId={id} files={verifyFiles} verify={job?.verify} />}

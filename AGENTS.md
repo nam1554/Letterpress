@@ -391,6 +391,13 @@ no auth, single user, filesystem is the database.
   verify-PASS requirement to a warning (intentional divergence from Figma).
   `startJob` persists the running status BEFORE resolving — SSE connects right
   after the HTTP response must not see a stale terminal state.
+  Inline edit: the viewer (`/jobs/[id]/view`) can contentEditable-edit the
+  top-level HTML deliverables in place (`PUT /api/jobs/:id/artifact`) — first
+  save backs the original up to `work/edit-backup/` (outside output/, so it
+  never shows in artifact lists or zips), `job.manualEdits` marks the file and
+  relaxes nothing in the gate: verify badges show pre-edit results. Style ops
+  are element-level inline styles, not selection-range execCommand (panel
+  clicks steal iframe focus and make range commands unreliable).
 - **Model tuning**: settings `claudeModel` → `claude --model` (e.g. "haiku").
   The prompt bounds weak-model iteration: a band failing verify twice must be
   replaced with a flat section image instead of endless CSS tweaking.
