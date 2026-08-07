@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import { requireJob } from "@/lib/api-job";
+import { hmrGlobal } from "@/lib/hmr-global";
 import { invalidateJobSize, resolveArtifact, updateJob, workDir } from "@/lib/jobs/store";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,7 @@ const schema = z.union([
 // 내부 직렬화가 막는다. 앱은 단일 서버 프로세스라 프로세스 내 큐로 충분하다.
 // globalThis에 두는 이유는 store.ts의 live 상태와 같다 — dev HMR 모듈
 // 리로드가 큐를 쪼개면 안 된다.
-const g = globalThis as unknown as { __artifactLocks?: Map<string, Promise<unknown>> };
-const locks = (g.__artifactLocks ??= new Map());
+const locks = hmrGlobal("__artifactLocks", () => new Map<string, Promise<unknown>>());
 
 function withJobLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
   const prev = locks.get(id) ?? Promise.resolve();

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { hmrGlobal } from "./hmr-global";
 import { getProvider, listProviders } from "./providers/registry";
 import type { ProviderVerification } from "./providers/types";
 import { getSettings } from "./settings";
@@ -262,10 +263,11 @@ function finish(id: string, steps: SetupStep[]): BackendSetup {
 }
 
 const CACHE_MS = 5 * 60_000;
+// 이 둘은 스냅샷 재할당으로 갱신되는 캐시라 hmrGlobal(제자리 변이 컨테이너
+// 전용)이 맞지 않는다 — 원시 globalThis 접근을 유지한다.
 const g = globalThis as unknown as {
   __mhmSetup?: { at: number; backends: BackendSetup[] };
   __mhmSetupInFlight?: Promise<BackendSetup[]>;
-  __mhmSetupTests?: Map<string, Promise<BackendTestResult>>;
 };
 
 export async function getBackendSetup(force = false): Promise<BackendSetup[]> {
@@ -308,7 +310,10 @@ const TEST_PROMPT =
 
 export async function runBackendTest(id: string): Promise<BackendTestResult> {
   // 같은 백엔드의 테스트가 이미 도는 중이면 합류한다 (중복 스폰 방지).
-  const tests = (g.__mhmSetupTests ??= new Map());
+  const tests = hmrGlobal(
+    "__mhmSetupTests",
+    () => new Map<string, Promise<BackendTestResult>>(),
+  );
   const inFlight = tests.get(id);
   if (inFlight) return inFlight;
 

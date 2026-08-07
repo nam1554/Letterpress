@@ -1,13 +1,18 @@
 // Shared in-process liveness state, split out so store.ts can check runner
 // liveness without a store↔runner import cycle. globalThis-backed to survive
 // Next dev HMR module reloads.
-const g = globalThis as unknown as {
-  __mhmControllers?: Map<string, AbortController>;
-  __mhmExitHook?: boolean;
-};
+import { hmrGlobal } from "../hmr-global";
+
+// exit hook 플래그는 hmrGlobal로 감싸지 않는다 — boolean 원시값이라 컨테이너
+// 패턴이 맞지 않고, 잘못 두 번 훅이 걸리면 SIGINT 핸들러의 listenerCount
+// 검사가 어긋나 Ctrl-C 종료가 깨진다.
+const g = globalThis as unknown as { __mhmExitHook?: boolean };
 
 /** AbortControllers of jobs currently executing in this process. */
-export const liveControllers: Map<string, AbortController> = (g.__mhmControllers ??= new Map());
+export const liveControllers: Map<string, AbortController> = hmrGlobal(
+  "__mhmControllers",
+  () => new Map(),
+);
 
 /**
  * 실행 중인 모든 잡을 중단한다 — abort는 jsonl-cli의 killGroup을 동기로 호출해
