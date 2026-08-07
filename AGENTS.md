@@ -38,7 +38,10 @@ no auth, single user, filesystem is the database.
   PASS 97.2~97.5%, 14~16min · 2026-07-30 on the rewritten browser-measured
   gate: PASS 98.12%, 15min, gate failures/warnings/repair runs all zero,
   380 live chars, 13 images all loaded, 28.0% coverage, measurement 2.7s for
-  both deliverables). `codex` gamed the gate three times historically
+  both deliverables · 2026-08-07 re-measured through the refactored path —
+  concludeJsonlRun, atomic cap in startJob, serialized updateJob — job
+  `0c12f6ac`: PASS 97.64%, 13.9min, height Δ 0, failures/warnings/repairs
+  all zero). `codex` gamed the gate three times historically
   (screenshot variants ×3 — see the acceptance gate notes), but all three of
   those runs predate the anti-gaming commits; they are kept as evidence of
   *why* the gate exists, not as the current verdict. Re-run against the
