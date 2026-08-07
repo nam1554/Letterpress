@@ -64,12 +64,13 @@ async function probe(
   fetcher: ProbeFetcher,
   timeoutMs: number,
 ): Promise<UrlCheck> {
-  const signal = AbortSignal.timeout(timeoutMs);
   try {
-    let res = await fetcher(entry.url, "HEAD", signal);
+    // 타임아웃은 요청마다 새로 잡는다 — HEAD가 시간을 다 쓰고 405를 주면,
+    // 폴백 GET이 남은 몇 ms에 잘려 "닿았는데 unreachable"로 오진된다.
+    let res = await fetcher(entry.url, "HEAD", AbortSignal.timeout(timeoutMs));
     // 일부 서버는 HEAD를 막는다 — 그 응답으로 미업로드를 판정하면 오진이다.
     if (res.status === 405 || res.status === 501) {
-      res = await fetcher(entry.url, "GET", signal);
+      res = await fetcher(entry.url, "GET", AbortSignal.timeout(timeoutMs));
     }
     const live = res.status >= 200 && res.status < 300;
     return { ...entry, state: live ? "live" : "missing", status: res.status };

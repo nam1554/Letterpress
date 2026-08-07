@@ -154,7 +154,10 @@ export default function SendPrep({
           data-testid="cdn-template"
           label="URL 템플릿 (설정에 저장돼 재사용)"
           value={template}
-          onChange={(e) => setTemplateInput(e.currentTarget.value)}
+          onChange={(e) => {
+            setTemplateInput(e.currentTarget.value);
+            setCheck(null); // 검사 결과는 이전 교체본 기준 — 입력이 바뀌면 오해를 낳는다
+          }}
           placeholder="https://cdn.example.com/iiif/3/{folder}__{file}/full/max/0/default.{ext}"
           style={{ flex: 1 }}
           styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
@@ -163,7 +166,10 @@ export default function SendPrep({
           data-testid="cdn-folder"
           label="캠페인 폴더명"
           value={folder}
-          onChange={(e) => setFolderInput(e.currentTarget.value)}
+          onChange={(e) => {
+            setFolderInput(e.currentTarget.value);
+            setCheck(null);
+          }}
           placeholder={`aisurfer_edm_${today()}`}
           disabled={!needsFolder}
           error={folderInvalid ? "영문·숫자·._- 만 사용" : undefined}
