@@ -71,7 +71,7 @@ export const codexProvider: AgentProvider = {
   id: "codex",
   label: "Codex CLI (ChatGPT 구독)",
   verification: "verified",
-  verificationNote: "2026-07-31 실측 PASS 93.51%, 3.3분",
+  verificationNote: "2026-08-07 실측 PASS 93.88%, 4.5분 (게이트 경고·보수 0)",
 
   async run(task, onEvent, signal): Promise<AgentResult> {
     if (!(await loggedIn())) {

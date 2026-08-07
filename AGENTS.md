@@ -49,11 +49,13 @@ no auth, single user, filesystem is the database.
   *why* the gate exists, not as the current verdict. Re-run against the
   current prompt + gate (2026-07-31, job `d1febcc0`): PASS 93.51%, 3.3min,
   530 live chars, 9 images, zero gate failures/errors — `codex` is verified,
-  not experimental.
+  not experimental. Re-measured 2026-08-07 through the refactored provider
+  path (job `779fb47c`): PASS 93.88%, 4.5min, warnings/repairs zero.
   `antigravity` (Google's `agy` CLI) was added and verified the same day
   (job `cf09c7e0`, run through the app end-to-end: provider → jsonl-cli →
   parser → gate): PASS 93.5%, 3.7min, 351 live chars, 13 images, zero gate
-  failures. Three things only real measurement revealed, all load-bearing for
+  failures. Re-measured 2026-08-07 through the refactored path (job
+  `4925a733`): PASS 97.66%, 3.3min, height Δ 0, warnings/repairs zero. Three things only real measurement revealed, all load-bearing for
   `lib/providers/antigravity.ts` and `lib/setup.ts`:
   - **No Figma MCP.** `agy`'s `init.tools` lists 56 tools and none of them are
     Figma-specific — the REST token (`FIGMA_TOKEN`, from the settings Figma
