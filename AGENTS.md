@@ -419,7 +419,13 @@ no auth, single user, filesystem is the database.
   exported and unit-tested in `measure-serialize.test.ts` (ordering, overlap,
   and that a rejected job does not poison the queue for later ones) — testing
   it through real browsers would mean causing the very contention being fixed.
-- **Resume & targeted edits**: `POST /api/jobs/:id/resume` restarts a failed
+- **Resume & targeted edits**: first real edit run recorded 2026-08-07 (job
+  `35605870`, editOf `0c12f6ac`, claude-code): a one-phrase copy change
+  ("고객님"→"회원님") landed in BOTH deliverables with every other phrase
+  byte-identical (26/26), the font subset was regenerated for the new glyph
+  set, and verify re-ran to PASS 97.63% (Δ0) in 1.7min — the copied-workDir
+  edit prompt path works end-to-end, not just under mock.
+  `POST /api/jobs/:id/resume` restarts a failed
   job in the SAME workDir (the current gate failures become the first run's
   repair context — intermediate files are reused, e.g. after a timeout).
   `POST /api/jobs/:id/edit {instruction}` copies the source job's `work/` into
