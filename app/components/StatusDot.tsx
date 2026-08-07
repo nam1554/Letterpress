@@ -51,13 +51,12 @@ export default function StatusDot({
           borderRadius: "50%",
           flexShrink: 0,
           background: "currentColor",
-          // 실행 중만 살아 있다는 신호를 준다. prefers-reduced-motion은
-          // globals.css에서 전역으로 꺾는다.
+          // 실행 중만 살아 있다는 신호를 준다. keyframes(mhm-pulse)와
+          // prefers-reduced-motion 처리는 globals.css에 있다.
           animation: status === "running" ? "mhm-pulse 1.6s ease-in-out infinite" : undefined,
         }}
       />
       {label}
-      <style>{`@keyframes mhm-pulse{0%,100%{opacity:1}50%{opacity:.35}}`}</style>
     </Text>
   );
 }

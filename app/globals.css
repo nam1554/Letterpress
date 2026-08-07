@@ -58,6 +58,18 @@ body {
   outline-offset: 2px;
 }
 
+/* StatusDot의 "실행 중" 점 맥동 — 컴포넌트가 인스턴스마다 <style>을 주입하면
+   히스토리 N행 = 동일 태그 N개가 되므로 전역에 한 번만 둔다. */
+@keyframes mhm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
