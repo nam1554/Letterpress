@@ -24,6 +24,8 @@ export interface Job {
   editOf?: string;
   /** 부분 수정 지시문 (editOf와 함께 설정됨). */
   instruction?: string;
+  /** 뷰어에서 수동 저장한 산출물: 파일명 → 마지막 저장 시각(ms). restore 시 엔트리 제거. */
+  manualEdits?: Record<string, number>;
 }
 
 export interface Artifact {
