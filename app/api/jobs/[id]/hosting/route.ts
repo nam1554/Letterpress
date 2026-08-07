@@ -84,6 +84,19 @@ export async function POST(
     });
   }
 
+  if (created.length > 0) {
+    // 업로드 검증(GET …/hosting/check)이 치환과 같은 매핑으로 URL을 재구성할
+    // 근거 — 페이지 새로고침 뒤에도 폴더명 재입력 없이 재검사할 수 있다.
+    await writeFile(
+      path.join(hostedDir, "manifest.json"),
+      JSON.stringify(
+        { template, folder, files: [...allFiles].sort(), createdAt: Date.now() },
+        null,
+        2,
+      ),
+    );
+  }
+
   // '__'는 사용자 CDN(IIIF)에서 폴더 구분자 — 파일명에 섞여 있으면 의도치 않은
   // 하위 폴더로 해석될 수 있어 경고한다 (템플릿이 '__' 규칙을 쓸 때만).
   const doubleUnderscore = template.includes("__")

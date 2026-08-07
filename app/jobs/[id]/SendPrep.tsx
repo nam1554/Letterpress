@@ -5,13 +5,30 @@ import useSWR, { mutate } from "swr";
 import { Button, Code, Group, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fetcher } from "../../lib/fetcher";
-import { sendJson } from "../../lib/request";
+import { requestJson, sendJson } from "../../lib/request";
+import CommandChip from "../../components/CommandChip";
 import Section from "../../components/Section";
 import { PROSE_WIDTH } from "../../lib/dimensions";
 
 interface HostingResult {
   created: Array<{ rel: string; replaced: number }>;
   warning?: string;
+}
+
+interface UrlCheck {
+  file: string;
+  url: string;
+  uploadKey: string | null;
+  state: "live" | "missing" | "unreachable";
+  status: number | null;
+}
+
+interface CheckSummary {
+  checks: UrlCheck[];
+  live: number;
+  missing: number;
+  unreachable: number;
+  allUnreachable: boolean;
 }
 
 // 클라이언트 미리보기용 — 서버의 renderCdnUrl과 같은 치환 규칙 (lib/hosting.ts)
@@ -63,6 +80,24 @@ export default function SendPrep({
   const [folderInput, setFolderInput] = useState<string | null>(null);
   const folder = folderInput ?? `${titleSlug(jobTitle)}_${today()}`;
   const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<CheckSummary | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  // 업로드는 수동이다(자격증명을 배포하지 않기로 한 결정) — 앱은 각 CDN URL이
+  // 실제로 살아 있는지만 서버에서 확인해 준다.
+  async function runCheck() {
+    setChecking(true);
+    try {
+      const r = await requestJson<CheckSummary>(`/api/jobs/${jobId}/hosting/check`);
+      if (!r.ok) {
+        notifications.show({ message: r.error, color: "red" });
+        return;
+      }
+      setCheck(r.data);
+    } finally {
+      setChecking(false);
+    }
+  }
 
   const needsFolder = template.includes("{folder}");
   const folderInvalid = needsFolder && folder.trim() !== "" && !/^[A-Za-z0-9._-]+$/.test(folder.trim());
@@ -99,6 +134,7 @@ export default function SendPrep({
         }
         void mutate("/api/settings"); // 서버가 템플릿을 설정에 저장했으므로 캐시 갱신
         onCreated();
+        void runCheck(); // 교체본이 새로 생겼으니 업로드 상태를 바로 보여준다
       }
     } finally {
       setBusy(false);
@@ -155,7 +191,63 @@ export default function SendPrep({
         >
           교체본 생성
         </Button>
+        <Button data-testid="cdn-recheck" variant="default" onClick={runCheck} loading={checking}>
+          CDN 업로드 확인
+        </Button>
       </Group>
+
+      {check && (
+        <div data-testid="cdn-check-result" style={{ marginTop: 14 }}>
+          {check.allUnreachable ? (
+            <Text size="sm" c="yellow">
+              CDN에 연결할 수 없습니다 — 사내망/VPN 연결을 확인하세요. (이미지{" "}
+              {check.checks.length}개를 확인하지 못했습니다. 미업로드라는 뜻이 아닙니다.)
+            </Text>
+          ) : (
+            <>
+              <Text
+                size="sm"
+                fw={600}
+                c={check.missing === 0 && check.unreachable === 0 ? "green" : undefined}
+              >
+                {check.missing === 0 && check.unreachable === 0
+                  ? `CDN 이미지 ${check.live}/${check.checks.length} 확인됨 — 발송 준비 완료`
+                  : `CDN 확인: 정상 ${check.live} · 미업로드 ${check.missing}${
+                      check.unreachable > 0 ? ` · 확인 불가 ${check.unreachable}` : ""
+                    }`}
+              </Text>
+              {check.missing > 0 && (
+                <>
+                  <Text size="xs" c="dimmed" mt={6} maw={PROSE_WIDTH}>
+                    아래 파일이 아직 CDN에 없습니다. images/ 폴더의 파일을{" "}
+                    {check.checks.some((c) => c.uploadKey)
+                      ? "다음 오브젝트 이름으로 올린 뒤"
+                      : "CDN에 올린 뒤"}{" "}
+                    다시 확인을 누르세요.
+                  </Text>
+                  {check.checks
+                    .filter((c) => c.state === "missing")
+                    .map((c) =>
+                      c.uploadKey ? (
+                        <CommandChip key={c.file} command={c.uploadKey} />
+                      ) : (
+                        <Text key={c.file} size="xs" ff="monospace" mt={4}>
+                          {c.file}
+                        </Text>
+                      ),
+                    )}
+                </>
+              )}
+              {check.unreachable > 0 && check.missing === 0 && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  일부 이미지는 시간 안에 응답이 없어 확인하지 못했습니다 — 다시 확인을
+                  눌러보세요.
+                </Text>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </Section>
   );
 }

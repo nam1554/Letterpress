@@ -472,6 +472,19 @@ no auth, single user, filesystem is the database.
   `lib/email-check.ts` (static pre-send checks), `lib/verify.ts` (pixel-verify
   image allowlist). Routes: `POST /api/jobs/:id/hosting`,
   `GET /api/jobs/:id/check?file=`, `GET /api/jobs/:id/verify/:name`.
+  **CDN upload check** (`lib/hosting-check.ts`, `GET /api/jobs/:id/hosting/
+  check`): uploads stay MANUAL by decision (2026-08-07 — no storage
+  credentials on teammates' laptops; the real store is MinIO behind a
+  read-only IIIF server). The app only verifies. The hosting POST writes
+  `hosted/manifest.json` (template/folder/files — the same mapping the
+  substitution used, so swap and check can't drift); the check route probes
+  each URL server-side (HEAD with GET fallback on 405/501, 3s timeout,
+  concurrency 5) and classifies `live`/`missing`/`unreachable`.
+  All-unreachable is reported as a NETWORK problem ("사내망/VPN"), never as
+  미업로드 — misdiagnosis sends people to re-upload files that are fine.
+  `missing` rows carry the MinIO object key (`{folder}__{file}`, computed
+  only when the template actually uses that rule — inventing keys for other
+  template shapes would teach wrong upload names) as a copyable CommandChip.
 
 ## Verification habits
 
