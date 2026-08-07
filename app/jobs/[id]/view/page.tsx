@@ -57,6 +57,11 @@ function Viewer() {
   const [saving, setSaving] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [target, setTarget] = useState<PanelTarget | null>(null);
+  // 선택된 요소가 바뀔 때마다 증가 — EditPanel의 key로 써서 강제 리마운트한다
+  // (uncontrolled <input type="color" defaultValue>는 마운트 시에만 값을 반영하므로,
+  // 리마운트 없이는 이전에 선택했던 요소의 색이 새 선택에도 계속 보인다).
+  const [selVersion, setSelVersion] = useState(0);
+  const lastSelectedElRef = useRef<HTMLElement | null>(null);
   // restore/편집 취소 후 서버의 현재 파일로 강제 리로드하기 위한 키.
   const [frameNonce, setFrameNonce] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -82,6 +87,21 @@ function Viewer() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
+  // "정말 되돌릴까요?" 무장 상태는 유예 시간(4s) 안에 두 번째 클릭이 없으면 풀린다 —
+  // 한참 뒤의 클릭이 확인 없이 바로 실행되는 것을 막는다.
+  useEffect(() => {
+    if (!confirmRestore) return;
+    const t = setTimeout(() => setConfirmRestore(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmRestore]);
+
+  // 파일이 바뀌거나 편집 모드가 전환되면 이전 되돌리기 확인 상태는 무효 — 그대로 두면
+  // 다른 파일/모드로 넘어간 뒤의 클릭이 예상 못한 즉시 실행으로 이어질 수 있다.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setConfirmRestore(false);
+  }, [file, editing]);
+
   const onInput = useCallback(() => setDirty(true), [setDirty]);
 
   const onSelectionChange = useCallback(() => {
@@ -101,9 +121,14 @@ function Viewer() {
     }
     if (!el || el === doc.body || el.nodeType !== Node.ELEMENT_NODE) {
       setTarget(null);
+      lastSelectedElRef.current = null;
       return;
     }
     el.setAttribute(SELECTED_ATTR, "");
+    if (lastSelectedElRef.current !== el) {
+      lastSelectedElRef.current = el;
+      setSelVersion((v) => v + 1);
+    }
     const rect = el.getBoundingClientRect();
     const frameRect = frame.getBoundingClientRect();
     const scrollRect = scroller.getBoundingClientRect();
@@ -112,7 +137,7 @@ function Viewer() {
       left: frameRect.left - scrollRect.left + scroller.scrollLeft + rect.left,
       top: frameRect.top - scrollRect.top + scroller.scrollTop + rect.top,
     });
-  }, [setTarget]);
+  }, [setTarget, setSelVersion]);
 
   const enableEditing = useCallback(() => {
     const doc = frameRef.current?.contentDocument;
@@ -148,6 +173,7 @@ function Viewer() {
   function reloadFrame() {
     setDirty(false);
     setTarget(null);
+    lastSelectedElRef.current = null;
     setFrameNonce((n) => n + 1);
   }
 
@@ -183,6 +209,12 @@ function Viewer() {
   }
 
   async function restore() {
+    if (
+      dirty &&
+      !window.confirm("저장하지 않은 변경이 있습니다. 원본으로 되돌리면 사라집니다. 계속할까요?")
+    ) {
+      return;
+    }
     if (!confirmRestore) {
       setConfirmRestore(true);
       return;
@@ -297,7 +329,9 @@ function Viewer() {
             transition: "width 200ms ease",
           }}
         />
-        {editing && target && <EditPanel target={target} onChange={onInput} />}
+        {editing && target && (
+          <EditPanel key={selVersion} target={target} onChange={onInput} />
+        )}
       </div>
     </div>
   );
