@@ -57,11 +57,26 @@
 CPU·메모리 압박에서 온다. 같은 길로 다시 "고치려" 들지 않도록 `measure.ts`와
 `AGENTS.md` 양쪽에 적어 뒀다.
 
+## 기록 (2026-08-07, 2회차)
+
+전 회차의 "다음 바퀴에 볼 만한 것" 중 **디스크 쓰기 실패** 축.
+`persist()`(job.json 원자적 쓰기)의 실패를 `writeFile` 주입(ENOSPC)과
+디렉터리 권한(EACCES)으로 재현했다. **결함 3건.**
+
+| # | 결함 | 재현 | 수정 |
+|---|---|---|---|
+| 1 | reconcile 중 persist가 실패하면 `getJob`이 **null** — job.json이 멀쩡히 읽히는데도 잡이 홈 목록·상세에서 통째로 사라진다. 홈이 5초마다 폴링하므로 디스크 문제 동안 stale 잡 전부가 증발하고, `listJobs` 경유 시 unhandled rejection까지 관찰됨 | `store-persist-failure.test.ts` | 판정(러너 없음 = 실패)은 메모리로 돌려주고 persist는 다음 읽기가 재시도. 이벤트 기록은 persist 성공 시에만 — 실패 동안 폴링마다 에러 줄이 쌓이면 안 된다 |
+| 2 | ENOSPC가 부분 기록한 `.tmp`가 잡 디렉터리에 실패마다 하나씩 쌓인다 | 〃 | persist 실패 시 tmp를 best-effort로 치우고 다시 던진다 |
+| 3 | 러너 catch 블록의 종료 기록(`updateJob`)이 또 실패하면 `emit`이 스킵 — 열려 있던 SSE 화면은 "실행 중"에 영영 멈추고 비동기 블록은 unhandled rejection | `runner.test.ts` "emits a terminal event even when the final persist fails" | 종료 기록은 `.catch(() => {})` — 이벤트·알림·정리는 계속한다. 파일에 남은 running은 재시작 후 reconcile이 정리 (결함 1 수정과 맞물려 실패로 표시됨) |
+
+관찰했지만 고치지 않은 것: `createJob`의 persist가 실패하면 빈 잡 디렉터리가
+남아 `reserveJobId`가 그 id를 영영 건너뛴다 — 라우트가 500을 돌려주고 재시도로
+해결되며, 고아 디렉터리는 어디에도 표시되지 않아 실해가 없다.
+
 ## 다음 바퀴에 볼 만한 것
 
 - **런처(`.command` / `.ps1`)** — 이 루프에서 한 번도 다루지 않았다. Windows는
   아직 실기기 검증 전이라 가장 큰 미지수다.
 - **SSE 재연결** — 서버 재시작 중 열려 있던 스트림의 동작. `STALE_GRACE_MS`
   경로에 테스트가 있지만 클라이언트 쪽 재연결은 수동 확인뿐이다.
-- **디스크 가득 참 / 쓰기 실패** — `appendEvent`는 best-effort로 설계돼 있으나
-  `persist()`(job.json 원자적 쓰기)의 실패 경로는 측정된 적이 없다.
+- ~~디스크 가득 참 / 쓰기 실패~~ — 2회차에서 측정, 결함 3건 수정.
