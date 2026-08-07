@@ -134,6 +134,17 @@ describe("checkEmailHtml", () => {
     expect(byName["프리헤더"]).toBe("warn");
   });
 
+  it("counts the same relative-image shapes the CDN swap rewrites", () => {
+    // applyCdnTemplate이 치환하는 대소문자·공백·background=/url() 관용 —
+    // 치환 대상인데 검사에는 안 잡히면 "상대경로 없음"이 거짓말이 된다.
+    const html =
+      `<img SRC = 'images/a.png' alt="a"><td background="images/b.png">` +
+      `<div style="background:url('images/c.png')"></div>`;
+    const path = checkEmailHtml(html).find((c) => c.name === "이미지 경로");
+    expect(path?.level).toBe("warn");
+    expect(path?.detail).toContain("3건");
+  });
+
   it("passes a clean email", () => {
     const good = `<span style="display:none">preheader</span><img src="https://cdn.x/a.png" alt="a"><a href="https://x">l</a>`;
     const levels = checkEmailHtml(good).map((c) => c.level);

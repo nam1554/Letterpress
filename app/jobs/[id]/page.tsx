@@ -52,6 +52,7 @@ export default function JobPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editText, setEditText] = useState("");
   const [editing, setEditing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [notify, setNotify] = useState(false);
   const notifiedRef = useRef(false);
 
@@ -167,8 +168,12 @@ export default function JobPage() {
   }
 
   async function resume() {
+    // 더블클릭이 같은 workDir에서 CLI를 두 개 띄우는 것을 서버 가드에 앞서 차단.
+    if (resuming) return;
+    setResuming(true);
     const r = await sendJson(`/api/jobs/${id}/resume`, "POST");
     if (!r.ok) {
+      setResuming(false);
       notifications.show({ message: r.error, color: "red" });
       return;
     }
@@ -289,6 +294,7 @@ export default function JobPage() {
                     data-testid="resume"
                     size="compact-sm"
                     onClick={resume}
+                    loading={resuming}
                     title="중간 산출물을 재사용해 미완료 항목만 이어서 진행합니다"
                   >
                     이어서 실행

@@ -42,7 +42,9 @@ export async function GET(
     return new Response(stream, {
       headers: {
         "Content-Type": MIME[ext] ?? "application/octet-stream",
-        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(name)}"`,
+        // RFC 5987 filename* — filename="…"에 percent-encoding을 넣으면
+        // 브라우저가 디코딩하지 않아 한글 이름이 %ED%95%9C… 그대로 저장된다.
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(name)}`,
       },
     });
   }
