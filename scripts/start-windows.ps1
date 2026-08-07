@@ -120,12 +120,20 @@ if (-not (Has 'pnpm')) {
 }
 
 # ── 이미 실행 중이면 브라우저만 연다 / 포트 충돌은 비켜간다 ────────────────
-if (PortBusy $Port) {
-  if (UrlResponds "http://localhost:$Port/api/health" 8) {
-    Say "이미 실행 중입니다 — 브라우저를 엽니다: http://localhost:$Port"
-    if (-not $env:MHM_NO_OPEN) { Start-Process "http://localhost:$Port" }
+# 이전 실행이 포트 충돌로 옆 포트(25253~25262)로 비켜갔을 수 있으므로 그
+# 범위까지 /api/health 로 확인한다 — 기본 포트만 보면 재더블클릭이 같은
+# data\ 위에 두 번째 인스턴스를 띄운다 (macOS 런처에서 실측된 것과 동일 결함).
+# 8초: health 첫 호출은 Chrome 탐색 때문에 2초를 넘을 수 있다 — 짧게 잡으면
+# 멀쩡히 떠 있는 앱을 못 알아본다.
+foreach ($candidate in (@($Port) + (25253..25262))) {
+  if (-not (PortBusy $candidate)) { continue }
+  if (UrlResponds "http://localhost:$candidate/api/health" 8) {
+    Say "이미 실행 중입니다 — 브라우저를 엽니다: http://localhost:$candidate"
+    if (-not $env:MHM_NO_OPEN) { Start-Process "http://localhost:$candidate" }
     exit 0
   }
+}
+if (PortBusy $Port) {
   $free = $null
   foreach ($candidate in 25253..25262) {
     if (-not (PortBusy $candidate)) { $free = $candidate; break }
