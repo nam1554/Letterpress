@@ -506,7 +506,16 @@ no auth, single user, filesystem is the database.
   105 events (30%), backticks 191×, `**bold**` 46×, markdown links only 12× —
   so **paths are the dominant noise, not links**. After: 0 absolute paths and 0
   markdown symbols rendered, 14.8% fewer characters. Shortened paths keep the
-  original in `title`, so nothing is silently dropped. Gotchas covered by tests:
+  original in `title`, so nothing is silently dropped.
+  Re-measured 2026-08-08 over all 15 archived jobs / 621 events: 15.3% fewer
+  characters, with a handful of deliberate leftovers — don't "fix" these:
+  two absolute paths survive because the **provider already truncated them**
+  (`claude-code.ts` caps tool_use input at 200 chars, leaving
+  `/Users/…/.claud…`), so they have fewer than five segments and the
+  shortener correctly leaves them alone — there is nothing left to shorten.
+  Markdown headings (`###`) in agent summaries also pass through: the
+  tokenizer targets backticks, bold and links, which is where the measured
+  noise was. Gotchas covered by tests:
   - Regex alternation is **position-first, not order-first**. Real logs contain
     ``**`verify.json` = PASS**`` (code nested in bold); `strong` won at the
     earlier `**` and left the backticks visible. `tokenize` re-parses emphasis
