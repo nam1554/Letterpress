@@ -248,7 +248,12 @@ export async function getBackendSetup(force = false): Promise<BackendSetup[]> {
   const cached = g.__mhmSetup;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.backends;
   // 동시 요청은 진행 중인 점검 하나에 합류한다 (mcp list가 수 초~수십 초 걸림).
-  if (!force && g.__mhmSetupInFlight) return g.__mhmSetupInFlight;
+  // **force도 합류한다.** force가 뜻하는 것은 "캐시를 믿지 말라"이지 "CLI를 또
+  // 띄우라"가 아니고, 진행 중인 점검은 캐시가 아니라 지금 도는 측정이라 force가
+  // 원하는 신선도를 이미 만족한다. 예외로 두었더니 "다시 점검" 연타가 그대로
+  // 중복 스폰이 됐다(실측 2026-08-08: force 3건 → `claude mcp list` 프로세스 3개,
+  // 각 최대 45초).
+  if (g.__mhmSetupInFlight) return g.__mhmSetupInFlight;
 
   const run = (async () => {
     const backends = [
