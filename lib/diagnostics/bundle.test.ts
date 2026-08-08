@@ -121,6 +121,34 @@ describe("진단 번들 — summary.md의 백엔드 완주 기록", () => {
   });
 });
 
+describe("진단 번들 — '포함된 것' 목록이 실제 내용과 맞는가", () => {
+  const stubSetup = { getBackendSetup: async () => [] };
+
+  it("작업 없이 받은 번들은 job/ 이 있다고 적지 않는다", async () => {
+    // 실측(2026-08-08): 홈에서 받은 번들에도 "job/ — 신고 대상 작업의 …"이
+    // 적혀 있어, 받은 사람이 없는 폴더를 찾게 됐다.
+    const { buildSummary } = await import("./bundle");
+    const summary = await buildSummary({ jobs: [] }, stubSetup);
+    const section = summary.split("## 포함된 것")[1] ?? "";
+    expect(section).toContain("job/ 는 없습니다");
+    expect(section).not.toMatch(/- job\/ — 신고 대상/);
+  });
+
+  it("작업을 지정해 받은 번들은 job/ 구성을 안내한다", async () => {
+    const { buildSummary } = await import("./bundle");
+    const job = {
+      id: "0c12f6ac",
+      figmaUrl: "https://www.figma.com/design/x/y",
+      provider: "mock",
+      status: "succeeded" as const,
+      createdAt: Date.now(),
+    };
+    const summary = await buildSummary({ jobs: [job], job }, stubSetup);
+    const section = summary.split("## 포함된 것")[1] ?? "";
+    expect(section).toMatch(/- job\/ — 신고 대상/);
+  });
+});
+
 describe("진단 번들 — 모든 항목이 문을 지나는가", () => {
   it("번들에 실리는 텍스트 중 스크럽을 건너뛴 항목이 없다", async () => {
     // health.json이 그 구멍이었다 — CLI 오류 원문(detail)이 그대로 실렸다.

@@ -159,7 +159,11 @@ export async function buildSummary(
     "- summary.md(이 파일) · health.json · backends.json · settings.json(비밀값 제외)",
     "- logs/app.log — 서버에서 난 오류",
     "- logs/launcher.log — 런처의 설치·빌드 기록(시작-기록.log, 있는 경우)",
-    "- job/ — 신고 대상 작업의 job.json · events.ndjson · verify.json · artifacts.txt",
+    // job/ 은 작업을 지정해 받았을 때만 담긴다 — 홈에서 받은 번들에도 있다고
+    // 적으면, 받은 사람이 없는 폴더를 찾게 된다(실측 2026-08-08).
+    input.job
+      ? "- job/ — 신고 대상 작업의 job.json · events.ndjson · verify.json · artifacts.txt"
+      : "- job/ 는 없습니다 — 특정 작업의 로그가 필요하면 그 작업 페이지에서 다시 받아주세요.",
     "",
     "Figma URL·작업 요약·로그 본문이 들어 있습니다. 토큰과 API 키는 값이 제외됩니다.",
   );
