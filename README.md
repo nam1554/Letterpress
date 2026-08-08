@@ -182,8 +182,11 @@ pnpm build && pnpm start
 ## 설정
 
 **홈 화면의 "⚙️ 설정" 패널에서 전부 조정할 수 있습니다** — 기본 백엔드, 동시
-실행 수, 작업 제한 시간, Figma 토큰(MCP 없이 쓰는 REST API 폴백). 저장 위치는
-`data/settings.json`(git 제외)이고, 별도 환경변수 지식 없이 사용 가능합니다.
+실행 수, 작업 제한 시간, Claude 모델(claude CLI에 `--model`로 전달, 비우면 CLI
+기본), 완료 알림(macOS 알림센터, 기본 켬), Figma 토큰(MCP 없이 쓰는 REST API
+폴백). CDN URL 템플릿은 **발송 준비**에서 교체본을 만들 때 함께 저장돼 다음
+캠페인에 재사용됩니다. 저장 위치는 `data/settings.json`(git 제외)이고, 별도
+환경변수 지식 없이 사용 가능합니다.
 
 > ⚠️ **Figma REST 폴백의 한도** — 토큰 발급 자체는 무료지만, 한도는 토큰
 > 소유자가 아니라 **디자인 파일이 속한 플랜**을 따릅니다. 파일이 **무료(Starter)
@@ -209,7 +212,10 @@ Figma 토큰은 **저장하는 순간 실제 API로 검증**되므로, 오타를
 | `MAX_CONCURRENT_JOBS` | `2` | 동시 실행 잡 수 제한 |
 | `JOB_TIMEOUT_MS` | `2700000` (45분) | 잡 하드 타임아웃 |
 | `FIGMA_TOKEN` | - | Figma REST API 폴백 토큰 |
+| `CLAUDE_MODEL` | - | claude CLI에 넘길 모델 (예: `haiku`) |
 | `CLAUDE_BIN` / `CODEX_BIN` / `ANTIGRAVITY_BIN` | PATH 탐색 | CLI 바이너리 경로 고정 |
+| `CHROME_BIN` (또는 `CHROME_PATH`) | 자동 탐색 | 픽셀 검증·품질 게이트용 Chrome 경로 고정 |
+| `PYTHON_BIN` | 자동 탐색 | 검증 스크립트용 파이썬 경로 고정 |
 
 </details>
 
