@@ -8,6 +8,7 @@ import {
   isValidCdnFolder,
   isValidCdnTemplate,
   swapEmbeddedFontsForCdn,
+  templateIdentifiesFile,
   templateNeedsFolder,
 } from "@/lib/hosting";
 import { requireJob } from "@/lib/api-job";
@@ -35,10 +36,12 @@ export async function POST(
   const template = (r.data.template ?? "").trim();
   const folder = (r.data.folder ?? "").trim();
   if (!isValidCdnTemplate(template)) {
-    return NextResponse.json(
-      { error: "https:// 로 시작하는 유효한 URL 템플릿이 필요합니다. 예: https://cdn.example.com/{folder}/{file}" },
-      { status: 400 },
-    );
+    // 파일 식별자 누락은 원인을 따로 말해 준다 — "유효한 URL이 필요합니다"만
+    // 보면 https로 시작하는 자기 템플릿을 보며 무엇이 문제인지 알 수 없다.
+    const error = templateIdentifiesFile(template)
+      ? "https:// 로 시작하는 유효한 URL 템플릿이 필요합니다. 예: https://cdn.example.com/{folder}/{file}"
+      : "템플릿에 {file} 또는 {name}이 있어야 합니다 — 없으면 모든 이미지가 같은 주소로 바뀌어 발송본이 깨집니다. 예: https://cdn.example.com/{folder}/{file}";
+    return NextResponse.json({ error }, { status: 400 });
   }
   if (templateNeedsFolder(template)) {
     if (!folder) {

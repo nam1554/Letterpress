@@ -120,6 +120,29 @@ describe("isValidCdnTemplate", () => {
     expect(isValidCdnTemplate("http://cdn.x/{file}")).toBe(false);
     expect(isValidCdnTemplate("cdn.x/{file}")).toBe(false);
   });
+
+  it("파일을 구분하지 못하는 템플릿을 거부한다", () => {
+    // 실측(2026-08-08): `https://cdn.x/`가 통과해 모든 이미지가 같은 src로
+    // 치환됐고, 화면에는 "교체본 생성 완료"만 떴다 — 조용히 깨진 발송본.
+    expect(isValidCdnTemplate("https://cdn.x/")).toBe(false);
+    expect(isValidCdnTemplate("https://cdn.x/{folder}/")).toBe(false);
+    expect(isValidCdnTemplate("https://cdn.x/{folder}/x.{ext}")).toBe(false);
+    // {name}만 있어도 파일마다 달라지므로 유효하다.
+    expect(isValidCdnTemplate("https://cdn.x/{folder}/{name}.{ext}")).toBe(true);
+  });
+
+  it("거부된 템플릿으로는 교체본이 만들어지지 않는다", () => {
+    // 검증을 통과했다면 applyCdnTemplate이 어떤 결과를 냈을지 — 모든 파일이
+    // 같은 URL이 된다는 사실 자체를 고정해 둔다.
+    const broken = applyCdnTemplate(
+      '<img src="images/a.png"><img src="images/b.png">',
+      "https://cdn.x/",
+      "camp",
+    );
+    expect(broken.replaced).toBe(2);
+    expect([...new Set(broken.html.match(/https:\/\/cdn\.x\/[^"]*/g) ?? [])]).toHaveLength(1);
+    expect(isValidCdnTemplate("https://cdn.x/")).toBe(false);
+  });
 });
 
 describe("checkEmailHtml", () => {

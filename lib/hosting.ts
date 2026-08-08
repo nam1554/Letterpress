@@ -106,9 +106,21 @@ export function swapEmbeddedFontsForCdn(html: string): FontSwapResult {
   return { html: out, removed };
 }
 
-/** 템플릿이 그럴듯한 https URL 형태인지 가벼운 검증. */
+/**
+ * 템플릿이 파일마다 **다른** URL을 만드는지 — `{file}`이나 `{name}` 중 하나는
+ * 반드시 있어야 한다. 없으면 모든 이미지가 같은 주소로 치환되는데, 화면에는
+ * "교체본 생성 완료"만 뜨고 발송본은 통째로 깨진다(실측 2026-08-08:
+ * `https://cdn.example.com/` 하나로 13개 이미지가 전부 같은 src가 된다).
+ * `{folder}`·`{ext}`만으로는 파일을 구분할 수 없어 이 검사를 통과하지 못한다.
+ */
+export function templateIdentifiesFile(template: string): boolean {
+  return template.includes("{file}") || template.includes("{name}");
+}
+
+/** 템플릿이 그럴듯한 https URL 형태이고 파일을 구분하는지 검증. */
 export function isValidCdnTemplate(template: string): boolean {
   if (!/^https:\/\//.test(template)) return false;
+  if (!templateIdentifiesFile(template)) return false;
   try {
     new URL(renderCdnUrl(template, "probe.png", "probe"));
     return true;

@@ -87,6 +87,10 @@ export default function SendPrep({
 
   const needsFolder = template.includes("{folder}");
   const folderInvalid = needsFolder && folder.trim() !== "" && !/^[A-Za-z0-9._-]+$/.test(folder.trim());
+  // {file}/{name}이 없으면 모든 이미지가 같은 주소로 치환돼 발송본이 깨진다.
+  // 서버도 막지만, 여기서 먼저 알려줘야 사용자가 왜 막혔는지 안다.
+  const templateTyped = template.trim() !== "";
+  const missingFileToken = templateTyped && !/\{file\}|\{name\}/.test(template);
   const example = useMemo(
     () => (template.trim() ? previewUrl(template.trim(), folder.trim(), "hero.png") : ""),
     [template, folder],
@@ -163,7 +167,13 @@ export default function SendPrep({
           styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
         />
       </Group>
-      {!needsFolder && template.trim() !== "" && (
+      {missingFileToken && (
+        <Text size="xs" c="red" mt={6} data-testid="cdn-missing-file-token">
+          템플릿에 <Code>{"{file}"}</Code> 또는 <Code>{"{name}"}</Code>이 있어야 합니다 — 없으면
+          모든 이미지가 같은 주소로 바뀌어 발송본이 깨집니다.
+        </Text>
+      )}
+      {!needsFolder && templateTyped && (
         <Text size="xs" c="dimmed" mt={6}>
           템플릿에 <Code>{"{folder}"}</Code>를 넣으면 캠페인 폴더명이 적용됩니다 — 캠페인마다
           폴더를 나누면 지난 발송본 이미지를 덮어쓸 위험이 없습니다.
@@ -179,7 +189,9 @@ export default function SendPrep({
           data-testid="cdn-create"
           onClick={create}
           loading={busy}
-          disabled={!template.trim() || (needsFolder && (!folder.trim() || folderInvalid))}
+          disabled={
+            !templateTyped || missingFileToken || (needsFolder && (!folder.trim() || folderInvalid))
+          }
         >
           교체본 생성
         </Button>
