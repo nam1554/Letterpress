@@ -106,25 +106,37 @@ export function swapEmbeddedFontsForCdn(html: string): FontSwapResult {
   return { html: out, removed };
 }
 
+const TEMPLATE_EXAMPLE = "예: https://cdn.example.com/{folder}/{file}";
+
 /**
- * 템플릿이 파일마다 **다른** URL을 만드는지 — `{file}`이나 `{name}` 중 하나는
- * 반드시 있어야 한다. 없으면 모든 이미지가 같은 주소로 치환되는데, 화면에는
- * "교체본 생성 완료"만 뜨고 발송본은 통째로 깨진다(실측 2026-08-08:
- * `https://cdn.example.com/` 하나로 13개 이미지가 전부 같은 src가 된다).
- * `{folder}`·`{ext}`만으로는 파일을 구분할 수 없어 이 검사를 통과하지 못한다.
+ * 템플릿이 못 쓰는 이유를 한국어 한 줄로. 문제 없으면 null.
+ *
+ * 이유를 문자열로 돌려주는 이유: 라우트(400 본문)와 발송 준비 화면(입력 즉시
+ * 안내)이 **같은 판정과 같은 문구**를 써야 한다. 예전에는 각자 검사·문구를
+ * 들고 있어서 (1) 비-https + 토큰 누락이면 https 문제를 영영 안 알려주고,
+ * (2) 화면은 https를 검사하지 않아 버튼이 열린 채 서버 400을 맞았다.
+ *
+ * `{file}`/`{name}` 요구가 핵심이다 — 없으면 모든 이미지가 같은 주소로
+ * 치환되는데 화면에는 "교체본 생성 완료"만 뜬다(실측 2026-08-08:
+ * `https://cdn.example.com/` 하나로 이미지 전부가 같은 src). `{folder}`·
+ * `{ext}`만으로는 파일을 구분할 수 없다.
  */
-export function templateIdentifiesFile(template: string): boolean {
-  return template.includes("{file}") || template.includes("{name}");
+export function cdnTemplateProblem(template: string): string | null {
+  if (!/^https:\/\//.test(template)) {
+    return `https:// 로 시작하는 주소여야 합니다. ${TEMPLATE_EXAMPLE}`;
+  }
+  if (!template.includes("{file}") && !template.includes("{name}")) {
+    return `템플릿에 {file} 또는 {name}이 있어야 합니다 — 없으면 모든 이미지가 같은 주소로 바뀌어 발송본이 깨집니다. ${TEMPLATE_EXAMPLE}`;
+  }
+  try {
+    new URL(renderCdnUrl(template, "probe.png", "probe"));
+  } catch {
+    return `URL 형식이 올바르지 않습니다. ${TEMPLATE_EXAMPLE}`;
+  }
+  return null;
 }
 
 /** 템플릿이 그럴듯한 https URL 형태이고 파일을 구분하는지 검증. */
 export function isValidCdnTemplate(template: string): boolean {
-  if (!/^https:\/\//.test(template)) return false;
-  if (!templateIdentifiesFile(template)) return false;
-  try {
-    new URL(renderCdnUrl(template, "probe.png", "probe"));
-    return true;
-  } catch {
-    return false;
-  }
+  return cdnTemplateProblem(template) === null;
 }

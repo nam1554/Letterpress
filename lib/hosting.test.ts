@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkEmailHtml } from "./email-check";
 import {
   applyCdnTemplate,
+  cdnTemplateProblem,
   isValidCdnFolder,
   isValidCdnTemplate,
   renderCdnUrl,
@@ -131,9 +132,7 @@ describe("isValidCdnTemplate", () => {
     expect(isValidCdnTemplate("https://cdn.x/{folder}/{name}.{ext}")).toBe(true);
   });
 
-  it("거부된 템플릿으로는 교체본이 만들어지지 않는다", () => {
-    // 검증을 통과했다면 applyCdnTemplate이 어떤 결과를 냈을지 — 모든 파일이
-    // 같은 URL이 된다는 사실 자체를 고정해 둔다.
+  it("막지 않았다면 모든 이미지가 같은 URL이 됐다는 사실을 고정한다", () => {
     const broken = applyCdnTemplate(
       '<img src="images/a.png"><img src="images/b.png">',
       "https://cdn.x/",
@@ -141,7 +140,27 @@ describe("isValidCdnTemplate", () => {
     );
     expect(broken.replaced).toBe(2);
     expect([...new Set(broken.html.match(/https:\/\/cdn\.x\/[^"]*/g) ?? [])]).toHaveLength(1);
-    expect(isValidCdnTemplate("https://cdn.x/")).toBe(false);
+  });
+});
+
+describe("cdnTemplateProblem — 라우트와 발송 준비 화면이 공유하는 판정", () => {
+  it("문제마다 다른 이유를 돌려준다", () => {
+    expect(cdnTemplateProblem("https://cdn.x/{folder}/{file}")).toBeNull();
+    expect(cdnTemplateProblem("http://cdn.x/{file}")).toMatch(/https:\/\/ 로 시작/);
+    expect(cdnTemplateProblem("https://cdn.x/{folder}/")).toMatch(/\{file\} 또는 \{name\}/);
+  });
+
+  it("스킴과 토큰이 동시에 잘못돼도 먼저 스킴을 알려준다", () => {
+    // 실측(리뷰): 토큰 문제만 보고하면 사용자가 그것만 고치고 다시 400을 맞아
+    // 왕복이 한 번 더 생겼다.
+    const problem = cdnTemplateProblem("http://cdn.x/{folder}");
+    expect(problem).toMatch(/https:\/\/ 로 시작/);
+  });
+
+  it("isValidCdnTemplate은 같은 판정을 불리언으로 돌려준다", () => {
+    for (const t of ["https://cdn.x/{file}", "http://cdn.x/{file}", "https://cdn.x/", "cdn.x/{file}"]) {
+      expect(isValidCdnTemplate(t), t).toBe(cdnTemplateProblem(t) === null);
+    }
   });
 });
 

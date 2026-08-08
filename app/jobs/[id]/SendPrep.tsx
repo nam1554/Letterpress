@@ -6,6 +6,7 @@ import { Button, Code, Group, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { fetcher } from "../../lib/fetcher";
 import { requestJson, sendJson } from "../../lib/request";
+import { cdnTemplateProblem } from "@/lib/hosting";
 import CommandChip from "../../components/CommandChip";
 import Section from "../../components/Section";
 import { PROSE_WIDTH } from "../../lib/dimensions";
@@ -87,10 +88,11 @@ export default function SendPrep({
 
   const needsFolder = template.includes("{folder}");
   const folderInvalid = needsFolder && folder.trim() !== "" && !/^[A-Za-z0-9._-]+$/.test(folder.trim());
-  // {file}/{name}이 없으면 모든 이미지가 같은 주소로 치환돼 발송본이 깨진다.
-  // 서버도 막지만, 여기서 먼저 알려줘야 사용자가 왜 막혔는지 안다.
+  // 판정·문구는 서버 라우트와 같은 함수를 쓴다 — 여기서 따로 검사하면 한쪽만
+  // 고쳐져 "화면은 통과시키는데 서버가 400"이 된다(실제로 https 검사가 빠져
+  // 그랬다). 입력 즉시 막아 클릭 한 번의 왕복을 없앤다.
   const templateTyped = template.trim() !== "";
-  const missingFileToken = templateTyped && !/\{file\}|\{name\}/.test(template);
+  const templateProblem = templateTyped ? cdnTemplateProblem(template.trim()) : null;
   const example = useMemo(
     () => (template.trim() ? previewUrl(template.trim(), folder.trim(), "hero.png") : ""),
     [template, folder],
@@ -167,13 +169,12 @@ export default function SendPrep({
           styles={{ input: { fontFamily: "var(--font-geist-mono)", fontSize: 13 } }}
         />
       </Group>
-      {missingFileToken && (
-        <Text size="xs" c="red" mt={6} data-testid="cdn-missing-file-token">
-          템플릿에 <Code>{"{file}"}</Code> 또는 <Code>{"{name}"}</Code>이 있어야 합니다 — 없으면
-          모든 이미지가 같은 주소로 바뀌어 발송본이 깨집니다.
+      {templateProblem && (
+        <Text size="xs" c="red" mt={6} data-testid="cdn-template-problem">
+          {templateProblem}
         </Text>
       )}
-      {!needsFolder && templateTyped && (
+      {!needsFolder && templateTyped && !templateProblem && (
         <Text size="xs" c="dimmed" mt={6}>
           템플릿에 <Code>{"{folder}"}</Code>를 넣으면 캠페인 폴더명이 적용됩니다 — 캠페인마다
           폴더를 나누면 지난 발송본 이미지를 덮어쓸 위험이 없습니다.
@@ -190,7 +191,9 @@ export default function SendPrep({
           onClick={create}
           loading={busy}
           disabled={
-            !templateTyped || missingFileToken || (needsFolder && (!folder.trim() || folderInvalid))
+            !templateTyped ||
+            templateProblem !== null ||
+            (needsFolder && (!folder.trim() || folderInvalid))
           }
         >
           교체본 생성

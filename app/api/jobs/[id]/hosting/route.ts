@@ -5,10 +5,9 @@ import { z } from "zod";
 import { readBody } from "@/lib/api-body";
 import {
   applyCdnTemplate,
+  cdnTemplateProblem,
   isValidCdnFolder,
-  isValidCdnTemplate,
   swapEmbeddedFontsForCdn,
-  templateIdentifiesFile,
   templateNeedsFolder,
 } from "@/lib/hosting";
 import { requireJob } from "@/lib/api-job";
@@ -35,13 +34,11 @@ export async function POST(
   if (!r.ok) return r.res;
   const template = (r.data.template ?? "").trim();
   const folder = (r.data.folder ?? "").trim();
-  if (!isValidCdnTemplate(template)) {
-    // 파일 식별자 누락은 원인을 따로 말해 준다 — "유효한 URL이 필요합니다"만
-    // 보면 https로 시작하는 자기 템플릿을 보며 무엇이 문제인지 알 수 없다.
-    const error = templateIdentifiesFile(template)
-      ? "https:// 로 시작하는 유효한 URL 템플릿이 필요합니다. 예: https://cdn.example.com/{folder}/{file}"
-      : "템플릿에 {file} 또는 {name}이 있어야 합니다 — 없으면 모든 이미지가 같은 주소로 바뀌어 발송본이 깨집니다. 예: https://cdn.example.com/{folder}/{file}";
-    return NextResponse.json({ error }, { status: 400 });
+  // 판정과 문구는 lib/hosting.ts가 소유한다 — 발송 준비 화면이 같은 함수로
+  // 입력 즉시 안내하므로, 여기서 따로 검사하면 둘이 어긋난다.
+  const templateProblem = cdnTemplateProblem(template);
+  if (templateProblem) {
+    return NextResponse.json({ error: templateProblem }, { status: 400 });
   }
   if (templateNeedsFolder(template)) {
     if (!folder) {
