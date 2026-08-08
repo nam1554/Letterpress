@@ -207,9 +207,15 @@ Say '서버를 시작합니다... (이 창을 닫으면 앱이 종료됩니다)'
 # 까지 정리한다 — pnpm만 죽이면 손자가 포트를 계속 점유한다.
 # -NoNewWindow: 이 창의 콘솔을 함께 쓴다. 사용자가 창을 닫으면 윈도우가 콘솔에
 # 붙은 프로세스 전부에 종료 이벤트를 보내므로 서버도 같이 내려간다.
-# (PowerShell.Exiting 훅과 finally는 -File 실행에서 신뢰할 수 없어 쓰지 않는다 —
-#  실측으로 확인. 혹시 서버가 남더라도 다음 실행 때 "이미 실행 중"으로 감지해
-#  브라우저만 열거나 빈 포트로 비켜간다.)
+# 정리를 어디에 맡기는가 (실측 기준):
+#  - 창을 강제로 닫는 경우: PowerShell.Exiting 훅도, 아래 finally도 돌지 않는다.
+#    이 경로는 위의 콘솔 공유(-NoNewWindow)가 담당한다. 그래서 종료 훅은 아예
+#    등록하지 않는다.
+#  - Ctrl-C·정상 종료: 아래 try/finally가 실제로 실행되므로 StopServer로 트리를
+#    정리한다. 죽은 코드가 아니니 지우지 말 것 — 지우면 이 경로에서 next-server가
+#    포트를 물고 남는다.
+#  - 그럼에도 남는 경우: 다음 실행 때 "이미 실행 중"으로 감지해 브라우저만 열거나
+#    빈 포트로 비켜간다.
 $server = Start-Process -FilePath $env:ComSpec -ArgumentList '/c', 'pnpm start' -NoNewWindow -PassThru
 
 function StopServer {

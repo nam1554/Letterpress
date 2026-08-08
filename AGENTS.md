@@ -233,9 +233,15 @@ no auth, single user, filesystem is the database.
   `about_Character_Encoding`). The .bat stays pure ASCII (cmd uses the OEM code
   page). Package-manager calls go through `cmd /c` — PowerShell picks `npm.ps1`
   over `npm.cmd` via PATHEXT and then trips over the execution policy.
-  No exit hook is used: `PowerShell.Exiting` and `finally` were both measured
-  NOT to run under `-File`; cleanup relies on the shared console (a `-NoNewWindow`
-  child dies with the window) plus the next launch detecting a stale server.
+  No exit hook is registered: `PowerShell.Exiting` and `finally` were both
+  measured NOT to run when the **window is force-closed** under `-File`, so that
+  path relies on the shared console (a `-NoNewWindow` child dies with the
+  window) plus the next launch detecting a stale server. The script still keeps
+  a `try/finally { StopServer }` around `Wait-Process` because Ctrl-C and normal
+  exit DO run it — that block is live code covering a different path, not a
+  leftover; deleting it leaves `next-server` holding the port on Ctrl-C.
+  (2026-08-08: the code comment claimed `finally` was unused while the block sat
+  ten lines below it — exactly the kind of note that gets "cleaned up" wrongly.)
   Without Windows hardware, validate with a portable pwsh: parse with
   `[Parser]::ParseFile`, lint with `Invoke-ScriptAnalyzer`, then dot-source the
   script from a harness that stubs `Get-NetTCPConnection`/`Start-Process`/
