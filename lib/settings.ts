@@ -37,9 +37,25 @@ interface Stored {
 }
 
 function stored(): Stored {
+  let raw: string;
   try {
-    return JSON.parse(readFileSync(file(), "utf8")) as Stored;
+    raw = readFileSync(file(), "utf8");
   } catch {
+    return {}; // 파일 없음 = 첫 실행. 정상 경로다.
+  }
+  try {
+    return JSON.parse(raw) as Stored;
+  } catch {
+    // 파일은 있는데 파싱이 안 된다 = 손상. 그대로 두면 다음 저장이 patch만
+    // 남기고 기존 설정(Figma 토큰·CDN 템플릿)을 통째로 덮어써 **조용히**
+    // 지운다(실측 2026-08-08). 원본을 옆으로 치워 두면 저장은 정상 진행되고
+    // 사용자는 값을 되찾을 수 있다. 옮기기가 실패해도 앱은 계속 동작해야 하므로
+    // 최선 노력이다.
+    try {
+      renameSync(file(), `${file()}.corrupt`);
+    } catch {
+      /* 옮기지 못해도 기본값으로 계속 간다 */
+    }
     return {};
   }
 }
