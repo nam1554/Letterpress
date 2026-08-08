@@ -40,6 +40,36 @@ describe("readBody", () => {
     }
   });
 
+  it("스키마 문구가 필드명을 이미 담고 있으면 접두를 붙이지 않는다", async () => {
+    // 실측: "figmaUrl: figmaUrl이 필요합니다."처럼 이름이 두 번 나왔다.
+    const named = z.object({ figmaUrl: z.string({ error: "figmaUrl이 필요합니다." }) });
+    const r = await readBody(post("{}"), named);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect((await r.res.json()).error).toBe("figmaUrl이 필요합니다.");
+  });
+
+  it("zod 기본을 덮되 위반 '이유'는 남긴다 — min/max가 구분돼야 한다", async () => {
+    // 실측 퇴행: 둘 다 "ids: 값 형식이 올바르지 않습니다."로 뭉개졌다.
+    const ids = z.object({ ids: z.array(z.string()).min(1).max(200) });
+    const small = await readBody(post(JSON.stringify({ ids: [] })), ids);
+    const big = await readBody(post(JSON.stringify({ ids: new Array(201).fill("x") })), ids);
+    expect(small.ok || big.ok).toBe(false);
+    if (!small.ok && !big.ok) {
+      const a = (await small.res.json()).error;
+      const b = (await big.res.json()).error;
+      expect(a).toBe("ids: 최소 1개 이상이어야 합니다.");
+      expect(b).toBe("ids: 최대 200개 이하여야 합니다.");
+      expect(a).not.toBe(b);
+    }
+  });
+
+  it("문자열 길이 위반은 '자' 단위로 말한다", async () => {
+    const s = z.object({ name: z.string().min(2) });
+    const r = await readBody(post(JSON.stringify({ name: "x" })), s);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect((await r.res.json()).error).toBe("name: 최소 2자 이상이어야 합니다.");
+  });
+
   it("문구 없는 필드의 zod 기본 영어도 덮되 필드명은 남긴다", async () => {
     // 실측: `provider: z.string().optional()`처럼 error 문구가 없는 필드는
     // "provider: Invalid input: expected string, received number"가 그대로 나갔다.

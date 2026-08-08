@@ -2,6 +2,35 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 /**
+ * 크기 위반의 단위 — 배열은 "개", 문자열은 "자", 숫자는 단위 없음.
+ * 어미("이상이어야"/"이하여야")는 단위가 아니라 이상·이하에 붙으므로 고정이다.
+ */
+function sizeUnit(origin: unknown): string {
+  if (origin === "array") return "개";
+  if (origin === "string") return "자";
+  return "";
+}
+
+/**
+ * zod 기본(영어) 이슈를 한국어로. **이유는 남긴다** — 전부 "값 형식이
+ * 올바르지 않습니다"로 뭉개면 bulk-delete의 `ids`가 비었는지 200개를
+ * 넘겼는지 구분할 수 없다(리뷰에서 잡힌 퇴행).
+ */
+function fallbackMessage(issue: z.core.$ZodIssue): string {
+  if (issue.code === "too_small") {
+    return `최소 ${issue.minimum}${sizeUnit(issue.origin)} 이상이어야 합니다.`;
+  }
+  if (issue.code === "too_big") {
+    return `최대 ${issue.maximum}${sizeUnit(issue.origin)} 이하여야 합니다.`;
+  }
+  if (issue.code === "invalid_format") return "형식이 올바르지 않습니다.";
+  if (issue.code === "invalid_type" || issue.code === "invalid_value") {
+    return "값 형식이 올바르지 않습니다.";
+  }
+  return "값 형식이 올바르지 않습니다.";
+}
+
+/**
  * 첫 번째 검증 이슈를 사용자에게 보일 한 줄로.
  *
  * 이 앱의 사용자 대면 문구는 전부 한국어다(비개발자 팀원이 읽는다는 원칙).
@@ -9,24 +38,28 @@ import { z } from "zod";
  * 덮는다** — 판별은 한글 포함 여부로 한다. 스키마 문구는 반드시 한글을 담고
  * zod 기본은 영어뿐이라, 코드·문면 패턴을 열거하는 것보다 견고하다.
  *
- * 실측(2026-08-08)으로 확인된 두 누출 경로:
+ * 실측(2026-08-08)으로 확인된 누출·오도 경로 넷, 전부 테스트로 고정했다:
  * - 최상위 타입 위반(`null`/`[]` 바디) → path 없음 + "Invalid input: expected
  *   object, received null".
  * - 문구 없는 필드(`provider: z.string().optional()`)에 잘못된 타입 →
  *   "provider: Invalid input: expected string, received number".
- * 필드명은 살려 둔다 — 어디가 문제인지가 사라지면 안내가 쓸모없어진다.
- * 최상위 문구에 "JSON 객체여야 합니다"를 넣지 않는 이유: artifact 라우트의
- * `z.union`은 **정상 객체**가 두 갈래를 모두 어겨도 path 없는 이슈를 내므로
- * (실측: `invalid_union`), 그렇게 쓰면 이미 객체를 보낸 사용자에게 객체를
- * 보내라고 잘못 안내하게 된다.
+ * - 최상위 문구에 "JSON 객체여야 합니다"를 넣으면 안 된다: artifact 라우트의
+ *   `z.union`은 **정상 객체**가 두 갈래를 모두 어겨도 path 없는 이슈를 내므로
+ *   (실측: `invalid_union`), 이미 객체를 보낸 사용자에게 객체를 보내라고
+ *   잘못 안내하게 된다.
+ * - 스키마 문구가 이미 필드명을 담고 있으면 path 접두를 붙이지 않는다 —
+ *   안 그러면 "figmaUrl: figmaUrl이 필요합니다."처럼 이름이 두 번 나온다.
  */
 function issueMessage(error: z.ZodError): string {
   const issue = error.issues[0];
   if (!issue) return "요청 형식이 올바르지 않습니다.";
   const path = issue.path.join(".");
   const fromSchema = /[가-힣]/.test(issue.message);
-  if (fromSchema) return path ? `${path}: ${issue.message}` : issue.message;
-  return path ? `${path}: 값 형식이 올바르지 않습니다.` : "요청 형식이 올바르지 않습니다.";
+  const body = fromSchema ? issue.message : fallbackMessage(issue);
+  if (!path) return fromSchema ? body : "요청 형식이 올바르지 않습니다.";
+  // 마지막 경로 조각(사용자가 보는 필드명)이 문구에 이미 있으면 중복이다.
+  const field = String(issue.path.at(-1) ?? "");
+  return field && body.includes(field) ? body : `${path}: ${body}`;
 }
 
 /**
