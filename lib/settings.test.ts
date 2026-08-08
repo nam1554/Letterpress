@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +55,50 @@ describe("settings 저장", () => {
     saveSettings({ claudeModel: "haiku" });
     expect(getSettings().claudeModel).toBe("haiku");
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ claudeModel: "haiku" });
+  });
+
+  it("두 번째 손상이 첫 백업을 지우지 않는다", async () => {
+    // 리뷰 실측: 무조건 rename이면 아직 꺼내지 않은 첫 백업의 토큰이 사라진다.
+    const dir = mkdtempSync(path.join(tmpdir(), "mhm-settings4-"));
+    const target = path.join(dir, "settings.json");
+    process.env.MHM_SETTINGS_FILE = target;
+    try {
+      const { getSettings, saveSettings } = await import("./settings");
+      saveSettings({ figmaToken: "figd_first_generation" });
+      writeFileSync(target, "{ 1차 손상", { mode: 0o600 });
+      getSettings();
+      expect(readFileSync(`${target}.corrupt`, "utf8")).toBe("{ 1차 손상");
+
+      saveSettings({ figmaToken: "figd_second_generation" });
+      writeFileSync(target, "{ 2차 손상", { mode: 0o600 });
+      getSettings();
+      // 첫 백업은 그대로 남아 있어야 한다.
+      expect(readFileSync(`${target}.corrupt`, "utf8")).toBe("{ 1차 손상");
+      const extra = readdirSync(dir).filter((f) => f.includes(".corrupt."));
+      expect(extra).toHaveLength(1);
+      expect(readFileSync(path.join(dir, extra[0]), "utf8")).toBe("{ 2차 손상");
+    } finally {
+      process.env.MHM_SETTINGS_FILE = file;
+    }
+  });
+
+  it("원본을 읽지 못하면 저장을 거부해 덮어쓰기를 막는다", async () => {
+    // 리뷰 실측: rename은 디렉터리 권한만 있으면 되므로, 읽기 권한이 없어도
+    // 덮어쓰기는 성공한다 — 멀쩡한 설정이 patch 한 필드로 사라진다.
+    const dir = mkdtempSync(path.join(tmpdir(), "mhm-settings3-"));
+    const target = path.join(dir, "settings.json");
+    process.env.MHM_SETTINGS_FILE = target;
+    try {
+      const { saveSettings } = await import("./settings");
+      saveSettings({ figmaToken: "figd_must_survive", cdnTemplate: "https://cdn.x/{file}" });
+      chmodSync(target, 0o000);
+      expect(() => saveSettings({ claudeModel: "haiku" })).toThrow(/읽을 수 없어/);
+      // 원본은 그대로 — 권한을 되돌리면 값이 살아 있다.
+      chmodSync(target, 0o600);
+      expect(JSON.parse(readFileSync(target, "utf8")).figmaToken).toBe("figd_must_survive");
+    } finally {
+      process.env.MHM_SETTINGS_FILE = file;
+    }
   });
 
   it("파일이 아예 없으면 손상 백업을 만들지 않는다", async () => {

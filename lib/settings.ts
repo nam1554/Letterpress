@@ -36,28 +36,52 @@ interface Stored {
   notifyOnFinish?: boolean;
 }
 
-function stored(): Stored {
+/**
+ * 손상된 원본을 옆으로 치운다. **이미 있는 백업을 덮지 않는다** — 두 번째
+ * 손상이 첫 백업을 지우면, 사용자가 아직 꺼내지 않은 토큰이 영영 사라진다.
+ */
+function backupCorrupt(): void {
+  const src = file();
+  const first = `${src}.corrupt`;
+  const dest = existsSync(first) ? `${first}.${Date.now()}` : first;
+  try {
+    renameSync(src, dest);
+  } catch {
+    /* 옮기지 못해도 기본값으로 계속 간다 (최선 노력) */
+  }
+}
+
+/**
+ * 저장된 설정과 "원본을 신뢰할 수 있는가".
+ *
+ * `unreadable`은 **파일이 있는데 읽지 못한 상태**다(EACCES·EMFILE 등).
+ * 이때 patch만 써 버리면 멀쩡한 원본이 그 한 필드로 덮인다 — rename은 디렉터리
+ * 권한만 있으면 성공하므로 읽기 권한이 없어도 덮어쓰기는 된다(리뷰 실측).
+ * 그래서 읽기 실패는 조용히 기본값으로 넘기되 **저장은 거부**한다.
+ * 파일이 아예 없는 것(ENOENT)은 첫 실행이라 정상 경로다.
+ */
+function readStored(): { data: Stored; unreadable: boolean } {
   let raw: string;
   try {
     raw = readFileSync(file(), "utf8");
-  } catch {
-    return {}; // 파일 없음 = 첫 실행. 정상 경로다.
+  } catch (err) {
+    const enoent = (err as NodeJS.ErrnoException).code === "ENOENT";
+    return { data: {}, unreadable: !enoent };
   }
   try {
-    return JSON.parse(raw) as Stored;
+    return { data: JSON.parse(raw) as Stored, unreadable: false };
   } catch {
     // 파일은 있는데 파싱이 안 된다 = 손상. 그대로 두면 다음 저장이 patch만
     // 남기고 기존 설정(Figma 토큰·CDN 템플릿)을 통째로 덮어써 **조용히**
     // 지운다(실측 2026-08-08). 원본을 옆으로 치워 두면 저장은 정상 진행되고
-    // 사용자는 값을 되찾을 수 있다. 옮기기가 실패해도 앱은 계속 동작해야 하므로
-    // 최선 노력이다.
-    try {
-      renameSync(file(), `${file()}.corrupt`);
-    } catch {
-      /* 옮기지 못해도 기본값으로 계속 간다 */
-    }
-    return {};
+    // 사용자는 값을 되찾을 수 있다.
+    backupCorrupt();
+    return { data: {}, unreadable: false };
   }
+}
+
+function stored(): Stored {
+  return readStored().data;
 }
 
 const intOr = (v: unknown, fallback: number): number => {
@@ -82,7 +106,15 @@ export function getSettings(): Settings {
 }
 
 export function saveSettings(patch: Partial<Stored>): Settings {
-  const next: Stored = { ...stored() };
+  const { data, unreadable } = readStored();
+  // 원본을 못 읽는 상태에서 쓰면 patch 한 필드로 멀쩡한 설정을 덮는다.
+  // 저장을 막아 원본을 지키고, 사용자에게는 라우트가 오류로 알린다.
+  if (unreadable) {
+    throw new Error(
+      "설정 파일을 읽을 수 없어 저장을 중단했습니다 — 덮어쓰면 기존 설정이 사라집니다. data/settings.json의 권한을 확인해 주세요.",
+    );
+  }
+  const next: Stored = { ...data };
   if (patch.defaultProvider !== undefined) next.defaultProvider = patch.defaultProvider;
   if (patch.maxConcurrentJobs !== undefined) {
     next.maxConcurrentJobs = intOr(patch.maxConcurrentJobs, 2);
