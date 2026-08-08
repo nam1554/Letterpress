@@ -265,6 +265,11 @@ app/lib/first-run.ts       구독별 첫 실행 절차 + 구독 선택지
 lib/hosting.ts             CDN 교체본 ({folder}/{file} 템플릿 치환)
 lib/email-check.ts         발송 전 정적 검사 7종
 app/api/**                 잡 CRUD/SSE/다운로드 · 설정 · 연동 라우트 (zod 검증)
+lib/api-body.ts            요청 바디 zod 검증 + 한국어 400 문구 (readBody)
+lib/api-job.ts             잡 존재 확인 + 공통 404 (requireJob)
+lib/serialize.ts           키별 직렬화 큐 — 잡 갱신·백업의 경합 차단
+lib/hmr-global.ts          dev HMR을 넘기는 프로세스 전역 컨테이너
+lib/mime.ts                산출물 서빙 Content-Type (다운로드·미리보기 공용)
 data/jobs/<id>/work/output/    다운로드 대상 산출물 (git 제외)
 ```
 

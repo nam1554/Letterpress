@@ -513,10 +513,29 @@ no auth, single user, filesystem is the database.
     it reads `verify.json (verify.json)`.
   - Path matching uses `data/jobs/<8hex>/` rather than a repo-root prefix, so it
     works regardless of where the repo lives; short paths (`/mcp`) are left alone.
-- **API validation**: route bodies are parsed with zod through
-  `lib/api-body.ts` `readBody(req, schema)` — returns a ready 400 response on
-  failure. Domain rules (provider existence, CDN template shape) stay in the
-  routes.
+- **Shared helpers — check here before writing a new one.** This repo keeps one
+  implementation per concern on purpose (a review caught two byte-identical
+  copies of the keyed queue on 2026-08-07), so a second copy is a defect, not a
+  style choice:
+  - `lib/api-body.ts` `readBody(req, schema)` — zod body parsing → ready 400.
+    Its `issueMessage` also guarantees the error text is Korean: schema
+    messages pass through, zod's English defaults are replaced while keeping
+    the *reason* (min/max bounds, inclusive vs exclusive) and the field path.
+    Three review rounds shaped it; prefer simplifying it over adding branches.
+  - `lib/api-job.ts` `requireJob(id)` — job existence + the one 404 body, same
+    `{ok} | {res}` shape as `readBody`.
+  - `lib/serialize.ts` `withKeyedLock(map, key, fn)` — the per-key promise
+    queue behind `updateJob` (lost-update) and the artifact route (backup
+    TOCTOU). Callers own the Map, so the two lock domains can't deadlock.
+  - `lib/hmr-global.ts` `hmrGlobal(key, init)` — process-global containers that
+    must survive dev HMR. In-place-mutated Maps/objects only: reassigned
+    snapshot caches (health/setup) and shape-migrated flags keep raw access.
+  - `lib/mime.ts` `contentTypeFor(file)` — Content-Type for artifact serving;
+    download and preview drifted apart before this existed.
+  - `app/lib/use-armed-confirm.ts` — two-step confirm with a 4s auto-disarm,
+    keyed so a confirm armed for one target can't approve another.
+  - `app/jobs/[id]/use-job-stream.ts` — the SSE wiring (replay dedup, terminal
+    close, silent refresh on error) kept out of the page component.
 - **Client requests**: every mutation goes through `app/lib/request.ts`
   (`requestJson` / `sendJson`), never bare `fetch` + `(await res.json()).error`.
   The helper never throws, so a non-JSON error page or an unreachable server
