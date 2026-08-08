@@ -215,3 +215,10 @@ tsc·lint 클린, 빌드 성공(경고 1건은 위 백로그의 판단 근거 �
   `try/finally { StopServer }`가 실재했다. 실제로는 창 강제 종료에서만 안
   돌고 Ctrl-C·정상 종료에서는 실행되는 **살아 있는 코드**다 — 주석을 믿고
   지우면 Ctrl-C 시 next-server가 포트를 문다. 두 문서를 경로별로 정정.
+- 바퀴 10: 벤더 스킬·카피·진단 번들 정합성 실측 — 빈손. 스킬 문서가
+  가리키는 스크립트 3개 전부 실재·문법 통과, 크로스플랫폼 불변식 확인
+  (as_uri 사용·raw file:// 0건·CHROME_BIN 우선·verify.json 기록;
+  compare.py의 subprocess는 Chrome 실행이라 sys.executable 불필요 — 첫
+  검사의 FAIL은 오탐). 온보딩·실패 카피의 백틱 0건, 구독 표기는 CLI 이름
+  오염 없이 Claude/ChatGPT/Google. 진단 번들은 job 없이도, 없는 job id로도
+  200 + 동일 구성(job/ 폴더만 제외)으로 정상 응답.
