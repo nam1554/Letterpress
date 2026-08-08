@@ -241,19 +241,28 @@ const CACHE_MS = 5 * 60_000;
 // 전용)이 맞지 않는다 — 원시 globalThis 접근을 유지한다.
 const g = globalThis as unknown as {
   __mhmSetup?: { at: number; backends: BackendSetup[] };
-  __mhmSetupInFlight?: Promise<BackendSetup[]>;
+  /** 진행 중인 점검. `force`는 그 점검이 강제 갱신으로 시작됐는지. */
+  __mhmSetupInFlight?: { run: Promise<BackendSetup[]>; force: boolean };
 };
 
+/**
+ * 백엔드 진단. 캐시 5분, 동시 요청은 진행 중인 점검 하나에 합류한다
+ * (`mcp list`가 수 초~수십 초 걸리고 CLI를 실제로 띄운다).
+ *
+ * 합류 규칙이 force에 따라 갈리는 이유 — 둘 다 실측으로 부딪힌 문제다:
+ * - **force끼리는 합류한다.** 안 그러면 "다시 점검" 연타가 그대로 중복 스폰이
+ *   된다(2026-08-08: force 3건 → `claude mcp list` 3개, 각 최대 45초).
+ * - **force는 진행 중인 *일반* 점검에는 합류하지 않는다.** 그 점검은 force
+ *   요청보다 **먼저** 시작됐으므로 사용자가 방금 고친 것(토큰 저장 등)을
+ *   반영하지 못한다. 설정 저장 직후의 갱신이 저장 이전 상태를 보여주면
+ *   "고쳤는데 여전히 실패"로 읽힌다 — force의 존재 이유가 사라진다.
+ */
 export async function getBackendSetup(force = false): Promise<BackendSetup[]> {
   const cached = g.__mhmSetup;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.backends;
-  // 동시 요청은 진행 중인 점검 하나에 합류한다 (mcp list가 수 초~수십 초 걸림).
-  // **force도 합류한다.** force가 뜻하는 것은 "캐시를 믿지 말라"이지 "CLI를 또
-  // 띄우라"가 아니고, 진행 중인 점검은 캐시가 아니라 지금 도는 측정이라 force가
-  // 원하는 신선도를 이미 만족한다. 예외로 두었더니 "다시 점검" 연타가 그대로
-  // 중복 스폰이 됐다(실측 2026-08-08: force 3건 → `claude mcp list` 프로세스 3개,
-  // 각 최대 45초).
-  if (g.__mhmSetupInFlight) return g.__mhmSetupInFlight;
+
+  const inFlight = g.__mhmSetupInFlight;
+  if (inFlight && (!force || inFlight.force)) return inFlight.run;
 
   const run = (async () => {
     const backends = [
@@ -265,10 +274,13 @@ export async function getBackendSetup(force = false): Promise<BackendSetup[]> {
     g.__mhmSetup = { at: Date.now(), backends };
     return backends;
   })();
-  g.__mhmSetupInFlight = run;
+  const entry = { run, force };
+  g.__mhmSetupInFlight = entry;
   try {
     return await run;
   } finally {
-    g.__mhmSetupInFlight = undefined;
+    // 내가 등록한 것만 지운다 — force가 일반 점검과 겹쳐 돌 때 남의 것을
+    // 지우면 그 뒤 요청들이 합류하지 못하고 또 스폰한다.
+    if (g.__mhmSetupInFlight === entry) g.__mhmSetupInFlight = undefined;
   }
 }
