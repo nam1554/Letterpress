@@ -63,6 +63,30 @@ describe("readBody", () => {
     }
   });
 
+  it("중첩 배열 인덱스가 한계값 숫자와 겹쳐도 경로를 잃지 않는다", async () => {
+    // 리뷰 실측: 폴백 문구까지 부분 문자열로 중복 검사하면 인덱스 "0"이
+    // "최소 10자"의 0과 맞아 경로가 통째로 사라졌다.
+    const nested = z.object({ items: z.array(z.object({ names: z.array(z.string().min(10)) })) });
+    const r = await readBody(post(JSON.stringify({ items: [{ names: ["짧다"] }] })), nested);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect((await r.res.json()).error).toBe("items.0.names.0: 최소 10자 이상이어야 합니다.");
+    }
+  });
+
+  it("경계를 포함하지 않는 제약은 '이상'이라고 말하지 않는다", async () => {
+    // `.gt(0)`은 inclusive:false — "0 이상"이라고 하면 방금 거부한 값을
+    // 허용한다고 말하는 셈이다.
+    const s = z.object({ score: z.number().gt(0) });
+    const r = await readBody(post(JSON.stringify({ score: 0 })), s);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      const message = (await r.res.json()).error;
+      expect(message).toBe("score: 0보다 커야 합니다.");
+      expect(message).not.toMatch(/이상/);
+    }
+  });
+
   it("문자열 길이 위반은 '자' 단위로 말한다", async () => {
     const s = z.object({ name: z.string().min(2) });
     const r = await readBody(post(JSON.stringify({ name: "x" })), s);

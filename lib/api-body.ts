@@ -17,16 +17,21 @@ function sizeUnit(origin: unknown): string {
  * 넘겼는지 구분할 수 없다(리뷰에서 잡힌 퇴행).
  */
 function fallbackMessage(issue: z.core.$ZodIssue): string {
+  // 경계 포함 여부를 반영한다 — `.gt(0)`은 `inclusive: false`라 "0 이상"이라고
+  // 하면 방금 거부한 값을 허용한다고 말하는 셈이 된다.
   if (issue.code === "too_small") {
-    return `최소 ${issue.minimum}${sizeUnit(issue.origin)} 이상이어야 합니다.`;
+    const unit = sizeUnit(issue.origin);
+    return issue.inclusive
+      ? `최소 ${issue.minimum}${unit} 이상이어야 합니다.`
+      : `${issue.minimum}${unit}보다 커야 합니다.`;
   }
   if (issue.code === "too_big") {
-    return `최대 ${issue.maximum}${sizeUnit(issue.origin)} 이하여야 합니다.`;
+    const unit = sizeUnit(issue.origin);
+    return issue.inclusive
+      ? `최대 ${issue.maximum}${unit} 이하여야 합니다.`
+      : `${issue.maximum}${unit}보다 작아야 합니다.`;
   }
   if (issue.code === "invalid_format") return "형식이 올바르지 않습니다.";
-  if (issue.code === "invalid_type" || issue.code === "invalid_value") {
-    return "값 형식이 올바르지 않습니다.";
-  }
   return "값 형식이 올바르지 않습니다.";
 }
 
@@ -49,17 +54,22 @@ function fallbackMessage(issue: z.core.$ZodIssue): string {
  *   잘못 안내하게 된다.
  * - 스키마 문구가 이미 필드명을 담고 있으면 path 접두를 붙이지 않는다 —
  *   안 그러면 "figmaUrl: figmaUrl이 필요합니다."처럼 이름이 두 번 나온다.
+ *   이 중복 검사는 **스키마 문구에만** 적용한다. 폴백 문구는 우리가 만든
+ *   것이라 필드명을 담을 일이 없고, 거기까지 부분 문자열로 검사하면 숫자
+ *   배열 인덱스("0")가 한계값("최소 10자")의 숫자와 맞아 경로가 통째로
+ *   사라진다 — 어느 항목이 틀렸는지가 지워지는 셈이다(리뷰 실측).
  */
 function issueMessage(error: z.ZodError): string {
   const issue = error.issues[0];
   if (!issue) return "요청 형식이 올바르지 않습니다.";
   const path = issue.path.join(".");
   const fromSchema = /[가-힣]/.test(issue.message);
-  const body = fromSchema ? issue.message : fallbackMessage(issue);
-  if (!path) return fromSchema ? body : "요청 형식이 올바르지 않습니다.";
-  // 마지막 경로 조각(사용자가 보는 필드명)이 문구에 이미 있으면 중복이다.
+  if (!fromSchema) {
+    return path ? `${path}: ${fallbackMessage(issue)}` : "요청 형식이 올바르지 않습니다.";
+  }
+  if (!path) return issue.message;
   const field = String(issue.path.at(-1) ?? "");
-  return field && body.includes(field) ? body : `${path}: ${body}`;
+  return field && issue.message.includes(field) ? issue.message : `${path}: ${issue.message}`;
 }
 
 /**
